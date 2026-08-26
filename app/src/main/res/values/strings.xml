@@ -1,3 +1,15 @@
 <resources>
   <string name="app_name">ジャーナリング記録</string>
+
+  <string name="mood_emoji_very_sad">😭</string>
+  <string name="mood_emoji_sad">😞</string>
+  <string name="mood_emoji_neutral">😐</string>
+  <string name="mood_emoji_happy">🙂</string>
+  <string name="mood_emoji_very_happy">😆</string>
+
+  <string name="mood_description_very_sad">気分:とても悲しい</string>
+  <string name="mood_description_sad">気分:悲しい</string>
+  <string name="mood_description_neutral">気分:普通</string>
+  <string name="mood_description_happy">気分:嬉しい</string>
+  <string name="mood_description_very_happy">気分:とても嬉しい</string>
 </resources>
