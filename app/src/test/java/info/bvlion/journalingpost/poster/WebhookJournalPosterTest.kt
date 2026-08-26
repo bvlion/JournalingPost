@@ -10,6 +10,7 @@ import io.ktor.content.TextContent
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.Url
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import java.time.Instant
@@ -53,7 +54,9 @@ class WebhookJournalPosterTest {
 
     val request = requireNotNull(capturedRequest)
     assertEquals(HttpMethod.Post, request.method)
-    assertEquals(BuildConfig.POST_URL, request.url.toString())
+    // local.propertiesが無い環境ではBuildConfig.POST_URLが文字列"null"になり、Ktorが相対URLとして
+    // 正規化するため、送信先の実URLも同じ正規化を経たものと比較する（生文字列同士の比較にしない）。
+    assertEquals(Url(BuildConfig.POST_URL).toString(), request.url.toString())
     assertEquals(ContentType.Application.Json, (request.body as TextContent).contentType.withoutParameters())
   }
 
