@@ -39,7 +39,7 @@ import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 
 class MainActivity : ComponentActivity() {
-  private val viewModel: MainViewModel by viewModels()
+  private val viewModel: MainViewModel by viewModels { MainViewModelFactory }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
