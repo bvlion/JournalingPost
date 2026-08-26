@@ -54,6 +54,8 @@ Java 17と、リポジトリ同梱のGradle Wrapperを使用します。
 
 検証を実行できなかった場合や失敗した場合は、成功したものとして扱わず、実行コマンドと理由を報告してください。
 
+`.github/workflows/ci.yml`により、pull_requestおよびmainへのpush時に上記コマンド（`git diff --check`含む）がGitHub Actions上でも自動実行されます。ローカル検証を代替するものではないため、両方とも実施してください。
+
 ## UI操作
 
 - AIエージェントは、実機・エミュレーター・adb・UI automationを使用したアプリのUI操作を行わないでください。
