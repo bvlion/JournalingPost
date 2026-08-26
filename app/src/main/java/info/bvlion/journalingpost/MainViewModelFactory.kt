@@ -8,16 +8,17 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 
-/** production依存の組み立てを行う。DI frameworkは導入せずここへ閉じ込める。 */
-class MainViewModelFactory : ViewModelProvider.Factory {
-  override fun <T : ViewModel> create(modelClass: Class<T>): T {
-    val httpClient = HttpClient(CIO) {
-      install(ContentNegotiation) {
-        json()
-      }
+/** production依存の組み立てを行う。DI frameworkは導入せず、process内でHttpClient/WebhookJournalPosterを1つだけ再利用する。 */
+object MainViewModelFactory : ViewModelProvider.Factory {
+  private val httpClient = HttpClient(CIO) {
+    install(ContentNegotiation) {
+      json()
     }
+  }
+  private val journalPoster = WebhookJournalPoster(httpClient)
 
+  override fun <T : ViewModel> create(modelClass: Class<T>): T {
     @Suppress("UNCHECKED_CAST")
-    return MainViewModel(journalPoster = WebhookJournalPoster(httpClient)) as T
+    return MainViewModel(journalPoster = journalPoster) as T
   }
 }

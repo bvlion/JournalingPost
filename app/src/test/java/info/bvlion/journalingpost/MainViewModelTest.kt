@@ -1,6 +1,7 @@
 package info.bvlion.journalingpost
 
 import info.bvlion.journalingpost.poster.JournalPoster
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -71,6 +72,16 @@ class MainViewModelTest {
     testDispatcher.scheduler.advanceUntilIdle()
 
     assertEquals(MainViewModel.UiState.FAILURE, viewModel.uiState.value)
+  }
+
+  @Test
+  fun `postMessage does not treat CancellationException as FAILURE`() = runTest(testDispatcher) {
+    val viewModel = MainViewModel(FakeJournalPoster { throw CancellationException("cancelled") })
+
+    viewModel.postMessage("today was good")
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(MainViewModel.UiState.LOADING, viewModel.uiState.value)
   }
 
   @Test
