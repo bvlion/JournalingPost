@@ -20,7 +20,8 @@ class MainViewModel(
     _uiState.value = UiState.LOADING
     viewModelScope.launch {
       _uiState.value = try {
-        if (journalRecorder.record(note, mood, source)) UiState.SUCCESS else UiState.FAILURE
+        journalRecorder.record(note, mood, source)
+        UiState.SUCCESS
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {

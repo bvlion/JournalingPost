@@ -6,7 +6,6 @@ import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LocalWebhookJournalRecorderTest {
@@ -28,32 +27,32 @@ class LocalWebhookJournalRecorderTest {
   }
 
   @Test
-  fun `record marks delivery as SENT and returns true when the webhook succeeds`() = runTest {
+  fun `record completes normally and marks delivery SENT when the webhook succeeds`() = runTest {
     val repository = FakeJournalEntryRepository()
     val recorder = createRecorder(repository, poster = { true })
 
-    val result = recorder.record("today was good", mood = null, source = JournalSource.APP)
+    recorder.record("today was good", mood = null, source = JournalSource.APP)
 
-    assertTrue(result)
     val entry = repository.entries.values.single()
     assertEquals(DeliveryStatus.SENT, entry.deliveryStatus)
   }
 
   @Test
-  fun `record keeps the JournalEntry and marks FAILED when the webhook returns false`() = runTest {
-    val repository = FakeJournalEntryRepository()
-    val recorder = createRecorder(repository, poster = { false })
+  fun `record completes normally, keeps the JournalEntry and marks FAILED when the webhook returns false`() =
+    runTest {
+      val repository = FakeJournalEntryRepository()
+      val recorder = createRecorder(repository, poster = { false })
 
-    val result = recorder.record("today was good", mood = null, source = JournalSource.APP)
+      // ローカル保存は既に成功しているため、Webhook配送の失敗はここでは例外にならない。
+      recorder.record("today was good", mood = null, source = JournalSource.APP)
 
-    assertEquals(false, result)
-    val entry = repository.entries.values.single()
-    assertEquals("today was good", entry.note)
-    assertEquals(DeliveryStatus.FAILED, entry.deliveryStatus)
-  }
+      val entry = repository.entries.values.single()
+      assertEquals("today was good", entry.note)
+      assertEquals(DeliveryStatus.FAILED, entry.deliveryStatus)
+    }
 
   @Test
-  fun `record keeps the JournalEntry and marks FAILED when the webhook throws`() = runTest {
+  fun `record completes normally, keeps the JournalEntry and marks FAILED when the webhook throws`() = runTest {
     val repository = FakeJournalEntryRepository()
     val recorder = LocalWebhookJournalRecorder(
       repository,
@@ -61,12 +60,32 @@ class LocalWebhookJournalRecorderTest {
       now = { fixedNow },
     )
 
-    val result = recorder.record("today was good", mood = null, source = JournalSource.APP)
+    recorder.record("today was good", mood = null, source = JournalSource.APP)
 
-    assertEquals(false, result)
     val entry = repository.entries.values.single()
     assertEquals("today was good", entry.note)
     assertEquals(DeliveryStatus.FAILED, entry.deliveryStatus)
+  }
+
+  @Test
+  fun `record propagates the exception when the local save itself fails`() = runTest {
+    val repository = object : JournalEntryRepository {
+      override suspend fun insert(entry: JournalEntry): Long = throw RuntimeException("db boom")
+
+      override suspend fun updateDeliveryStatus(id: Long, status: DeliveryStatus) {
+        error("must not be called when insert fails")
+      }
+    }
+    val recorder = LocalWebhookJournalRecorder(repository, JournalPoster { true }, now = { fixedNow })
+
+    var thrown: Throwable? = null
+    try {
+      recorder.record("today was good", mood = null, source = JournalSource.APP)
+    } catch (e: RuntimeException) {
+      thrown = e
+    }
+
+    assertEquals("db boom", thrown?.message)
   }
 
   @Test
