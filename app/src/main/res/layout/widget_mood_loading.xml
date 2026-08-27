@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Glanceが実際のcompact/expanded表示(MoodWidget.kt)を描画するまでの
+  一時的なプレースホルダー。Widget UIロジック自体はGlance側にあり、
+  ここではAppWidgetProviderInfoが要求するinitialLayout/previewLayoutを
+  満たすだけの最小限の空レイアウトとする。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" />

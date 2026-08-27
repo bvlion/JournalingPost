@@ -5,7 +5,7 @@
     android:targetCellWidth="2"
     android:targetCellHeight="1"
     android:updatePeriodMillis="0"
-    android:initialLayout="@layout/widget_mood"
-    android:previewLayout="@layout/widget_mood"
+    android:initialLayout="@layout/widget_mood_loading"
+    android:previewLayout="@layout/widget_mood_loading"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen" />
