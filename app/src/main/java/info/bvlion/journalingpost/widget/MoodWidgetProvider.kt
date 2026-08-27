@@ -57,9 +57,9 @@ class MoodWidgetProvider : AppWidgetProvider() {
     const val LABELED_MIN_HEIGHT_DP = 180f
 
     // mood_background(Dynamic Colorのcolor Background)に適用する不透明度。
-    // 「ほぼ透明」ではなく、Google系Widgetのサーフェスに近い、はっきりした
-    // 半透明カードに寄せるための値。実機スクリーンショットを見て調整する。
-    const val BACKGROUND_ALPHA = 0.85f
+    // ベタ塗りにはしないが、Google系Widget（例:「YouTubeを検索」の入力欄を囲う面）
+    // 程度の、しっかりした半透明カードに寄せるための値。実機スクリーンショットを見て調整する。
+    const val BACKGROUND_ALPHA = 0.92f
 
     // Issue #21のWidgetレイアウト評価用の一時リスト。既存5Mood(VERY_SAD〜VERY_HAPPY)に
     // 評価用の仮Mood5件を加えて合計10件にしている。「10件が最終Mood数」という意味ではなく、
