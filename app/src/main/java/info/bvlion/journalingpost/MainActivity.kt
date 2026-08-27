@@ -2,6 +2,7 @@ package info.bvlion.journalingpost
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -63,6 +64,12 @@ class MainActivity : ComponentActivity() {
         val snackbarHostState = remember { SnackbarHostState() }
         val uiState by viewModel.uiState.collectAsState()
         var screen by rememberSaveable { mutableStateOf(Screen.INPUT) }
+
+        // HISTORY表示中のみシステムBack/Backジェスチャーを捕捉してINPUTへ戻す。
+        // INPUT表示中は無効化し、Activityの標準Back動作(終了)をそのまま使う。
+        BackHandler(enabled = screen == Screen.HISTORY) {
+          screen = Screen.INPUT
+        }
 
         Scaffold(
           modifier = Modifier.fillMaxSize().imePadding(),
