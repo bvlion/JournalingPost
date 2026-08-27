@@ -1,5 +1,12 @@
 package info.bvlion.journalingpost
 
+import info.bvlion.journalingpost.journal.DeliveryStatus
+import info.bvlion.journalingpost.journal.JournalEntry
+import info.bvlion.journalingpost.journal.JournalEntryRepository
+import info.bvlion.journalingpost.journal.JournalRecorder
+import info.bvlion.journalingpost.journal.JournalSource
+import info.bvlion.journalingpost.journal.LocalWebhookJournalRecorder
+import info.bvlion.journalingpost.mood.MoodSnapshot
 import info.bvlion.journalingpost.poster.JournalPoster
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -30,55 +37,45 @@ class MainViewModelTest {
 
   @Test
   fun `initial state is INIT`() {
-    val viewModel = MainViewModel(FakeJournalPoster { true })
+    val viewModel = MainViewModel(FakeJournalRecorder())
 
     assertEquals(MainViewModel.UiState.INIT, viewModel.uiState.value)
   }
 
   @Test
-  fun `postMessage sets state to LOADING before the poster completes`() = runTest(testDispatcher) {
-    val viewModel = MainViewModel(FakeJournalPoster { true })
+  fun `record sets state to LOADING before the recorder completes`() = runTest(testDispatcher) {
+    val viewModel = MainViewModel(FakeJournalRecorder())
 
-    viewModel.postMessage("today was good")
+    viewModel.record("today was good", source = JournalSource.APP)
 
     assertEquals(MainViewModel.UiState.LOADING, viewModel.uiState.value)
   }
 
   @Test
-  fun `postMessage sets state to SUCCESS when the poster returns true`() = runTest(testDispatcher) {
-    val viewModel = MainViewModel(FakeJournalPoster { true })
+  fun `record sets state to SUCCESS when the recorder completes normally`() = runTest(testDispatcher) {
+    val viewModel = MainViewModel(FakeJournalRecorder())
 
-    viewModel.postMessage("today was good")
+    viewModel.record("today was good", source = JournalSource.APP)
     testDispatcher.scheduler.advanceUntilIdle()
 
     assertEquals(MainViewModel.UiState.SUCCESS, viewModel.uiState.value)
   }
 
   @Test
-  fun `postMessage sets state to FAILURE when the poster returns false`() = runTest(testDispatcher) {
-    val viewModel = MainViewModel(FakeJournalPoster { false })
+  fun `record sets state to FAILURE when the local save fails`() = runTest(testDispatcher) {
+    val viewModel = MainViewModel(FakeJournalRecorder { throw RuntimeException("boom") })
 
-    viewModel.postMessage("today was good")
+    viewModel.record("today was good", source = JournalSource.APP)
     testDispatcher.scheduler.advanceUntilIdle()
 
     assertEquals(MainViewModel.UiState.FAILURE, viewModel.uiState.value)
   }
 
   @Test
-  fun `postMessage sets state to FAILURE without crashing when the poster throws`() = runTest(testDispatcher) {
-    val viewModel = MainViewModel(FakeJournalPoster { throw RuntimeException("boom") })
+  fun `record does not treat CancellationException as FAILURE`() = runTest(testDispatcher) {
+    val viewModel = MainViewModel(FakeJournalRecorder { throw CancellationException("cancelled") })
 
-    viewModel.postMessage("today was good")
-    testDispatcher.scheduler.advanceUntilIdle()
-
-    assertEquals(MainViewModel.UiState.FAILURE, viewModel.uiState.value)
-  }
-
-  @Test
-  fun `postMessage does not treat CancellationException as FAILURE`() = runTest(testDispatcher) {
-    val viewModel = MainViewModel(FakeJournalPoster { throw CancellationException("cancelled") })
-
-    viewModel.postMessage("today was good")
+    viewModel.record("today was good", source = JournalSource.APP)
     testDispatcher.scheduler.advanceUntilIdle()
 
     assertEquals(MainViewModel.UiState.LOADING, viewModel.uiState.value)
@@ -86,8 +83,8 @@ class MainViewModelTest {
 
   @Test
   fun `resetState returns state to INIT`() = runTest(testDispatcher) {
-    val viewModel = MainViewModel(FakeJournalPoster { true })
-    viewModel.postMessage("today was good")
+    val viewModel = MainViewModel(FakeJournalRecorder())
+    viewModel.record("today was good", source = JournalSource.APP)
     testDispatcher.scheduler.advanceUntilIdle()
 
     viewModel.resetState()
@@ -96,26 +93,95 @@ class MainViewModelTest {
   }
 
   @Test
-  fun `postMessage passes the message to the poster unchanged`() = runTest(testDispatcher) {
-    val fakeJournalPoster = FakeJournalPoster { true }
-    val viewModel = MainViewModel(fakeJournalPoster)
-    assertNull(fakeJournalPoster.lastMessage)
+  fun `record passes note, mood and source to the recorder unchanged`() = runTest(testDispatcher) {
+    val fakeJournalRecorder = FakeJournalRecorder()
+    val viewModel = MainViewModel(fakeJournalRecorder)
+    assertNull(fakeJournalRecorder.lastNote)
+    val mood = MoodSnapshot(id = "HAPPY", emoji = "🙂", label = "嬉しい")
 
-    viewModel.postMessage("today was good")
+    viewModel.record("today was good", mood = mood, source = JournalSource.WIDGET)
     testDispatcher.scheduler.advanceUntilIdle()
 
-    assertEquals("today was good", fakeJournalPoster.lastMessage)
+    assertEquals("today was good", fakeJournalRecorder.lastNote)
+    assertEquals(mood, fakeJournalRecorder.lastMood)
+    assertEquals(JournalSource.WIDGET, fakeJournalRecorder.lastSource)
   }
 
-  private class FakeJournalPoster(
-    private val behavior: suspend (String) -> Boolean,
-  ) : JournalPoster {
-    var lastMessage: String? = null
+  @Test
+  fun `record reaches SUCCESS end-to-end when local save succeeds but webhook delivery fails`() =
+    runTest(testDispatcher) {
+      val repository = InMemoryJournalEntryRepository()
+      val recorder = LocalWebhookJournalRecorder(repository, JournalPoster { false })
+      val viewModel = MainViewModel(recorder)
+
+      viewModel.record("today was good", source = JournalSource.APP)
+      testDispatcher.scheduler.advanceUntilIdle()
+
+      // ローカル保存済みのため記録自体は成功扱いとなり、UIは再登録を促すFAILUREにはならない。
+      assertEquals(MainViewModel.UiState.SUCCESS, viewModel.uiState.value)
+      assertEquals(DeliveryStatus.FAILED, repository.entries.values.single().deliveryStatus)
+    }
+
+  @Test
+  fun `record ignores a call while a previous record is still in-flight`() = runTest(testDispatcher) {
+    val fakeJournalRecorder = FakeJournalRecorder()
+    val viewModel = MainViewModel(fakeJournalRecorder)
+
+    viewModel.record("first", source = JournalSource.APP)
+    viewModel.record("second", source = JournalSource.APP)
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(1, fakeJournalRecorder.callCount)
+    assertEquals("first", fakeJournalRecorder.lastNote)
+  }
+
+  @Test
+  fun `record accepts a new call once the previous one has completed`() = runTest(testDispatcher) {
+    val fakeJournalRecorder = FakeJournalRecorder()
+    val viewModel = MainViewModel(fakeJournalRecorder)
+
+    viewModel.record("first", source = JournalSource.APP)
+    testDispatcher.scheduler.advanceUntilIdle()
+    viewModel.record("second", source = JournalSource.APP)
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(2, fakeJournalRecorder.callCount)
+    assertEquals("second", fakeJournalRecorder.lastNote)
+  }
+
+  private class FakeJournalRecorder(
+    private val behavior: suspend (String) -> Unit = {},
+  ) : JournalRecorder {
+    var callCount = 0
+      private set
+    var lastNote: String? = null
+      private set
+    var lastMood: MoodSnapshot? = null
+      private set
+    var lastSource: JournalSource? = null
       private set
 
-    override suspend fun post(message: String): Boolean {
-      lastMessage = message
-      return behavior(message)
+    override suspend fun record(note: String, mood: MoodSnapshot?, source: JournalSource) {
+      callCount++
+      lastNote = note
+      lastMood = mood
+      lastSource = source
+      behavior(note)
+    }
+  }
+
+  private class InMemoryJournalEntryRepository : JournalEntryRepository {
+    val entries = mutableMapOf<Long, JournalEntry>()
+    private var nextId = 1L
+
+    override suspend fun insert(entry: JournalEntry): Long {
+      val id = nextId++
+      entries[id] = entry.copy(id = id)
+      return id
+    }
+
+    override suspend fun updateDeliveryStatus(id: Long, status: DeliveryStatus) {
+      entries[id] = requireNotNull(entries[id]).copy(deliveryStatus = status)
     }
   }
 }
