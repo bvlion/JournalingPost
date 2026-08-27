@@ -65,8 +65,7 @@ class MainActivity : ComponentActivity() {
         val uiState by viewModel.uiState.collectAsState()
         var screen by rememberSaveable { mutableStateOf(Screen.INPUT) }
 
-        // HISTORY表示中のみシステムBack/Backジェスチャーを捕捉してINPUTへ戻す。
-        // INPUT表示中は無効化し、Activityの標準Back動作(終了)をそのまま使う。
+        // INPUT表示中はActivityの標準Back動作(終了)を保つため、HISTORY表示中のみ有効化する。
         BackHandler(enabled = screen == Screen.HISTORY) {
           screen = Screen.INPUT
         }

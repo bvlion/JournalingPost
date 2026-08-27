@@ -37,7 +37,7 @@ class JournalHistoryViewModelTest {
   }
 
   @Test
-  fun `historyGroups starts empty before the reader emits`() = runTest(testDispatcher) {
+  fun `historyGroupsはreaderが発行するまで空のまま`() = runTest(testDispatcher) {
     val reader = FakeJournalEntryReader()
 
     val viewModel = JournalHistoryViewModel(reader, ZoneOffset.UTC)
@@ -46,7 +46,7 @@ class JournalHistoryViewModelTest {
   }
 
   @Test
-  fun `historyGroups reflects entries grouped by date once the reader emits`() = runTest(testDispatcher) {
+  fun `historyGroupsはreaderの発行後に日付ごとのグループを反映する`() = runTest(testDispatcher) {
     val reader = FakeJournalEntryReader()
     val viewModel = JournalHistoryViewModel(reader, ZoneOffset.UTC)
     val collectJob = launchCollection(viewModel)
@@ -67,7 +67,7 @@ class JournalHistoryViewModelTest {
   }
 
   @Test
-  fun `historyGroups updates reactively when a new entry is recorded`() = runTest(testDispatcher) {
+  fun `historyGroupsは新しい記録が追加されると反応して更新される`() = runTest(testDispatcher) {
     val reader = FakeJournalEntryReader()
     val viewModel = JournalHistoryViewModel(reader, ZoneOffset.UTC)
     val collectJob = launchCollection(viewModel)

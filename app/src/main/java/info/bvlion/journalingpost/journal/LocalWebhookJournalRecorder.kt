@@ -7,8 +7,6 @@ import java.time.Instant
 import kotlinx.coroutines.CancellationException
 
 /**
- * まずJournalEntryをローカル保存し(local)、その後既存Webhookへ送信する(webhook)。
- *
  * ローカル保存(insert)が成功した時点で記録は成功として扱う。Webhookが失敗・例外を
  * 投げても、あるいはinsert後のdeliveryStatus更新自体が失敗しても、JournalEntryは
  * 既に保存済みのためこの関数は例外を投げずに正常終了する(status更新に失敗した場合、

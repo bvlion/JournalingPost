@@ -26,7 +26,6 @@ import java.util.Locale
 private val historyDateFormatter = DateTimeFormatter.ofPattern("M/d", Locale.JAPAN)
 private val historyTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.JAPAN)
 
-/** 保存済みJournalEntryを日付単位でグループ化して表示する履歴画面。 */
 @Composable
 fun JournalHistoryScreen(
   groups: List<JournalHistoryGroup>,

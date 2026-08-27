@@ -4,10 +4,9 @@ import info.bvlion.journalingpost.journal.JournalEntry
 import java.time.ZoneId
 
 /**
- * JournalEntryの一覧を、[zoneId]における日付・時刻順(新しい順)の表示用グループへ変換する。
- *
- * timestampが同一のentryが複数あっても、idの降順で二次的に順序を確定させるため、
- * 変換結果の並び順が呼び出しごとに揺れることはない。
+ * [zoneId]における日付ごとに新しい順でグループ化する。timestampが同一のentryが複数
+ * あっても、idの降順で二次的に順序を確定させるため、変換結果の並び順は呼び出しごとに
+ * 揺れない。
  */
 fun List<JournalEntry>.toHistoryGroups(zoneId: ZoneId): List<JournalHistoryGroup> =
   sortedWith(compareByDescending<JournalEntry> { it.timestamp }.thenByDescending { it.id })

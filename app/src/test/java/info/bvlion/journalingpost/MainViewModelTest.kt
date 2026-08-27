@@ -36,14 +36,14 @@ class MainViewModelTest {
   }
 
   @Test
-  fun `initial state is INIT`() {
+  fun `初期状態はINITになる`() {
     val viewModel = MainViewModel(FakeJournalRecorder())
 
     assertEquals(MainViewModel.UiState.INIT, viewModel.uiState.value)
   }
 
   @Test
-  fun `record sets state to LOADING before the recorder completes`() = runTest(testDispatcher) {
+  fun `recordはrecorder完了前にLOADINGへ遷移する`() = runTest(testDispatcher) {
     val viewModel = MainViewModel(FakeJournalRecorder())
 
     viewModel.record("today was good", source = JournalSource.APP)
@@ -52,7 +52,7 @@ class MainViewModelTest {
   }
 
   @Test
-  fun `record sets state to SUCCESS when the recorder completes normally`() = runTest(testDispatcher) {
+  fun `recorderが正常終了するとSUCCESSへ遷移する`() = runTest(testDispatcher) {
     val viewModel = MainViewModel(FakeJournalRecorder())
 
     viewModel.record("today was good", source = JournalSource.APP)
@@ -62,7 +62,7 @@ class MainViewModelTest {
   }
 
   @Test
-  fun `record sets state to FAILURE when the local save fails`() = runTest(testDispatcher) {
+  fun `ローカル保存が失敗するとFAILUREへ遷移する`() = runTest(testDispatcher) {
     val viewModel = MainViewModel(FakeJournalRecorder { throw RuntimeException("boom") })
 
     viewModel.record("today was good", source = JournalSource.APP)
@@ -72,7 +72,7 @@ class MainViewModelTest {
   }
 
   @Test
-  fun `record does not treat CancellationException as FAILURE`() = runTest(testDispatcher) {
+  fun `CancellationExceptionはFAILURE扱いにしない`() = runTest(testDispatcher) {
     val viewModel = MainViewModel(FakeJournalRecorder { throw CancellationException("cancelled") })
 
     viewModel.record("today was good", source = JournalSource.APP)
@@ -82,7 +82,7 @@ class MainViewModelTest {
   }
 
   @Test
-  fun `resetState returns state to INIT`() = runTest(testDispatcher) {
+  fun `resetStateで状態がINITに戻る`() = runTest(testDispatcher) {
     val viewModel = MainViewModel(FakeJournalRecorder())
     viewModel.record("today was good", source = JournalSource.APP)
     testDispatcher.scheduler.advanceUntilIdle()
@@ -93,7 +93,7 @@ class MainViewModelTest {
   }
 
   @Test
-  fun `record passes note, mood and source to the recorder unchanged`() = runTest(testDispatcher) {
+  fun `recordはnote・mood・sourceをそのままrecorderへ渡す`() = runTest(testDispatcher) {
     val fakeJournalRecorder = FakeJournalRecorder()
     val viewModel = MainViewModel(fakeJournalRecorder)
     assertNull(fakeJournalRecorder.lastNote)
@@ -108,7 +108,7 @@ class MainViewModelTest {
   }
 
   @Test
-  fun `record reaches SUCCESS end-to-end when local save succeeds but webhook delivery fails`() =
+  fun `ローカル保存成功後にWebhook送信が失敗してもSUCCESSになる`() =
     runTest(testDispatcher) {
       val repository = InMemoryJournalEntryRepository()
       val recorder = LocalWebhookJournalRecorder(repository, JournalPoster { false })
@@ -117,13 +117,12 @@ class MainViewModelTest {
       viewModel.record("today was good", source = JournalSource.APP)
       testDispatcher.scheduler.advanceUntilIdle()
 
-      // ローカル保存済みのため記録自体は成功扱いとなり、UIは再登録を促すFAILUREにはならない。
       assertEquals(MainViewModel.UiState.SUCCESS, viewModel.uiState.value)
       assertEquals(DeliveryStatus.FAILED, repository.entries.values.single().deliveryStatus)
     }
 
   @Test
-  fun `record ignores a call while a previous record is still in-flight`() = runTest(testDispatcher) {
+  fun `直前のrecordが処理中の呼び出しは無視される`() = runTest(testDispatcher) {
     val fakeJournalRecorder = FakeJournalRecorder()
     val viewModel = MainViewModel(fakeJournalRecorder)
 
@@ -136,7 +135,7 @@ class MainViewModelTest {
   }
 
   @Test
-  fun `record accepts a new call once the previous one has completed`() = runTest(testDispatcher) {
+  fun `直前のrecordが完了していれば新しい呼び出しを受け付ける`() = runTest(testDispatcher) {
     val fakeJournalRecorder = FakeJournalRecorder()
     val viewModel = MainViewModel(fakeJournalRecorder)
 

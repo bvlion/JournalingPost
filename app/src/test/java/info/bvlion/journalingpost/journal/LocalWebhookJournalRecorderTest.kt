@@ -18,7 +18,7 @@ class LocalWebhookJournalRecorderTest {
   ) = LocalWebhookJournalRecorder(repository, JournalPoster { poster(it) }, now = { fixedNow })
 
   @Test
-  fun `record saves the entry locally before updating delivery status`() = runTest {
+  fun `recordはdeliveryStatus更新より先にローカル保存する`() = runTest {
     val repository = FakeJournalEntryRepository()
     val recorder = createRecorder(repository)
 
@@ -28,7 +28,7 @@ class LocalWebhookJournalRecorderTest {
   }
 
   @Test
-  fun `record completes normally and marks delivery SENT when the webhook succeeds`() = runTest {
+  fun `Webhook送信成功時はSENTになり正常終了する`() = runTest {
     val repository = FakeJournalEntryRepository()
     val recorder = createRecorder(repository, poster = { true })
 
@@ -39,12 +39,11 @@ class LocalWebhookJournalRecorderTest {
   }
 
   @Test
-  fun `record completes normally, keeps the JournalEntry and marks FAILED when the webhook returns false`() =
+  fun `Webhookがfalseを返してもJournalEntryは保持されFAILEDになり正常終了する`() =
     runTest {
       val repository = FakeJournalEntryRepository()
       val recorder = createRecorder(repository, poster = { false })
 
-      // ローカル保存は既に成功しているため、Webhook配送の失敗はここでは例外にならない。
       recorder.record("today was good", mood = null, source = JournalSource.APP)
 
       val entry = repository.entries.values.single()
@@ -53,7 +52,7 @@ class LocalWebhookJournalRecorderTest {
     }
 
   @Test
-  fun `record completes normally, keeps the JournalEntry and marks FAILED when the webhook throws`() = runTest {
+  fun `Webhookが例外を投げてもJournalEntryは保持されFAILEDになり正常終了する`() = runTest {
     val repository = FakeJournalEntryRepository()
     val recorder = LocalWebhookJournalRecorder(
       repository,
@@ -69,7 +68,7 @@ class LocalWebhookJournalRecorderTest {
   }
 
   @Test
-  fun `record propagates the exception when the local save itself fails`() = runTest {
+  fun `ローカル保存自体が失敗した場合は例外がそのまま伝播する`() = runTest {
     val repository = object : JournalEntryRepository {
       override suspend fun insert(entry: JournalEntry): Long = throw RuntimeException("db boom")
 
@@ -90,7 +89,7 @@ class LocalWebhookJournalRecorderTest {
   }
 
   @Test
-  fun `record completes normally and leaves deliveryStatus PENDING when the status update fails`() = runTest {
+  fun `deliveryStatus更新が失敗した場合はPENDINGのまま正常終了する`() = runTest {
     val entries = mutableMapOf<Long, JournalEntry>()
     val repository = object : JournalEntryRepository {
       override suspend fun insert(entry: JournalEntry): Long {
@@ -104,7 +103,6 @@ class LocalWebhookJournalRecorderTest {
     }
     val recorder = LocalWebhookJournalRecorder(repository, JournalPoster { true }, now = { fixedNow })
 
-    // insertは既に成功しておりJournalEntryは保存済みのため、status更新の失敗は記録全体の失敗にしない。
     recorder.record("today was good", mood = null, source = JournalSource.APP)
 
     val entry = entries.values.single()
@@ -113,7 +111,7 @@ class LocalWebhookJournalRecorderTest {
   }
 
   @Test
-  fun `record propagates CancellationException from the status update`() = runTest {
+  fun `deliveryStatus更新のCancellationExceptionはそのまま伝播する`() = runTest {
     val repository = object : JournalEntryRepository {
       override suspend fun insert(entry: JournalEntry): Long = 1L
 
@@ -134,7 +132,7 @@ class LocalWebhookJournalRecorderTest {
   }
 
   @Test
-  fun `record stores the note-only entry with null mood fields`() = runTest {
+  fun `noteのみの記録はmood関連フィールドが全てnullで保存される`() = runTest {
     val repository = FakeJournalEntryRepository()
     val recorder = createRecorder(repository)
 
@@ -150,7 +148,7 @@ class LocalWebhookJournalRecorderTest {
   }
 
   @Test
-  fun `record stores the mood snapshot fields and blank note as null`() = runTest {
+  fun `moodスナップショットが保存され空文字のnoteはnullになる`() = runTest {
     val repository = FakeJournalEntryRepository()
     val recorder = createRecorder(repository)
     val mood = MoodSnapshot(id = "HAPPY", emoji = "🙂", label = "嬉しい")
@@ -166,7 +164,7 @@ class LocalWebhookJournalRecorderTest {
   }
 
   @Test
-  fun `record formats the webhook message from the mood snapshot and note`() = runTest {
+  fun `Webhookメッセージはmoodスナップショットとnoteから整形される`() = runTest {
     var sentMessage: String? = null
     val recorder = createRecorder(poster = { message -> sentMessage = message; true })
     val mood = MoodSnapshot(id = "HAPPY", emoji = "🙂", label = "嬉しい")
@@ -177,7 +175,7 @@ class LocalWebhookJournalRecorderTest {
   }
 
   @Test
-  fun `record sends the raw note as the webhook message when there is no mood`() = runTest {
+  fun `moodがない場合はnoteがそのままWebhookメッセージになる`() = runTest {
     var sentMessage: String? = null
     val recorder = createRecorder(poster = { message -> sentMessage = message; true })
 

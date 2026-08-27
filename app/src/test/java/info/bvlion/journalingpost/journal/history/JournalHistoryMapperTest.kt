@@ -32,12 +32,12 @@ class JournalHistoryMapperTest {
   )
 
   @Test
-  fun `empty list produces no groups`() {
+  fun `空リストの場合は空のグループになる`() {
     assertTrue(emptyList<JournalEntry>().toHistoryGroups(utc).isEmpty())
   }
 
   @Test
-  fun `entries are grouped by local date with the newest date first`() {
+  fun `日付ごとにグループ化され新しい日付が先頭になる`() {
     val entries = listOf(
       entry(id = 1, timestamp = Instant.parse("2026-08-25T10:00:00Z"), note = "old day"),
       entry(id = 2, timestamp = Instant.parse("2026-08-26T10:00:00Z"), note = "new day"),
@@ -49,7 +49,7 @@ class JournalHistoryMapperTest {
   }
 
   @Test
-  fun `entries within the same date are ordered newest time first`() {
+  fun `同じ日付内では新しい時刻順に並ぶ`() {
     val entries = listOf(
       entry(id = 1, timestamp = Instant.parse("2026-08-26T09:00:00Z"), note = "morning"),
       entry(id = 2, timestamp = Instant.parse("2026-08-26T21:00:00Z"), note = "night"),
@@ -63,7 +63,7 @@ class JournalHistoryMapperTest {
   }
 
   @Test
-  fun `entries with an identical timestamp are ordered by id descending regardless of input order`() {
+  fun `timestampが同一の場合は入力順によらずid降順で並ぶ`() {
     val tied = Instant.parse("2026-08-26T10:00:00Z")
     val entries = listOf(
       entry(id = 5, timestamp = tied, note = "fifth"),
@@ -77,7 +77,7 @@ class JournalHistoryMapperTest {
   }
 
   @Test
-  fun `grouping uses the given device time zone rather than UTC`() {
+  fun `グループ化はUTCではなく指定したタイムゾーンを使う`() {
     // UTCでは8/26 23:30だが、+09:00では8/27 08:30になり、日付境界を跨ぐ。
     val instant = Instant.parse("2026-08-26T23:30:00Z")
     val entries = listOf(entry(id = 1, timestamp = instant, note = "late"))
@@ -91,7 +91,7 @@ class JournalHistoryMapperTest {
   }
 
   @Test
-  fun `a mood-only entry keeps the mood snapshot and a null note`() {
+  fun `Moodのみの記録はmoodスナップショットを保持しnoteはnullになる`() {
     val entries = listOf(
       entry(id = 1, timestamp = Instant.parse("2026-08-26T10:00:00Z"), moodEmoji = "🙂", moodLabel = "嬉しい"),
     )
@@ -104,7 +104,7 @@ class JournalHistoryMapperTest {
   }
 
   @Test
-  fun `a note-only manual entry keeps the note and null mood fields`() {
+  fun `手入力のみの記録はnoteを保持しmoodは全てnullになる`() {
     val entries = listOf(
       entry(id = 1, timestamp = Instant.parse("2026-08-26T10:00:00Z"), note = "手入力メモ"),
     )
@@ -117,7 +117,7 @@ class JournalHistoryMapperTest {
   }
 
   @Test
-  fun `mood and note are both preserved as the stored snapshot, not re-derived`() {
+  fun `moodとnoteは保存済みのスナップショットのまま保持され再計算されない`() {
     val entries = listOf(
       entry(
         id = 1,
