@@ -1,50 +1,18 @@
 package info.bvlion.journalingpost.widget
 
-import android.app.PendingIntent
-import android.appwidget.AppWidgetManager
-import android.appwidget.AppWidgetProvider
-import android.content.Context
-import android.content.Intent
-import android.widget.RemoteViews
-import info.bvlion.journalingpost.R
-import info.bvlion.journalingpost.mood.Mood
+import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetReceiver
 
-/** ホーム画面Widget。固定5種の気分ボタンを表示し、タップでMoodEntryActivityを開くだけの薄いreceiver。 */
-class MoodWidgetProvider : AppWidgetProvider() {
-  override fun onUpdate(
-    context: Context,
-    appWidgetManager: AppWidgetManager,
-    appWidgetIds: IntArray,
-  ) {
-    appWidgetIds.forEach { appWidgetId ->
-      val remoteViews = RemoteViews(context.packageName, R.layout.widget_mood)
-      MOOD_BUTTON_IDS.forEach { (mood, viewId) ->
-        remoteViews.setOnClickPendingIntent(viewId, moodPendingIntent(context, mood))
-      }
-      appWidgetManager.updateAppWidget(appWidgetId, remoteViews)
-    }
-  }
-
-  private companion object {
-    val MOOD_BUTTON_IDS = listOf(
-      Mood.VERY_SAD to R.id.mood_button_very_sad,
-      Mood.SAD to R.id.mood_button_sad,
-      Mood.NEUTRAL to R.id.mood_button_neutral,
-      Mood.HAPPY to R.id.mood_button_happy,
-      Mood.VERY_HAPPY to R.id.mood_button_very_happy,
-    )
-
-    fun moodPendingIntent(context: Context, mood: Mood): PendingIntent {
-      val intent = Intent(context, MoodEntryActivity::class.java)
-        .putExtra(MoodEntryActivity.EXTRA_MOOD, mood.name)
-      // requestCodeをmood毎に変えないと、Intentのextra以外(action/data/component)が同一のため
-      // 5つのPendingIntentが同一視され、直前にタップした気分のextraで上書きされてしまう。
-      return PendingIntent.getActivity(
-        context,
-        mood.ordinal,
-        intent,
-        PendingIntent.FLAG_IMMUTABLE,
-      )
-    }
-  }
+/**
+ * マニフェストに登録するreceiver。実際のUIロジックはMoodWidgetへ委譲する。
+ *
+ * クラス名・ComponentNameは、Glance移行前(AppWidgetProvider + RemoteViews時代)から
+ * 変えずに`MoodWidgetProvider`のまま維持している。既にホーム画面へ配置済みのWidget
+ * instanceは`.widget.MoodWidgetProvider`というComponentNameに紐づいているため、
+ * ここをリネームするとアプリ更新後に既存Widgetが引き継がれなくなる(消える/更新
+ * されなくなる)おそれがある。実装だけをGlanceAppWidgetReceiverへ移行し、
+ * ComponentNameの互換性は維持する。
+ */
+class MoodWidgetProvider : GlanceAppWidgetReceiver() {
+  override val glanceAppWidget: GlanceAppWidget = MoodWidget()
 }
