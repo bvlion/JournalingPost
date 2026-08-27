@@ -26,6 +26,8 @@
         android:layout_weight="1"
         android:layout_marginStart="8dp"
         android:gravity="center_vertical"
-        android:textSize="13sp" />
+        android:textSize="13sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
 
 </LinearLayout>
