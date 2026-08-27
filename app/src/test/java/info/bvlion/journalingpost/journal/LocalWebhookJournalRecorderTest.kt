@@ -3,6 +3,7 @@ package info.bvlion.journalingpost.journal
 import info.bvlion.journalingpost.mood.MoodSnapshot
 import info.bvlion.journalingpost.poster.JournalPoster
 import java.time.Instant
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -86,6 +87,50 @@ class LocalWebhookJournalRecorderTest {
     }
 
     assertEquals("db boom", thrown?.message)
+  }
+
+  @Test
+  fun `record completes normally and leaves deliveryStatus PENDING when the status update fails`() = runTest {
+    val entries = mutableMapOf<Long, JournalEntry>()
+    val repository = object : JournalEntryRepository {
+      override suspend fun insert(entry: JournalEntry): Long {
+        entries[1L] = entry.copy(id = 1L)
+        return 1L
+      }
+
+      override suspend fun updateDeliveryStatus(id: Long, status: DeliveryStatus) {
+        throw RuntimeException("db boom")
+      }
+    }
+    val recorder = LocalWebhookJournalRecorder(repository, JournalPoster { true }, now = { fixedNow })
+
+    // insertは既に成功しておりJournalEntryは保存済みのため、status更新の失敗は記録全体の失敗にしない。
+    recorder.record("today was good", mood = null, source = JournalSource.APP)
+
+    val entry = entries.values.single()
+    assertEquals("today was good", entry.note)
+    assertEquals(DeliveryStatus.PENDING, entry.deliveryStatus)
+  }
+
+  @Test
+  fun `record propagates CancellationException from the status update`() = runTest {
+    val repository = object : JournalEntryRepository {
+      override suspend fun insert(entry: JournalEntry): Long = 1L
+
+      override suspend fun updateDeliveryStatus(id: Long, status: DeliveryStatus) {
+        throw CancellationException("cancelled")
+      }
+    }
+    val recorder = LocalWebhookJournalRecorder(repository, JournalPoster { true }, now = { fixedNow })
+
+    var thrown: Throwable? = null
+    try {
+      recorder.record("today was good", mood = null, source = JournalSource.APP)
+    } catch (e: CancellationException) {
+      thrown = e
+    }
+
+    assertEquals("cancelled", thrown?.message)
   }
 
   @Test
