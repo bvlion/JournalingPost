@@ -1,61 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  compactレイアウトの外枠のみ。中身のMood毎のセルはMoodWidgetProviderが
+  widget_mood_item.xmlをaddViewで動的に追加する(Mood数を増減しても
+  このファイルを編集しなくて済むようにするため)。
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/mood_row"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="horizontal"
     android:background="@drawable/bg_widget_mood"
     android:padding="2dp"
-    tools:ignore="Overdraw">
-
-    <TextView
-        android:id="@+id/mood_target_very_sad"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:textSize="20sp"
-        android:text="@string/mood_emoji_very_sad"
-        android:contentDescription="@string/mood_description_very_sad" />
-
-    <TextView
-        android:id="@+id/mood_target_sad"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:textSize="20sp"
-        android:text="@string/mood_emoji_sad"
-        android:contentDescription="@string/mood_description_sad" />
-
-    <TextView
-        android:id="@+id/mood_target_neutral"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:textSize="20sp"
-        android:text="@string/mood_emoji_neutral"
-        android:contentDescription="@string/mood_description_neutral" />
-
-    <TextView
-        android:id="@+id/mood_target_happy"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:textSize="20sp"
-        android:text="@string/mood_emoji_happy"
-        android:contentDescription="@string/mood_description_happy" />
-
-    <TextView
-        android:id="@+id/mood_target_very_happy"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:textSize="20sp"
-        android:text="@string/mood_emoji_very_happy"
-        android:contentDescription="@string/mood_description_very_happy" />
-
-</LinearLayout>
+    tools:ignore="Overdraw" />

@@ -18,4 +18,28 @@
   <string name="mood_label_neutral">普通</string>
   <string name="mood_label_happy">嬉しい</string>
   <string name="mood_label_very_happy">とても嬉しい</string>
+
+  <!--
+    ここから下はIssue #21のWidgetレイアウト評価用の仮文字列。
+    「気分は10種類」という仕様ではなく、Mood数が増えた場合のcompact/横方向resize/
+    縦方向expandedの振る舞いを実機確認するための一時データ。文言・絵文字ともに
+    評価用であり、プロダクト仕様として詰めたものではない。
+  -->
+  <string name="mood_emoji_angry">😡</string>
+  <string name="mood_emoji_anxious">😰</string>
+  <string name="mood_emoji_tearful">😢</string>
+  <string name="mood_emoji_calm">😌</string>
+  <string name="mood_emoji_elated">🤩</string>
+
+  <string name="mood_description_angry">気分:怒り</string>
+  <string name="mood_description_anxious">気分:不安</string>
+  <string name="mood_description_tearful">気分:泣きたい</string>
+  <string name="mood_description_calm">気分:穏やか</string>
+  <string name="mood_description_elated">気分:高揚</string>
+
+  <string name="mood_label_angry">怒り</string>
+  <string name="mood_label_anxious">不安</string>
+  <string name="mood_label_tearful">泣きたい</string>
+  <string name="mood_label_calm">穏やか</string>
+  <string name="mood_label_elated">高揚</string>
 </resources>
