@@ -62,6 +62,21 @@ class MoodWidget : GlanceAppWidget() {
       }
     }
   }
+
+  /**
+   * Widget picker用のgenerated preview(Android 15+)。previewSizeModeは既定の
+   * SizeMode.Singleのままにしている。widget_mood_info.xmlのminWidth/minHeight
+   * (110dp x 40dp)はLABELED_MIN_HEIGHT_DP(180dp)未満なので、この既定値のまま
+   * MoodWidgetContent()を呼ぶだけでcompact表示がpreviewとして描画される。
+   * preview専用のUIは持たず、実Widgetと同じcomposableをそのまま再利用する。
+   */
+  override suspend fun providePreview(context: Context, widgetCategory: Int) {
+    provideContent {
+      GlanceTheme {
+        MoodWidgetContent()
+      }
+    }
+  }
 }
 
 @Composable

@@ -36,7 +36,10 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.lifecycleScope
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
+import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
   private val viewModel: MainViewModel by viewModels { MainViewModelFactory }
@@ -44,6 +47,9 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
+
+    // Widget pickerのgenerated preview(Android 15+)登録。通常UI/入力フローには影響しない。
+    lifecycleScope.launch { registerMoodWidgetPreviewOnce(applicationContext) }
 
     setContent {
       JournalingPostTheme {

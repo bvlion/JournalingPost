@@ -8,10 +8,13 @@ enum class Mood(val emoji: String) {
   HAPPY("🙂"),
   VERY_HAPPY("😆"),
 
-  // ここから下はIssue #21のWidgetレイアウト評価用に一時追加した仮Mood。
-  // 「気分は10種類」という仕様ではなく、Mood数が増えた場合にcompact/横方向resize/
-  // 縦方向expandedがそれぞれどう振る舞うかを実機確認するための一時データ。
-  // 評価が終わり次第、削除または本来の仕様に置き換える想定。
+  // ここから下はWidgetレイアウトの継続的なストレステスト用に追加した仮Mood。
+  // 「気分は10種類」という最終仕様ではなく、compactの高密度表示・横方向resize・
+  // 縦方向expanded・長いMood名称、および将来Mood数をユーザーが増減できるように
+  // なった場合の挙動を確認し続けるためのデータとして、評価後も残す方針。
+  // Mood/JournalEntryは近くRoom等へ永続化する予定で、この enum やstring resource
+  // 自体を最終的なMoodデータモデルとは考えていない。将来のユーザー定義Moodへ
+  // 移行するまでの暫定値。
   ANGRY("😡"),
   ANXIOUS("😰"),
   TEARFUL("😢"),
