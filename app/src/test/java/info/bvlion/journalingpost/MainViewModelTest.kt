@@ -122,9 +122,38 @@ class MainViewModelTest {
       assertEquals(DeliveryStatus.FAILED, repository.entries.values.single().deliveryStatus)
     }
 
+  @Test
+  fun `record ignores a call while a previous record is still in-flight`() = runTest(testDispatcher) {
+    val fakeJournalRecorder = FakeJournalRecorder()
+    val viewModel = MainViewModel(fakeJournalRecorder)
+
+    viewModel.record("first", source = JournalSource.APP)
+    viewModel.record("second", source = JournalSource.APP)
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(1, fakeJournalRecorder.callCount)
+    assertEquals("first", fakeJournalRecorder.lastNote)
+  }
+
+  @Test
+  fun `record accepts a new call once the previous one has completed`() = runTest(testDispatcher) {
+    val fakeJournalRecorder = FakeJournalRecorder()
+    val viewModel = MainViewModel(fakeJournalRecorder)
+
+    viewModel.record("first", source = JournalSource.APP)
+    testDispatcher.scheduler.advanceUntilIdle()
+    viewModel.record("second", source = JournalSource.APP)
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(2, fakeJournalRecorder.callCount)
+    assertEquals("second", fakeJournalRecorder.lastNote)
+  }
+
   private class FakeJournalRecorder(
     private val behavior: suspend (String) -> Unit = {},
   ) : JournalRecorder {
+    var callCount = 0
+      private set
     var lastNote: String? = null
       private set
     var lastMood: MoodSnapshot? = null
@@ -133,6 +162,7 @@ class MainViewModelTest {
       private set
 
     override suspend fun record(note: String, mood: MoodSnapshot?, source: JournalSource) {
+      callCount++
       lastNote = note
       lastMood = mood
       lastSource = source

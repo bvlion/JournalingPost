@@ -16,7 +16,9 @@ class MainViewModel(
   private val _uiState = MutableStateFlow(UiState.INIT)
   val uiState = _uiState.asStateFlow()
 
+  /** 記録処理中(LOADING)の呼び出しは無視する。二重タップ等でJournalEntryが重複保存されるのを防ぐ。 */
   fun record(note: String, mood: MoodSnapshot? = null, source: JournalSource) {
+    if (_uiState.value == UiState.LOADING) return
     _uiState.value = UiState.LOADING
     viewModelScope.launch {
       _uiState.value = try {
