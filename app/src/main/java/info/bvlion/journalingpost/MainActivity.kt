@@ -22,6 +22,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -38,16 +40,19 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import info.bvlion.journalingpost.journal.JournalSource
+import info.bvlion.journalingpost.journal.history.JournalHistoryScreen
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
   private val viewModel: MainViewModel by viewModels { MainViewModelFactory }
+  private val historyViewModel: JournalHistoryViewModel by viewModels { JournalHistoryViewModelFactory }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     MainViewModelFactory.initialize(applicationContext)
+    JournalHistoryViewModelFactory.initialize(applicationContext)
     enableEdgeToEdge()
 
     // Widget pickerのgenerated preview(Android 15+)登録。通常UI/入力フローには影響しない。
@@ -57,18 +62,39 @@ class MainActivity : ComponentActivity() {
       JournalingPostTheme {
         val snackbarHostState = remember { SnackbarHostState() }
         val uiState by viewModel.uiState.collectAsState()
+        var screen by rememberSaveable { mutableStateOf(Screen.INPUT) }
 
         Scaffold(
           modifier = Modifier.fillMaxSize().imePadding(),
           snackbarHost = { SnackbarHost(snackbarHostState) },
         ) { innerPadding ->
           Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-            Column(
-              modifier = Modifier.fillMaxSize(),
-              verticalArrangement = Arrangement.Bottom,
-            ) {
-              InputView(uiState) {
-                viewModel.record(note = it, source = JournalSource.APP)
+            when (screen) {
+              Screen.INPUT -> Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                  modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                  horizontalArrangement = Arrangement.End,
+                ) {
+                  TextButton(onClick = { screen = Screen.HISTORY }) {
+                    Text("履歴を見る")
+                  }
+                }
+                Column(
+                  modifier = Modifier.weight(1f).fillMaxWidth(),
+                  verticalArrangement = Arrangement.Bottom,
+                ) {
+                  InputView(uiState) {
+                    viewModel.record(note = it, source = JournalSource.APP)
+                  }
+                }
+              }
+
+              Screen.HISTORY -> {
+                val historyGroups by historyViewModel.historyGroups.collectAsState()
+                JournalHistoryScreen(
+                  groups = historyGroups,
+                  onBack = { screen = Screen.INPUT },
+                )
               }
             }
 
@@ -102,6 +128,11 @@ class MainActivity : ComponentActivity() {
         }
       }
     }
+  }
+
+  private enum class Screen {
+    INPUT,
+    HISTORY,
   }
 }
 
