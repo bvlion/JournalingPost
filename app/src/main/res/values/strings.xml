@@ -12,4 +12,10 @@
   <string name="mood_description_neutral">気分:普通</string>
   <string name="mood_description_happy">気分:嬉しい</string>
   <string name="mood_description_very_happy">気分:とても嬉しい</string>
+
+  <string name="mood_label_very_sad">とても悲しい</string>
+  <string name="mood_label_sad">悲しい</string>
+  <string name="mood_label_neutral">普通</string>
+  <string name="mood_label_happy">嬉しい</string>
+  <string name="mood_label_very_happy">とても嬉しい</string>
 </resources>

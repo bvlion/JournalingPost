@@ -9,7 +9,7 @@
     tools:ignore="Overdraw">
 
     <TextView
-        android:id="@+id/mood_text_very_sad"
+        android:id="@+id/mood_target_very_sad"
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="1"
@@ -19,7 +19,7 @@
         android:contentDescription="@string/mood_description_very_sad" />
 
     <TextView
-        android:id="@+id/mood_text_sad"
+        android:id="@+id/mood_target_sad"
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="1"
@@ -29,7 +29,7 @@
         android:contentDescription="@string/mood_description_sad" />
 
     <TextView
-        android:id="@+id/mood_text_neutral"
+        android:id="@+id/mood_target_neutral"
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="1"
@@ -39,7 +39,7 @@
         android:contentDescription="@string/mood_description_neutral" />
 
     <TextView
-        android:id="@+id/mood_text_happy"
+        android:id="@+id/mood_target_happy"
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="1"
@@ -49,7 +49,7 @@
         android:contentDescription="@string/mood_description_happy" />
 
     <TextView
-        android:id="@+id/mood_text_very_happy"
+        android:id="@+id/mood_target_very_happy"
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="1"
