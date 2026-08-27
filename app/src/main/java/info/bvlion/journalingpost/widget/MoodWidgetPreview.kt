@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import info.bvlion.journalingpost.BuildConfig
+import kotlinx.coroutines.CancellationException
 
 private const val PREFS_NAME = "mood_widget_preview"
 private const val KEY_PREVIEW_REGISTERED_VERSION = "registered_version_code"
@@ -31,6 +32,10 @@ private const val NO_VERSION_REGISTERED = -1
  * [GlanceAppWidgetManager.setWidgetPreviews]自体はAndroid 15未満では内部で
  * no-opになる(ライブラリ側で保証)が、lintのNewApiチェックはそれを認識しないため、
  * ここでも明示的にAPIレベルを確認してから呼び出す。
+ *
+ * [GlanceAppWidgetManager.setWidgetPreviews]が例外を投げた場合も、preview登録の
+ * 失敗がアプリ起動へ波及しないようcatchする。この場合もversionCodeは保存せず、
+ * 次回起動時に同じversionCodeのまま再試行される。
  */
 suspend fun registerMoodWidgetPreviewOnce(context: Context) {
   if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) return
@@ -39,7 +44,13 @@ suspend fun registerMoodWidgetPreviewOnce(context: Context) {
   val registeredVersion = prefs.getInt(KEY_PREVIEW_REGISTERED_VERSION, NO_VERSION_REGISTERED)
   if (registeredVersion == BuildConfig.VERSION_CODE) return
 
-  val result = GlanceAppWidgetManager(context).setWidgetPreviews(MoodWidgetProvider::class)
+  val result = try {
+    GlanceAppWidgetManager(context).setWidgetPreviews(MoodWidgetProvider::class)
+  } catch (e: CancellationException) {
+    throw e
+  } catch (e: Exception) {
+    return
+  }
   if (result == GlanceAppWidgetManager.SET_WIDGET_PREVIEWS_RESULT_SUCCESS) {
     prefs.edit().putInt(KEY_PREVIEW_REGISTERED_VERSION, BuildConfig.VERSION_CODE).apply()
   }
