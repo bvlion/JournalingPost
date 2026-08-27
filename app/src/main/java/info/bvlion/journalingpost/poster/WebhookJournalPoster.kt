@@ -11,7 +11,7 @@ import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.util.Locale
 
-/** Webhook経由でJSONを送信するproduction実装。HTTP status < 400を成功として扱う。 */
+/** HTTP status < 400を成功として扱う。 */
 class WebhookJournalPoster(
   private val httpClient: HttpClient,
   private val now: () -> Instant = Instant::now,

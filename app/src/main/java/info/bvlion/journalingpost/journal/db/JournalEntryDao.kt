@@ -15,7 +15,7 @@ internal interface JournalEntryDao {
   @Query("UPDATE journal_entries SET deliveryStatus = :status WHERE id = :id")
   suspend fun updateDeliveryStatus(id: Long, status: DeliveryStatus)
 
-  /** timestamp降順、同一timestampはid降順で並べ、常に新しい記録から安定した順で返す。 */
+  /** 同一timestampのentryがあり得るため、idを二次キーにして順序を安定させる。 */
   @Query("SELECT * FROM journal_entries ORDER BY timestamp DESC, id DESC")
   fun observeAll(): Flow<List<JournalEntry>>
 }

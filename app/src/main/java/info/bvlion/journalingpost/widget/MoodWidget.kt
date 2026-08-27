@@ -40,9 +40,6 @@ import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.mood.Mood
 
 /**
- * ホーム画面Widget本体。MOOD_ITEMSに並べたMoodを直接タップできる状態で表示し、
- * タップでMoodEntryActivityを開くだけの薄いGlanceAppWidget。
- *
  * SizeMode.Exact + LocalSize.currentで実際のWidgetサイズを取得し、縦方向に
  * 十分な高さがあるときだけ絵文字+ラベルのexpanded表示へ切り替える。それ以外
  * (compact)では絵文字のみを横一列に表示する。横方向へ広げた場合は、compact/

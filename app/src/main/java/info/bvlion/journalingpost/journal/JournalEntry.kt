@@ -5,8 +5,6 @@ import androidx.room.PrimaryKey
 import java.time.Instant
 
 /**
- * 端末内に永続化する1件の記録。
- *
  * Mood付き記録では、moodIdに加えて記録時点のmoodEmoji/moodLabelをsnapshotとして
  * 保存する。将来Mood定義(名称・絵文字・個数等)が変更・削除されても、保存済みの
  * moodEmoji/moodLabelはそのまま残るため、過去の記録の表示内容は変わらない。

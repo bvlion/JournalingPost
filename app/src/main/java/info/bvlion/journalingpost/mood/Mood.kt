@@ -25,7 +25,6 @@ enum class Mood(val emoji: String, val labelRes: Int) {
   ;
 
   companion object {
-    /** Intent extra等、外部から渡された文字列をMoodへ変換する。不正な値はnullを返す。 */
     fun fromExtraValue(value: String?): Mood? = entries.firstOrNull { it.name == value }
   }
 }

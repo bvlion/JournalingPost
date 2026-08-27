@@ -5,12 +5,12 @@ import org.junit.Test
 
 class MoodMessageTest {
   @Test
-  fun `mood only without note`() {
+  fun `noteなしはmoodのみのメッセージになる`() {
     assertEquals("気分は🙂とのこと", formatMoodMessage("🙂", ""))
   }
 
   @Test
-  fun `mood with note`() {
+  fun `noteありはmoodとnoteを含むメッセージになる`() {
     assertEquals(
       "気分は🙂とのこと。今日は仕事が進んだ",
       formatMoodMessage("🙂", "今日は仕事が進んだ"),
@@ -18,12 +18,12 @@ class MoodMessageTest {
   }
 
   @Test
-  fun `blank note is treated as no note`() {
+  fun `空白のみのnoteはnoteなし扱いになる`() {
     assertEquals("気分は😭とのこと", formatMoodMessage("😭", "   "))
   }
 
   @Test
-  fun `note surrounding whitespace is trimmed`() {
+  fun `noteの前後の空白は除去される`() {
     assertEquals(
       "気分は😆とのこと。やったー",
       formatMoodMessage("😆", "  やったー  "),

@@ -13,7 +13,7 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 
-/** production依存の組み立てを行う。DI frameworkは導入せず、process内でHttpClient/JournalRecorderを1つだけ再利用する。 */
+/** DI frameworkは導入せず、process内でHttpClient/JournalRecorderを1つだけ再利用する。 */
 object MainViewModelFactory : ViewModelProvider.Factory {
   private val httpClient = HttpClient(CIO) {
     install(ContentNegotiation) {
@@ -23,7 +23,7 @@ object MainViewModelFactory : ViewModelProvider.Factory {
   private val journalPoster = WebhookJournalPoster(httpClient)
   private lateinit var journalRecorder: JournalRecorder
 
-  /** [Context]依存のRoom初期化を行う。各Activityのviewmodel取得より前に呼び出すこと。二重初期化は無視する。 */
+  /** 各Activityのviewmodel取得より前に呼び出すこと。 */
   fun initialize(context: Context) {
     if (::journalRecorder.isInitialized) return
     val database = JournalDatabase.getInstance(context)

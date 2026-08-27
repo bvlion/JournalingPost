@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
-/** ローカル保存済みのJournalEntry履歴を、日付単位でグループ化した表示用データとして公開する。 */
 class JournalHistoryViewModel(
   reader: JournalEntryReader,
   zoneId: ZoneId = ZoneId.systemDefault(),

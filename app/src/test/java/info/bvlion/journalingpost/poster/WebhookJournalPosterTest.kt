@@ -46,7 +46,7 @@ class WebhookJournalPosterTest {
   }
 
   @Test
-  fun `post sends a POST request to the configured URL with json content type`() = runTest {
+  fun `postは設定されたURLへjson content typeでPOSTリクエストを送る`() = runTest {
     var capturedRequest: HttpRequestData? = null
     val poster = createPoster(HttpStatusCode.OK) { capturedRequest = it }
 
@@ -61,7 +61,7 @@ class WebhookJournalPosterTest {
   }
 
   @Test
-  fun `post sends the expected payload fields`() = runTest {
+  fun `postは期待するpayloadフィールドを送信する`() = runTest {
     var capturedRequest: HttpRequestData? = null
     val poster = createPoster(HttpStatusCode.OK) { capturedRequest = it }
 
@@ -78,28 +78,28 @@ class WebhookJournalPosterTest {
   }
 
   @Test
-  fun `post returns true for a 2xx response`() = runTest {
+  fun `postは2xxレスポンスでtrueを返す`() = runTest {
     val poster = createPoster(HttpStatusCode.OK)
 
     assertTrue(poster.post("today was good"))
   }
 
   @Test
-  fun `post returns true for a 3xx response`() = runTest {
+  fun `postは3xxレスポンスでtrueを返す`() = runTest {
     val poster = createPoster(HttpStatusCode.Found)
 
     assertTrue(poster.post("today was good"))
   }
 
   @Test
-  fun `post returns false for a 4xx response`() = runTest {
+  fun `postは4xxレスポンスでfalseを返す`() = runTest {
     val poster = createPoster(HttpStatusCode.BadRequest)
 
     assertFalse(poster.post("today was good"))
   }
 
   @Test
-  fun `post returns false for a 5xx response`() = runTest {
+  fun `postは5xxレスポンスでfalseを返す`() = runTest {
     val poster = createPoster(HttpStatusCode.InternalServerError)
 
     assertFalse(poster.post("today was good"))

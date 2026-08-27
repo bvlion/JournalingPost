@@ -6,17 +6,17 @@ import org.junit.Test
 
 class MoodTest {
   @Test
-  fun `fromExtraValue resolves a known mood name`() {
+  fun `fromExtraValueは既知のmood名を解決する`() {
     assertEquals(Mood.HAPPY, Mood.fromExtraValue("HAPPY"))
   }
 
   @Test
-  fun `fromExtraValue returns null when extra is missing`() {
+  fun `fromExtraValueはextraがない場合nullを返す`() {
     assertNull(Mood.fromExtraValue(null))
   }
 
   @Test
-  fun `fromExtraValue returns null for an unexpected value`() {
+  fun `fromExtraValueは未知の値の場合nullを返す`() {
     assertNull(Mood.fromExtraValue("EXCITED"))
   }
 }

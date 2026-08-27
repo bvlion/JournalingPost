@@ -42,7 +42,7 @@ import info.bvlion.journalingpost.mood.Mood
 import info.bvlion.journalingpost.mood.MoodSnapshot
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 
-/** Widgetからの1タップに続く、気分＋任意メモの小さな入力画面。既存MainViewModel/JournalRecorderを再利用する。 */
+/** 既存MainViewModel/JournalRecorderを再利用する。 */
 class MoodEntryActivity : ComponentActivity() {
   private val viewModel: MainViewModel by viewModels { MainViewModelFactory }
 
