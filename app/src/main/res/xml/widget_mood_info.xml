@@ -7,5 +7,5 @@
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_mood"
     android:previewLayout="@layout/widget_mood"
-    android:resizeMode="horizontal"
+    android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen" />

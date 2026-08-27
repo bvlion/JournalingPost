@@ -5,8 +5,18 @@
     android:layout_height="match_parent"
     android:orientation="horizontal"
     android:background="@drawable/bg_widget_mood"
-    android:padding="4dp"
+    android:padding="2dp"
     tools:ignore="Overdraw">
+
+    <TextView
+        android:id="@+id/mood_text_very_sad"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:textSize="20sp"
+        android:text="@string/mood_emoji_very_sad"
+        android:contentDescription="@string/mood_description_very_sad" />
 
     <TextView
         android:id="@+id/mood_text_sad"
@@ -14,7 +24,7 @@
         android:layout_height="match_parent"
         android:layout_weight="1"
         android:gravity="center"
-        android:textSize="26sp"
+        android:textSize="20sp"
         android:text="@string/mood_emoji_sad"
         android:contentDescription="@string/mood_description_sad" />
 
@@ -24,7 +34,7 @@
         android:layout_height="match_parent"
         android:layout_weight="1"
         android:gravity="center"
-        android:textSize="26sp"
+        android:textSize="20sp"
         android:text="@string/mood_emoji_neutral"
         android:contentDescription="@string/mood_description_neutral" />
 
@@ -34,8 +44,18 @@
         android:layout_height="match_parent"
         android:layout_weight="1"
         android:gravity="center"
-        android:textSize="26sp"
+        android:textSize="20sp"
         android:text="@string/mood_emoji_happy"
         android:contentDescription="@string/mood_description_happy" />
+
+    <TextView
+        android:id="@+id/mood_text_very_happy"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:textSize="20sp"
+        android:text="@string/mood_emoji_very_happy"
+        android:contentDescription="@string/mood_description_very_happy" />
 
 </LinearLayout>
