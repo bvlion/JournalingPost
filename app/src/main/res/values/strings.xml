@@ -38,7 +38,9 @@
   <string name="mood_description_elated">気分:高揚</string>
 
   <string name="mood_label_angry">怒り</string>
-  <string name="mood_label_anxious">不安</string>
+  <!-- 意図的に長い日本語ラベル。expanded表示で長いMood名称を入れたときの折り返し/見切れ/
+       他行との重なりを実機確認するための一時的な評価用文言で、最終文言ではない。 -->
+  <string name="mood_label_anxious">気持ちが落ち着かなくて不安</string>
   <string name="mood_label_tearful">泣きたい</string>
   <string name="mood_label_calm">穏やか</string>
   <string name="mood_label_elated">高揚</string>
