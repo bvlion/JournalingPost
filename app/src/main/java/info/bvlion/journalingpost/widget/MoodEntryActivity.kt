@@ -37,22 +37,25 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.MainViewModel
 import info.bvlion.journalingpost.MainViewModelFactory
+import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.mood.Mood
-import info.bvlion.journalingpost.mood.formatMoodMessage
+import info.bvlion.journalingpost.mood.MoodSnapshot
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 
-/** Widgetからの1タップに続く、気分＋任意メモの小さな入力画面。既存MainViewModel/JournalPosterを再利用する。 */
+/** Widgetからの1タップに続く、気分＋任意メモの小さな入力画面。既存MainViewModel/JournalRecorderを再利用する。 */
 class MoodEntryActivity : ComponentActivity() {
   private val viewModel: MainViewModel by viewModels { MainViewModelFactory }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    MainViewModelFactory.initialize(applicationContext)
 
     val mood = Mood.fromExtraValue(intent.getStringExtra(EXTRA_MOOD))
     if (mood == null) {
       finish()
       return
     }
+    val moodSnapshot = MoodSnapshot(id = mood.name, emoji = mood.emoji, label = getString(mood.labelRes))
 
     setContent {
       JournalingPostTheme {
@@ -67,8 +70,8 @@ class MoodEntryActivity : ComponentActivity() {
         MoodEntryScreen(
           mood = mood,
           uiState = uiState,
-          onRecord = { note -> viewModel.postMessage(formatMoodMessage(mood, note)) },
-          onRecordMoodOnly = { viewModel.postMessage(formatMoodMessage(mood, "")) },
+          onRecord = { note -> viewModel.record(note = note, mood = moodSnapshot, source = JournalSource.WIDGET) },
+          onRecordMoodOnly = { viewModel.record(note = "", mood = moodSnapshot, source = JournalSource.WIDGET) },
         )
       }
     }
