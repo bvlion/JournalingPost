@@ -56,6 +56,11 @@ class MoodWidgetProvider : AppWidgetProvider() {
     // compactの横一列だけでは手狭なラベルを、縦3セル以上に広げたときに表示する。
     const val LABELED_MIN_HEIGHT_DP = 180f
 
+    // mood_background(Dynamic Colorのcolor Background)に適用する不透明度。
+    // 「ほぼ透明」ではなく、Google系Widgetのサーフェスに近い、はっきりした
+    // 半透明カードに寄せるための値。実機スクリーンショットを見て調整する。
+    const val BACKGROUND_ALPHA = 0.85f
+
     // Issue #21のWidgetレイアウト評価用の一時リスト。既存5Mood(VERY_SAD〜VERY_HAPPY)に
     // 評価用の仮Mood5件を加えて合計10件にしている。「10件が最終Mood数」という意味ではなく、
     // Mood数が増えたときのcompact/横方向resize/縦方向expandedの振る舞いを実機確認するため。
@@ -74,6 +79,7 @@ class MoodWidgetProvider : AppWidgetProvider() {
 
     fun buildCompactRemoteViews(context: Context): RemoteViews {
       val container = RemoteViews(context.packageName, R.layout.widget_mood)
+      container.setFloat(R.id.mood_background, "setAlpha", BACKGROUND_ALPHA)
       MOOD_ITEMS.forEach { item ->
         val itemViews = RemoteViews(context.packageName, R.layout.widget_mood_item)
         itemViews.setTextViewText(R.id.mood_item_emoji, context.getString(item.emojiRes))
@@ -86,6 +92,7 @@ class MoodWidgetProvider : AppWidgetProvider() {
 
     fun buildExpandedRemoteViews(context: Context): RemoteViews {
       val container = RemoteViews(context.packageName, R.layout.widget_mood_expanded)
+      container.setFloat(R.id.mood_background, "setAlpha", BACKGROUND_ALPHA)
       MOOD_ITEMS.forEach { item ->
         val itemViews = RemoteViews(context.packageName, R.layout.widget_mood_expanded_item)
         itemViews.setTextViewText(R.id.mood_expanded_item_emoji, context.getString(item.emojiRes))

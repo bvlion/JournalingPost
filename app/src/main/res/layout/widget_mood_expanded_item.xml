@@ -17,7 +17,8 @@
         android:id="@+id/mood_expanded_item_emoji"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:textSize="18sp" />
+        android:textSize="18sp"
+        android:textColor="?android:attr/textColorPrimary" />
 
     <TextView
         android:id="@+id/mood_expanded_item_label"
@@ -27,6 +28,7 @@
         android:layout_marginStart="8dp"
         android:gravity="center_vertical"
         android:textSize="13sp"
+        android:textColor="?android:attr/textColorPrimary"
         android:maxLines="1"
         android:ellipsize="end" />
 

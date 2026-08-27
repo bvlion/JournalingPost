@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Material You(Dynamic Color)の背景色。Theme.DeviceDefault.DayNightの
+  colorBackgroundは壁紙から抽出した色（Monet対応端末）または通常のライト/ダーク背景
+  （非対応端末）へ自動的に解決される。半透明の度合いはこのDrawable自体ではなく、
+  これを背景に持つView(mood_background)のalphaをMoodWidgetProviderから設定して調整する。
+-->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-  <solid android:color="@color/widget_mood_background" />
+  <solid android:color="?android:attr/colorBackground" />
   <corners android:radius="@android:dimen/system_app_widget_background_radius" />
 </shape>

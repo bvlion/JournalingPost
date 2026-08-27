@@ -1,15 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  compactレイアウトの外枠のみ。中身のMood毎のセルはMoodWidgetProviderが
-  widget_mood_item.xmlをaddViewで動的に追加する(Mood数を増減しても
-  このファイルを編集しなくて済むようにするため)。
+  compactレイアウトの外枠。Material You(Dynamic Color)の背景を半透明カードとして
+  敷くため、背景専用のImageView(mood_background、srcなし)とMood表示用のコンテナ(mood_row)を
+  分けている。RemoteViewsでは素のViewが使えないためImageViewを使用している。
+  mood_backgroundのalphaだけをMoodWidgetProviderから設定することで、テキスト自体は
+  不透明のまま背景だけ半透明にする。android:themeでTheme.DeviceDefault.DayNightを
+  適用し、?android:attr/colorBackground・?android:attr/textColorPrimaryが
+  Dynamic Colorへ解決されるようにしている。
+  中身のMood毎のセルはMoodWidgetProviderがwidget_mood_item.xmlをaddViewで
+  動的に追加する(Mood数を増減してもこのファイルを編集しなくて済むようにするため)。
 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    android:id="@+id/mood_row"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="horizontal"
-    android:background="@drawable/bg_widget_mood"
-    android:padding="2dp"
-    tools:ignore="Overdraw" />
+    android:theme="@android:style/Theme.DeviceDefault.DayNight">
+
+    <ImageView
+        android:id="@+id/mood_background"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/bg_widget_mood"
+        tools:ignore="Overdraw,ContentDescription" />
+
+    <LinearLayout
+        android:id="@+id/mood_row"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="horizontal"
+        android:padding="2dp" />
+
+</FrameLayout>
