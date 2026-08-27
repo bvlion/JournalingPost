@@ -1,12 +1,18 @@
 package info.bvlion.journalingpost.widget
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
+import androidx.glance.Image
+import androidx.glance.ImageProvider
 import androidx.glance.LocalContext
 import androidx.glance.LocalSize
 import androidx.glance.action.ActionParameters
@@ -20,6 +26,7 @@ import androidx.glance.appwidget.provideContent
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
+import androidx.glance.layout.ContentScale
 import androidx.glance.layout.Row
 import androidx.glance.layout.fillMaxHeight
 import androidx.glance.layout.fillMaxSize
@@ -75,11 +82,19 @@ private fun MoodWidgetContent() {
   }
 }
 
+/**
+ * compactでは、狭い幅でGlanceの[Text]がemojiを"…"へ省略してしまい、
+ * どのMoodか判別できなくなる問題があったため、emoji文字列をBitmapへ
+ * レンダリングし[Image] + [ContentScale.Fit]で表示する。Textレイアウトの
+ * 省略挙動を受けないため、セルがどれだけ狭くても縮小されるだけで
+ * emoji自体は常に識別できる。
+ */
 @Composable
 private fun CompactMoodRow() {
   val context = LocalContext.current
   Row(modifier = GlanceModifier.fillMaxSize().padding(2.dp)) {
     MOOD_ITEMS.forEach { item ->
+      val emojiBitmap = remember(item.mood) { renderEmojiBitmap(context.getString(item.emojiRes)) }
       Box(
         modifier = GlanceModifier
           .defaultWeight()
@@ -88,14 +103,37 @@ private fun CompactMoodRow() {
           .semantics { contentDescription = context.getString(item.descriptionRes) },
         contentAlignment = Alignment.Center,
       ) {
-        Text(
-          text = context.getString(item.emojiRes),
-          style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 20.sp),
+        Image(
+          provider = ImageProvider(emojiBitmap),
+          contentDescription = null,
+          modifier = GlanceModifier.fillMaxSize(),
+          contentScale = ContentScale.Fit,
         )
       }
     }
   }
 }
+
+/**
+ * emoji 1文字をAndroid標準のcolor emojiフォントのまま、透明背景の正方形Bitmapへ
+ * 中央揃えで描画する。固定PNG/Vectorを用意するのではなく、Mood毎のemoji文字列
+ * (ユーザーが将来任意のemojiを選べるようになっても通る経路)から都度生成する。
+ * 十分縮小しても荒れないよう実際の表示サイズより高い解像度で描画しておく。
+ */
+private fun renderEmojiBitmap(emoji: String): Bitmap {
+  val bitmap = Bitmap.createBitmap(EMOJI_BITMAP_SIZE_PX, EMOJI_BITMAP_SIZE_PX, Bitmap.Config.ARGB_8888)
+  val canvas = Canvas(bitmap)
+  val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    textSize = EMOJI_BITMAP_SIZE_PX * 0.75f
+    textAlign = Paint.Align.CENTER
+  }
+  val centerX = EMOJI_BITMAP_SIZE_PX / 2f
+  val centerY = EMOJI_BITMAP_SIZE_PX / 2f - (paint.ascent() + paint.descent()) / 2f
+  canvas.drawText(emoji, centerX, centerY, paint)
+  return bitmap
+}
+
+private const val EMOJI_BITMAP_SIZE_PX = 128
 
 @Composable
 private fun ExpandedMoodList() {
