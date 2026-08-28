@@ -47,5 +47,18 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_mood_info" />
         </receiver>
+
+        <!--
+            MY_PACKAGE_REPLACEDはsystemが自appへのみ送るprotected broadcastのため、
+            exportせずに受け取れる。MoodWidgetProviderのComponentNameは配置済みWidgetとの
+            互換性のため変えられないので、更新後の再描画は別componentとして追加している。
+        -->
+        <receiver
+            android:name=".widget.MoodWidgetPackageReplacedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
