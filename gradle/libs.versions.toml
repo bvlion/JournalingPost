@@ -11,6 +11,7 @@ ktor = "3.5.2"
 kotlinxCoroutinesTest = "1.11.0"
 glance = "1.2.0"
 room = "2.8.4"
+datastore = "1.2.1"
 ksp = "2.3.11"
 
 [libraries]
@@ -37,6 +38,7 @@ androidx-glance-material3 = { group = "androidx.glance", name = "glance-material
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

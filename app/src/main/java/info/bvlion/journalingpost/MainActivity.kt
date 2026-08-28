@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.history.JournalHistoryScreen
+import info.bvlion.journalingpost.settings.SettingsScreen
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
 import kotlinx.coroutines.launch
@@ -49,11 +50,13 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
   private val viewModel: MainViewModel by viewModels { MainViewModelFactory }
   private val historyViewModel: JournalHistoryViewModel by viewModels { JournalHistoryViewModelFactory }
+  private val settingsViewModel: SettingsViewModel by viewModels { SettingsViewModelFactory }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     MainViewModelFactory.initialize(applicationContext)
     JournalHistoryViewModelFactory.initialize(applicationContext)
+    SettingsViewModelFactory.initialize(applicationContext)
     enableEdgeToEdge()
 
     // Widget pickerのgenerated preview(Android 15+)登録。通常UI/入力フローには影響しない。
@@ -65,8 +68,8 @@ class MainActivity : ComponentActivity() {
         val uiState by viewModel.uiState.collectAsState()
         var screen by rememberSaveable { mutableStateOf(Screen.INPUT) }
 
-        // INPUT表示中はActivityの標準Back動作(終了)を保つため、HISTORY表示中のみ有効化する。
-        BackHandler(enabled = screen == Screen.HISTORY) {
+        // INPUT表示中はActivityの標準Back動作(終了)を保つため、他画面表示中のみ有効化する。
+        BackHandler(enabled = screen != Screen.INPUT) {
           screen = Screen.INPUT
         }
 
@@ -81,6 +84,9 @@ class MainActivity : ComponentActivity() {
                   modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                   horizontalArrangement = Arrangement.End,
                 ) {
+                  TextButton(onClick = { screen = Screen.SETTINGS }) {
+                    Text("設定")
+                  }
                   TextButton(onClick = { screen = Screen.HISTORY }) {
                     Text("履歴を見る")
                   }
@@ -102,6 +108,16 @@ class MainActivity : ComponentActivity() {
                   onBack = { screen = Screen.INPUT },
                 )
               }
+
+              Screen.SETTINGS -> {
+                val recordMode by settingsViewModel.recordMode.collectAsState()
+                SettingsScreen(
+                  recordMode = recordMode,
+                  isWebhookConfigured = settingsViewModel.isWebhookConfigured,
+                  onRecordModeChange = settingsViewModel::setRecordMode,
+                  onBack = { screen = Screen.INPUT },
+                )
+              }
             }
 
             LoadingOverlay(uiState == MainViewModel.UiState.LOADING)
@@ -116,6 +132,15 @@ class MainActivity : ComponentActivity() {
                     message = "登録に成功しました",
                     actionLabel = "閉じる",
                     duration = SnackbarDuration.Short,
+                  )
+                  viewModel.resetState()
+                }
+
+                MainViewModel.UiState.SUCCESS_DELIVERY_FAILED -> {
+                  snackbarHostState.showSnackbar(
+                    message = "記録は保存しましたが、Webhookの送信に失敗しました",
+                    actionLabel = "閉じる",
+                    duration = SnackbarDuration.Long,
                   )
                   viewModel.resetState()
                 }
@@ -139,6 +164,7 @@ class MainActivity : ComponentActivity() {
   private enum class Screen {
     INPUT,
     HISTORY,
+    SETTINGS,
   }
 }
 
@@ -154,7 +180,7 @@ fun InputView(
     focusRequester.requestFocus()
   }
   LaunchedEffect(uiState) {
-    if (uiState == MainViewModel.UiState.SUCCESS) {
+    if (uiState == MainViewModel.UiState.SUCCESS || uiState == MainViewModel.UiState.SUCCESS_DELIVERY_FAILED) {
       text.value = ""
     }
   }

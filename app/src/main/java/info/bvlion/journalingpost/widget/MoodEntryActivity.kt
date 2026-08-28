@@ -62,7 +62,9 @@ class MoodEntryActivity : ComponentActivity() {
         val uiState by viewModel.uiState.collectAsState()
 
         LaunchedEffect(uiState) {
-          if (uiState == MainViewModel.UiState.SUCCESS) {
+          // Webhook配送失敗(SUCCESS_DELIVERY_FAILED)は記録自体の失敗ではないため、
+          // 再登録を促さずSUCCESS同様に画面を閉じる。
+          if (uiState == MainViewModel.UiState.SUCCESS || uiState == MainViewModel.UiState.SUCCESS_DELIVERY_FAILED) {
             finish()
           }
         }
