@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import info.bvlion.journalingpost.poster.WebhookConfig
 import info.bvlion.journalingpost.settings.RecordMode
 import info.bvlion.journalingpost.settings.RecordModeRepository
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -24,15 +25,19 @@ class SettingsViewModel(
   private val _saveFailed = MutableStateFlow(false)
   val saveFailed: StateFlow<Boolean> = _saveFailed.asStateFlow()
 
+  // 呼び出し完了時に、より新しい選択が既に行われていないかを確認するための世代番号。
+  private val requestGeneration = AtomicInteger(0)
+
   fun setRecordMode(mode: RecordMode) {
+    val generation = requestGeneration.incrementAndGet()
+    _saveFailed.value = false
     viewModelScope.launch {
-      _saveFailed.value = false
       try {
         recordModeRepository.setRecordMode(mode)
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {
-        _saveFailed.value = true
+        if (generation == requestGeneration.get()) _saveFailed.value = true
       }
     }
   }

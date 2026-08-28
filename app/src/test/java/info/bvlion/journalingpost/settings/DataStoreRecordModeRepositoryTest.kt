@@ -14,18 +14,23 @@ import info.bvlion.journalingpost.journal.ModeRoutingJournalRecorder
 import info.bvlion.journalingpost.poster.JournalPoster
 import java.io.File
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -121,6 +126,65 @@ class DataStoreRecordModeRepositoryTest {
     }
 
     assertEquals("boom", thrown?.message)
+  }
+
+  @Test
+  fun `read IOExceptionから復旧すると同じ購読が新しい永続モードを取得できる`() = runTest {
+    val repository = DataStoreRecordModeRepository(RecoveringDataStore())
+
+    val collected = mutableListOf<RecordMode>()
+    val job = launch { repository.recordMode.collect { collected += it } }
+    advanceUntilIdle()
+
+    assertEquals(listOf(RecordMode.LOCAL_ONLY, RecordMode.LOCAL_AND_WEBHOOK), collected)
+    job.cancel()
+  }
+
+  @Test
+  fun `read error後にwriteが成功するとpending解消後も新しいモードを維持する`() = runTest {
+    val repository = DataStoreRecordModeRepository(RecoveringDataStore())
+    assertEquals(RecordMode.LOCAL_ONLY, repository.recordMode.first())
+
+    repository.setRecordMode(RecordMode.LOCAL_AND_WEBHOOK)
+
+    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+  }
+
+  @Test
+  fun `write中にキャンセルされてもCancellationExceptionが伝播しそのpendingは片付く`() = runTest {
+    val repository = DataStoreRecordModeRepository(BlockingWriteDataStore())
+    var thrown: Throwable? = null
+
+    val job = launch {
+      try {
+        repository.setRecordMode(RecordMode.LOCAL_ONLY)
+      } catch (e: CancellationException) {
+        thrown = e
+        throw e
+      }
+    }
+    runCurrent()
+    assertEquals(RecordMode.LOCAL_ONLY, repository.recordMode.first())
+
+    job.cancelAndJoin()
+
+    assertTrue(thrown is CancellationException)
+    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+  }
+
+  @Test
+  fun `キャンセルされた古いwriteは新しい選択のpendingを消さない`() = runTest {
+    val repository = DataStoreRecordModeRepository(ControllableWriteDataStore())
+
+    val job = launch { repository.setRecordMode(RecordMode.LOCAL_ONLY) }
+    runCurrent()
+    backgroundScope.launch { repository.setRecordMode(RecordMode.LOCAL_AND_WEBHOOK) }
+    runCurrent()
+    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+
+    job.cancelAndJoin()
+
+    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
   }
 
   @Test
@@ -254,6 +318,24 @@ class DataStoreRecordModeRepositoryTest {
       gates += gate
       val error = gate.await()
       if (error != null) throw error
+      val updated = transform(backing.value)
+      backing.value = updated
+      return updated
+    }
+  }
+
+  /** dataの最初の購読だけIOExceptionを投げ、以降はbackingを反映するFake。 */
+  private class RecoveringDataStore : DataStore<Preferences> {
+    private val backing = MutableStateFlow(emptyPreferences())
+    private var readAttempt = 0
+
+    override val data: Flow<Preferences> = flow {
+      readAttempt++
+      if (readAttempt == 1) throw IOException("disk error")
+      emitAll(backing)
+    }
+
+    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
       val updated = transform(backing.value)
       backing.value = updated
       return updated

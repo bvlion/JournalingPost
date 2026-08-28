@@ -3,6 +3,7 @@ package info.bvlion.journalingpost
 import info.bvlion.journalingpost.settings.RecordMode
 import info.bvlion.journalingpost.settings.RecordModeRepository
 import java.io.IOException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -91,8 +92,69 @@ class SettingsViewModelTest {
     collectJob.cancel()
   }
 
+  @Test
+  fun `古いwriteが後から失敗しても新しいwriteの成功が優先されsaveFailedはfalseのまま`() = runTest(testDispatcher) {
+    val repository = ControllableRecordModeRepository(RecordMode.LOCAL_AND_WEBHOOK)
+    val viewModel = SettingsViewModel(repository)
+    val collectJob = launchCollection(viewModel)
+
+    viewModel.setRecordMode(RecordMode.LOCAL_ONLY)
+    viewModel.setRecordMode(RecordMode.LOCAL_AND_WEBHOOK)
+    testDispatcher.scheduler.runCurrent()
+
+    repository.complete(1)
+    testDispatcher.scheduler.advanceUntilIdle()
+    repository.fail(0, IOException("disk error"))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertFalse(viewModel.saveFailed.value)
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `古いwriteが後から成功しても新しいwriteの失敗が優先されsaveFailedはtrueのまま`() = runTest(testDispatcher) {
+    val repository = ControllableRecordModeRepository(RecordMode.LOCAL_AND_WEBHOOK)
+    val viewModel = SettingsViewModel(repository)
+    val collectJob = launchCollection(viewModel)
+
+    viewModel.setRecordMode(RecordMode.LOCAL_ONLY)
+    viewModel.setRecordMode(RecordMode.LOCAL_AND_WEBHOOK)
+    testDispatcher.scheduler.runCurrent()
+
+    repository.fail(1, IOException("disk error"))
+    testDispatcher.scheduler.advanceUntilIdle()
+    repository.complete(0)
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertTrue(viewModel.saveFailed.value)
+    collectJob.cancel()
+  }
+
   private fun launchCollection(viewModel: SettingsViewModel) =
     CoroutineScope(testDispatcher).launch { viewModel.recordMode.collect {} }
+
+  /** setRecordMode()の完了/失敗を呼び出し順と切り離して制御し、write完了順の入れ替わりを再現するFake。 */
+  private class ControllableRecordModeRepository(initial: RecordMode) : RecordModeRepository {
+    private val state = MutableStateFlow(initial)
+    override val recordMode: Flow<RecordMode> = state
+    private val gates = mutableListOf<CompletableDeferred<Throwable?>>()
+
+    fun complete(index: Int) {
+      gates[index].complete(null)
+    }
+
+    fun fail(index: Int, error: Throwable) {
+      gates[index].complete(error)
+    }
+
+    override suspend fun setRecordMode(mode: RecordMode) {
+      val gate = CompletableDeferred<Throwable?>()
+      gates += gate
+      val error = gate.await()
+      if (error != null) throw error
+      state.value = mode
+    }
+  }
 
   private class FakeRecordModeRepository(
     initial: RecordMode,

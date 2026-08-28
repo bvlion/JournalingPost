@@ -6,19 +6,19 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.retryWhen
 
 internal class DataStoreRecordModeRepository(
   private val dataStore: DataStore<Preferences>,
 ) : RecordModeRepository {
   /**
    * write完了前でも選択モードを記録処理へ即時反映するための値。generationは、複数回の
-   * setRecordMode()が重なった際、古い呼び出しのwrite完了/失敗がより新しい選択を
+   * setRecordMode()が重なった際、古い呼び出しのwrite完了/失敗/キャンセルがより新しい選択を
    * 誤って上書き・巻き戻ししないよう、pendingModeをクリアする際に確認する世代番号。
    */
   private val pendingMode = MutableStateFlow<PendingMode?>(null)
@@ -26,9 +26,13 @@ internal class DataStoreRecordModeRepository(
 
   private val persistedRecordMode: Flow<RecordMode> = dataStore.data
     .map { preferences -> preferences.toRecordModeOrDefault() }
-    .catch { e ->
-      // 読み取れない場合は外部送信を行わない安全側(LOCAL_ONLY)へ倒す。IOException以外は再送出する。
-      if (e is IOException) emit(RecordMode.LOCAL_ONLY) else throw e
+    .retryWhen { cause, _ ->
+      // 読み取れない場合は安全側(LOCAL_ONLY)へ一旦フォールバックしたうえで再購読を試み続ける。
+      // IOException以外は再送出する(リトライしない)。
+      if (cause !is IOException) return@retryWhen false
+      emit(RecordMode.LOCAL_ONLY)
+      delay(RETRY_DELAY_MILLIS)
+      true
     }
 
   override val recordMode: Flow<RecordMode> = combine(persistedRecordMode, pendingMode) { persisted, pending ->
@@ -40,12 +44,8 @@ internal class DataStoreRecordModeRepository(
     pendingMode.value = pending
     try {
       dataStore.edit { it[KEY] = mode.name }
+    } finally {
       pendingMode.compareAndSet(pending, null)
-    } catch (e: CancellationException) {
-      throw e
-    } catch (e: Exception) {
-      pendingMode.compareAndSet(pending, null)
-      throw e
     }
   }
 
@@ -56,5 +56,6 @@ internal class DataStoreRecordModeRepository(
 
   private companion object {
     val KEY = stringPreferencesKey("record_mode")
+    const val RETRY_DELAY_MILLIS = 1_000L
   }
 }
