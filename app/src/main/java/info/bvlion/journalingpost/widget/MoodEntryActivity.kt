@@ -1,5 +1,6 @@
 package info.bvlion.journalingpost.widget
 
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -64,38 +65,66 @@ import kotlinx.coroutines.launch
 /** 既存MainViewModel/JournalRecorderを再利用する。 */
 class MoodEntryActivity : ComponentActivity() {
   private val viewModel: MainViewModel by viewModels { MainViewModelFactory }
+  private var mood by mutableStateOf<Mood?>(null)
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     MainViewModelFactory.initialize(applicationContext)
 
-    val mood = Mood.fromExtraValue(intent.getStringExtra(EXTRA_MOOD))
-    if (mood == null) {
+    val initialMood = Mood.fromExtraValue(intent.getStringExtra(EXTRA_MOOD))
+    if (initialMood == null) {
       finish()
       return
     }
-    val moodSnapshot = MoodSnapshot(id = mood.name, emoji = mood.emoji, label = getString(mood.labelRes))
+    mood = initialMood
     // scrimをsystem bar領域まで途切れなく描くため、translucent windowでもcontentを全画面へ広げる。
     enableEdgeToEdge()
 
     setContent {
       JournalingPostTheme {
-        val uiState by viewModel.uiState.collectAsState()
+        mood?.let { currentMood ->
+          val uiState by viewModel.uiState.collectAsState()
+          val moodLabel = stringResource(currentMood.labelRes)
 
-        MoodEntryScreen(
-          mood = mood,
-          uiState = uiState,
-          onRecord = { note -> viewModel.record(note = note, mood = moodSnapshot, source = JournalSource.WIDGET) },
-          onClose = { finish() },
-        )
+          MoodEntryScreen(
+            mood = currentMood,
+            uiState = uiState,
+            onRecord = { note ->
+              viewModel.record(
+                note = note,
+                mood = MoodSnapshot(id = currentMood.name, emoji = currentMood.emoji, label = moodLabel),
+                source = JournalSource.WIDGET,
+              )
+            },
+            onClose = { finish() },
+          )
+        }
       }
     }
+  }
+
+  /** launchMode=singleTaskのため、Widgetを再度タップしても新しいinstanceは作られずここへ届く。 */
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    if (!viewModel.uiState.value.acceptsNewMoodEntry()) return
+    val newMood = Mood.fromExtraValue(intent.getStringExtra(EXTRA_MOOD)) ?: return
+    // 構成変更でActivityが作り直されたときも新しいMoodを読めるようにIntentごと差し替える。
+    setIntent(intent)
+    mood = newMood
+    viewModel.resetState()
   }
 
   companion object {
     const val EXTRA_MOOD = "info.bvlion.journalingpost.extra.MOOD"
   }
 }
+
+/**
+ * 記録処理を始めた後にWidgetから届いた新しいMoodは反映しない。実行中のrecord()と画面のMoodが
+ * ずれるうえ、成功時のfade/finishやToastがどちらのMoodのものか曖昧になるため。
+ */
+internal fun MainViewModel.UiState.acceptsNewMoodEntry(): Boolean =
+  this == MainViewModel.UiState.INIT || this == MainViewModel.UiState.FAILURE
 
 private const val CLOSE_FADE_DURATION_MS = 250
 private const val SCRIM_ALPHA = 0.32f
@@ -107,8 +136,9 @@ fun MoodEntryScreen(
   onRecord: (String) -> Unit,
   onClose: () -> Unit,
 ) {
-  var note by rememberSaveable { mutableStateOf("") }
-  var isNoteVisible by rememberSaveable { mutableStateOf(false) }
+  // Widgetから別のMoodが届いたときに前回の入力を引き継がないよう、moodをinputにしている。
+  var note by rememberSaveable(mood) { mutableStateOf("") }
+  var isNoteVisible by rememberSaveable(mood) { mutableStateOf(false) }
   var isClosing by remember { mutableStateOf(false) }
   val context = LocalContext.current
   val coroutineScope = rememberCoroutineScope()
@@ -143,8 +173,12 @@ fun MoodEntryScreen(
     }
   }
 
-  BackHandler(enabled = !isInteractionLocked) {
-    requestClose(showSuccessToast = false)
+  // lock中もBackを消費する。BackHandlerをdisableするとActivity標準のfinishへフォールスルーし、
+  // 記録処理中のrecord() coroutineがViewModelごとcancelされ得るため。
+  BackHandler {
+    if (!isInteractionLocked) {
+      requestClose(showSuccessToast = false)
+    }
   }
 
   Box(
