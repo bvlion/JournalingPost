@@ -5,6 +5,8 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,10 +28,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
@@ -45,6 +49,7 @@ import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.mood.Mood
 import info.bvlion.journalingpost.mood.MoodSnapshot
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
+import kotlinx.coroutines.launch
 
 /** 既存MainViewModel/JournalRecorderを再利用する。 */
 class MoodEntryActivity : ComponentActivity() {
@@ -80,6 +85,8 @@ class MoodEntryActivity : ComponentActivity() {
   }
 }
 
+private const val CLOSE_FADE_DURATION_MS = 250
+
 @Composable
 fun MoodEntryDialog(
   mood: Mood,
@@ -89,34 +96,48 @@ fun MoodEntryDialog(
 ) {
   var note by rememberSaveable { mutableStateOf("") }
   var isNoteVisible by rememberSaveable { mutableStateOf(false) }
+  var isClosing by remember { mutableStateOf(false) }
   val context = LocalContext.current
+  val coroutineScope = rememberCoroutineScope()
+  val contentAlpha = remember { Animatable(1f) }
 
   val isRecording = uiState == MainViewModel.UiState.LOADING
   val isSuccess = uiState == MainViewModel.UiState.SUCCESS || uiState == MainViewModel.UiState.SUCCESS_DELIVERY_FAILED
-  // SUCCESS到達後もrecomposeで「記録」ボタンが一瞬通常表示へ戻らないよう、LOADINGと
-  // SUCCESS系の両方を「操作不能」として扱う。MainViewModelはINITへ戻さないため、
+  // SUCCESS到達後もrecomposeで「記録」ボタンが一瞬通常表示へ戻らないよう、LOADING/SUCCESS系/
+  // fade中(isClosing)のすべてを「操作不能」として扱う。MainViewModelはINITへ戻さないため、
   // この操作lockはUI側だけで判定する。
-  val isInteractionLocked = isRecording || isSuccess
+  val isInteractionLocked = isRecording || isSuccess || isClosing
   val hasFailure = uiState == MainViewModel.UiState.FAILURE
 
-  LaunchedEffect(uiState) {
-    if (isSuccess) {
-      // Webhook配送失敗を記録自体の失敗として扱わず、SUCCESSと同様に画面を閉じる。
-      Toast.makeText(context, "記録しました", Toast.LENGTH_SHORT).show()
+  // finish()するとViewModelのcoroutineごと破棄されるため、fade outを完了させてから
+  // Activityを閉じる。Toastはfinish後でも安全なapplicationContextを使い、閉じたあとに出す。
+  fun requestClose(showSuccessToast: Boolean) {
+    if (isClosing) return
+    isClosing = true
+    coroutineScope.launch {
+      contentAlpha.animateTo(targetValue = 0f, animationSpec = tween(durationMillis = CLOSE_FADE_DURATION_MS))
       onClose()
+      if (showSuccessToast) {
+        Toast.makeText(context.applicationContext, "記録しました", Toast.LENGTH_SHORT).show()
+      }
+    }
+  }
+
+  LaunchedEffect(uiState) {
+    // Webhook配送失敗を記録自体の失敗として扱わず、SUCCESSと同様に画面を閉じる。
+    if (isSuccess) {
+      requestClose(showSuccessToast = true)
     }
   }
 
   AlertDialog(
-    // dismissするとActivityごとfinishしてViewModelのcoroutineを破棄するため、記録処理中/
-    // 成功直後はDialogPropertiesに加えてonDismissRequest自体でもonCloseを呼ばないようにする。
-    onDismissRequest = { if (!isInteractionLocked) onClose() },
+    onDismissRequest = { if (!isInteractionLocked) requestClose(showSuccessToast = false) },
     properties = DialogProperties(
       dismissOnBackPress = !isInteractionLocked,
       dismissOnClickOutside = !isInteractionLocked,
       usePlatformDefaultWidth = false,
     ),
-    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).alpha(contentAlpha.value),
     title = {
       Row(verticalAlignment = Alignment.CenterVertically) {
         Text(text = mood.emoji, style = MaterialTheme.typography.headlineSmall)
@@ -124,54 +145,65 @@ fun MoodEntryDialog(
         Text(text = stringResource(mood.labelRes), style = MaterialTheme.typography.titleMedium)
       }
     },
-    text = {
-      Column {
-        if (isNoteVisible) {
-          val focusRequester = remember { FocusRequester() }
-          // 「メモを追加」を選んだ直後だけfocusを移し、ソフトキーボードを表示させる。
-          // 初期表示から入力欄を出さないのは、文章を書かなくても記録が成立することを
-          // UI自体で表現するため。
-          LaunchedEffect(Unit) {
-            focusRequester.requestFocus()
-          }
-          TextField(
-            value = note,
-            onValueChange = { note = it },
-            modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
-            enabled = !isInteractionLocked,
-            maxLines = 4,
-            trailingIcon = if (note.isNotEmpty()) {
-              {
-                IconButton(
-                  onClick = { note = "" },
-                  enabled = !isInteractionLocked,
-                  modifier = Modifier.semantics { contentDescription = "メモをクリア" },
-                ) {
-                  Text("✕")
+    text = if (isNoteVisible || hasFailure) {
+      {
+        Column {
+          if (isNoteVisible) {
+            val focusRequester = remember { FocusRequester() }
+            // 「メモを追加」を選んだ直後だけfocusを移し、ソフトキーボードを表示させる。
+            // 初期表示から入力欄を出さないのは、文章を書かなくても記録が成立することを
+            // UI自体で表現するため。
+            LaunchedEffect(Unit) {
+              focusRequester.requestFocus()
+            }
+            TextField(
+              value = note,
+              onValueChange = { note = it },
+              modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+              enabled = !isInteractionLocked,
+              maxLines = 4,
+              trailingIcon = if (note.isNotEmpty()) {
+                {
+                  IconButton(
+                    onClick = { note = "" },
+                    enabled = !isInteractionLocked,
+                    modifier = Modifier.semantics { contentDescription = "メモをクリア" },
+                  ) {
+                    Text("✕")
+                  }
                 }
-              }
-            } else {
-              null
-            },
-          )
-        } else {
+              } else {
+                null
+              },
+            )
+          }
+          if (hasFailure) {
+            Text(
+              text = "記録に失敗しました。もう一度お試しください",
+              color = MaterialTheme.colorScheme.error,
+              style = MaterialTheme.typography.bodySmall,
+              modifier = Modifier.padding(top = 8.dp),
+            )
+          }
+        }
+      }
+    } else {
+      null
+    },
+    dismissButton = {
+      if (isNoteVisible) {
+        TextButton(onClick = { requestClose(showSuccessToast = false) }, enabled = !isInteractionLocked) {
+          Text("記録しない")
+        }
+      } else {
+        Row {
           TextButton(onClick = { isNoteVisible = true }, enabled = !isInteractionLocked) {
             Text("メモを追加")
           }
+          TextButton(onClick = { requestClose(showSuccessToast = false) }, enabled = !isInteractionLocked) {
+            Text("記録しない")
+          }
         }
-        if (hasFailure) {
-          Text(
-            text = "記録に失敗しました。もう一度お試しください",
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 8.dp),
-          )
-        }
-      }
-    },
-    dismissButton = {
-      TextButton(onClick = onClose, enabled = !isInteractionLocked) {
-        Text("記録しない")
       }
     },
     confirmButton = {
