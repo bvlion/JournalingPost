@@ -19,10 +19,21 @@
             </intent-filter>
         </activity>
 
+        <!--
+            GlanceのactionStartActivityはflagなしのIntentをPendingIntentへ包むだけで、
+            widget hostからの起動では実質FLAG_ACTIVITY_NEW_TASK扱いになる。
+            taskAffinityを空にしているのは、既定のaffinityのままだと既存MainActivityの
+            taskごと前面へ引き上げてしまうため。
+            singleTaskは、Widgetを再度タップしたときに古いinstanceの上へ積み増さず
+            onNewIntentで新しいMoodを受け取るため。CLEAR_TASK等でActivityを作り直すと、
+            記録処理中(LOADING)のrecord() coroutineをViewModelごとcancelしてしまう。
+        -->
         <activity
             android:name=".widget.MoodEntryActivity"
             android:exported="false"
             android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity=""
             android:theme="@style/Theme.JournalingPost.MoodEntry"
             android:windowSoftInputMode="adjustResize" />
 

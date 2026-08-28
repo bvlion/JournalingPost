@@ -2,10 +2,16 @@
 <resources>
   <style name="Theme.JournalingPost" parent="android:Theme.Material.Light.NoActionBar" />
 
+  <!--
+    Widgetからの一時入力Activity用。直前に見ていた画面を背後へ残すためtranslucentにし、
+    window遷移animationは無効化する。backgroundDimEnabledをfalseにしているのは、
+    dimをwindow側に持たせるとCompose contentと一緒にfadeできず、終了時にdimだけが
+    取り残されて見えるため。dimはCompose側のscrimとして描く。
+  -->
   <style name="Theme.JournalingPost.MoodEntry" parent="Theme.JournalingPost">
     <item name="android:windowIsTranslucent">true</item>
     <item name="android:windowBackground">@android:color/transparent</item>
-    <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
-    <item name="android:windowNoTitle">true</item>
+    <item name="android:backgroundDimEnabled">false</item>
+    <item name="android:windowAnimationStyle">@null</item>
   </style>
 </resources>
