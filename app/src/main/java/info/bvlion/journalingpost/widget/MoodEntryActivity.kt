@@ -3,22 +3,32 @@ package info.bvlion.journalingpost.widget
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -36,13 +46,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogProperties
 import info.bvlion.journalingpost.MainViewModel
 import info.bvlion.journalingpost.MainViewModelFactory
 import info.bvlion.journalingpost.journal.JournalSource
@@ -65,12 +75,14 @@ class MoodEntryActivity : ComponentActivity() {
       return
     }
     val moodSnapshot = MoodSnapshot(id = mood.name, emoji = mood.emoji, label = getString(mood.labelRes))
+    // scrimをsystem bar領域まで途切れなく描くため、translucent windowでもcontentを全画面へ広げる。
+    enableEdgeToEdge()
 
     setContent {
       JournalingPostTheme {
         val uiState by viewModel.uiState.collectAsState()
 
-        MoodEntryDialog(
+        MoodEntryScreen(
           mood = mood,
           uiState = uiState,
           onRecord = { note -> viewModel.record(note = note, mood = moodSnapshot, source = JournalSource.WIDGET) },
@@ -86,9 +98,10 @@ class MoodEntryActivity : ComponentActivity() {
 }
 
 private const val CLOSE_FADE_DURATION_MS = 250
+private const val SCRIM_ALPHA = 0.32f
 
 @Composable
-fun MoodEntryDialog(
+fun MoodEntryScreen(
   mood: Mood,
   uiState: MainViewModel.UiState,
   onRecord: (String) -> Unit,
@@ -130,24 +143,42 @@ fun MoodEntryDialog(
     }
   }
 
-  AlertDialog(
-    onDismissRequest = { if (!isInteractionLocked) requestClose(showSuccessToast = false) },
-    properties = DialogProperties(
-      dismissOnBackPress = !isInteractionLocked,
-      dismissOnClickOutside = !isInteractionLocked,
-      usePlatformDefaultWidth = false,
-    ),
-    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).alpha(contentAlpha.value),
-    title = {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(text = mood.emoji, style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.width(8.dp))
-        Text(text = stringResource(mood.labelRes), style = MaterialTheme.typography.titleMedium)
-      }
-    },
-    text = if (isNoteVisible || hasFailure) {
-      {
-        Column {
+  BackHandler(enabled = !isInteractionLocked) {
+    requestClose(showSuccessToast = false)
+  }
+
+  Box(
+    modifier = Modifier
+      .fillMaxSize()
+      .alpha(contentAlpha.value)
+      .background(MaterialTheme.colorScheme.scrim.copy(alpha = SCRIM_ALPHA))
+      .pointerInput(isInteractionLocked) {
+        if (isInteractionLocked) return@pointerInput
+        detectTapGestures { requestClose(showSuccessToast = false) }
+      },
+  ) {
+    Box(
+      modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+      contentAlignment = Alignment.Center,
+    ) {
+      Surface(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 20.dp)
+          // 閉じる操作はscrim tapだけに限りたいので、Surface上のtapはここで止める。
+          .pointerInput(Unit) { detectTapGestures {} },
+        shape = AlertDialogDefaults.shape,
+        color = AlertDialogDefaults.containerColor,
+        contentColor = AlertDialogDefaults.titleContentColor,
+        tonalElevation = AlertDialogDefaults.TonalElevation,
+      ) {
+        Column(modifier = Modifier.padding(24.dp)) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = mood.emoji, style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.width(8.dp))
+            Text(text = stringResource(mood.labelRes), style = MaterialTheme.typography.titleMedium)
+          }
+
           if (isNoteVisible) {
             val focusRequester = remember { FocusRequester() }
             // 「メモを追加」を選んだ直後だけfocusを移し、ソフトキーボードを表示させる。
@@ -159,7 +190,7 @@ fun MoodEntryDialog(
             TextField(
               value = note,
               onValueChange = { note = it },
-              modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+              modifier = Modifier.fillMaxWidth().padding(top = 16.dp).focusRequester(focusRequester),
               enabled = !isInteractionLocked,
               maxLines = 4,
               trailingIcon = if (note.isNotEmpty()) {
@@ -177,6 +208,7 @@ fun MoodEntryDialog(
               },
             )
           }
+
           if (hasFailure) {
             Text(
               text = "記録に失敗しました。もう一度お試しください",
@@ -185,44 +217,39 @@ fun MoodEntryDialog(
               modifier = Modifier.padding(top = 8.dp),
             )
           }
-        }
-      }
-    } else {
-      null
-    },
-    dismissButton = {
-      if (isNoteVisible) {
-        TextButton(onClick = { requestClose(showSuccessToast = false) }, enabled = !isInteractionLocked) {
-          Text("記録しない")
-        }
-      } else {
-        Row {
-          TextButton(onClick = { isNoteVisible = true }, enabled = !isInteractionLocked) {
-            Text("メモを追加")
+
+          FlowRow(
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            if (!isNoteVisible) {
+              TextButton(onClick = { isNoteVisible = true }, enabled = !isInteractionLocked) {
+                Text("メモを追加")
+              }
+            }
+            TextButton(onClick = { requestClose(showSuccessToast = false) }, enabled = !isInteractionLocked) {
+              Text("記録しない")
+            }
+            Button(onClick = { onRecord(note) }, enabled = !isInteractionLocked) {
+              if (isInteractionLocked) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+              } else {
+                Text("記録")
+              }
+            }
           }
-          TextButton(onClick = { requestClose(showSuccessToast = false) }, enabled = !isInteractionLocked) {
-            Text("記録しない")
-          }
         }
       }
-    },
-    confirmButton = {
-      Button(onClick = { onRecord(note) }, enabled = !isInteractionLocked) {
-        if (isInteractionLocked) {
-          CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-        } else {
-          Text("記録")
-        }
-      }
-    },
-  )
+    }
+  }
 }
 
 @Preview(showBackground = true)
 @Composable
-fun MoodEntryDialogPreview() {
+fun MoodEntryScreenPreview() {
   JournalingPostTheme {
-    MoodEntryDialog(
+    MoodEntryScreen(
       mood = Mood.HAPPY,
       uiState = MainViewModel.UiState.INIT,
       onRecord = {},
