@@ -89,11 +89,15 @@ class SettingsViewModel(
 
   fun revealWebhookForm() {
     viewModelScope.launch {
+      // Loading/Unavailable/NotConfiguredの間にreveal要求が来た場合は何もしない。ここでrevealedを
+      // 立てると、実際にはsettingsを読めていないのにisWebhookFormVisibleが空フォームを「既存設定の
+      // 編集フォーム」として表示してしまい、保存時に既存URL/Header/Body template/secretを
+      // 空の値で上書きし得る。
       val current = webhookSettingsRepository.settings.first()
       if (current is WebhookSettingsState.Configured) {
         _webhookFormState.value = current.settings.toFormState()
+        _webhookFormRevealed.value = true
       }
-      _webhookFormRevealed.value = true
     }
   }
 

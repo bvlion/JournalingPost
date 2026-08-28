@@ -262,6 +262,53 @@ class SettingsViewModelTest {
   }
 
   @Test
+  fun `reveal時にUnavailableを取得した場合はフォームを展開せず後から復旧しても自動表示しない`() = runTest(testDispatcher) {
+    val existing = WebhookSettings(
+      url = "https://example.com/webhook",
+      headers = listOf(WebhookHeader("Authorization", "Bearer xxxxx")),
+      bodyTemplate = """{"text": "{{message}}"}""",
+    )
+    val webhookRepository = ControllableWebhookSettingsRepository(initial = WebhookSettingsState.Unavailable)
+    val viewModel = SettingsViewModel(FakeRecordModeRepository(RecordMode.LOCAL_AND_WEBHOOK), webhookRepository)
+    val collectJob = launchWebhookCollection(viewModel)
+    testDispatcher.scheduler.runCurrent()
+
+    viewModel.revealWebhookForm()
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(WebhookFormState(), viewModel.webhookFormState.value)
+    assertFalse(viewModel.isWebhookFormVisible.value)
+
+    // repositoryが後からConfiguredへ復旧しても、明示revealなしにフォームは自動表示されない。
+    webhookRepository.emit(WebhookSettingsState.Configured(existing))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertFalse(viewModel.isWebhookFormVisible.value)
+    assertEquals(WebhookFormState(), viewModel.webhookFormState.value)
+
+    viewModel.revealWebhookForm()
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertTrue(viewModel.isWebhookFormVisible.value)
+    assertEquals(existing.url, viewModel.webhookFormState.value.url)
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `reveal時にNotConfiguredだった場合は空フォームを既存設定編集としてrevealedにしない`() = runTest(testDispatcher) {
+    val webhookRepository = ControllableWebhookSettingsRepository(initial = WebhookSettingsState.NotConfigured)
+    val viewModel = SettingsViewModel(FakeRecordModeRepository(RecordMode.LOCAL_AND_WEBHOOK), webhookRepository)
+    val collectJob = launchWebhookCollection(viewModel)
+    testDispatcher.scheduler.runCurrent()
+
+    viewModel.revealWebhookForm()
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(WebhookFormState(), viewModel.webhookFormState.value)
+    collectJob.cancel()
+  }
+
+  @Test
   fun `初回読み込み完了前はisWebhookFormVisibleがfalseで新規フォームを編集可能にしない`() = runTest(testDispatcher) {
     val webhookRepository = ControllableWebhookSettingsRepository(initial = WebhookSettingsState.Loading)
     val viewModel = SettingsViewModel(FakeRecordModeRepository(RecordMode.LOCAL_AND_WEBHOOK), webhookRepository)

@@ -252,7 +252,7 @@ private fun WebhookSettingsValidator.ValidationError.toMessage(): String = when 
   WebhookSettingsValidator.ValidationError.BLANK_HEADER_NAME -> "Header名が空になっている項目があります"
   WebhookSettingsValidator.ValidationError.DUPLICATE_HEADER_NAME -> "同じHeader名が複数あります"
   WebhookSettingsValidator.ValidationError.RESERVED_CONTENT_TYPE_HEADER -> "Content-TypeはHeaderとして指定できません"
-  WebhookSettingsValidator.ValidationError.INVALID_HEADER_SYNTAX -> "Headerに改行を含めることはできません"
+  WebhookSettingsValidator.ValidationError.INVALID_HEADER_SYNTAX -> "Header名の形式が正しくないか、Headerに改行が含まれています"
   WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE -> "Body templateが有効なJSON、またはサポート対象のplaceholderではありません"
 }
 
