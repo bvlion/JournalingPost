@@ -95,7 +95,6 @@ class DataStoreRecordModeRepositoryTest {
       localWebhookRecorder = LocalWebhookJournalRecorder(
         journalRepository,
         JournalPoster { postCalled = true; true },
-        isWebhookConfigured = { true },
       ),
     )
 
@@ -273,7 +272,6 @@ class DataStoreRecordModeRepositoryTest {
       localWebhookRecorder = LocalWebhookJournalRecorder(
         journalRepository,
         JournalPoster { postCalled = true; true },
-        isWebhookConfigured = { true },
       ),
     )
 

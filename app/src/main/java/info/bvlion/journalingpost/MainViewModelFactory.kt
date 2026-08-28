@@ -11,6 +11,7 @@ import info.bvlion.journalingpost.journal.db.JournalDatabase
 import info.bvlion.journalingpost.journal.db.RoomJournalEntryRepository
 import info.bvlion.journalingpost.poster.WebhookJournalPoster
 import info.bvlion.journalingpost.settings.RecordModeRepositoryStore
+import info.bvlion.journalingpost.webhook.WebhookSettingsRepositoryStore
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -23,7 +24,6 @@ object MainViewModelFactory : ViewModelProvider.Factory {
       json()
     }
   }
-  private val journalPoster = WebhookJournalPoster(httpClient)
   private lateinit var journalRecorder: JournalRecorder
 
   /** 各Activityのviewmodel取得より前に呼び出すこと。 */
@@ -32,6 +32,8 @@ object MainViewModelFactory : ViewModelProvider.Factory {
     val database = JournalDatabase.getInstance(context)
     val repository = RoomJournalEntryRepository(database.journalEntryDao())
     val recordModeRepository = RecordModeRepositoryStore.getInstance(context)
+    val webhookSettingsRepository = WebhookSettingsRepositoryStore.getInstance(context)
+    val journalPoster = WebhookJournalPoster(httpClient, webhookSettingsRepository)
     journalRecorder = ModeRoutingJournalRecorder(
       recordModeRepository = recordModeRepository,
       localOnlyRecorder = LocalOnlyJournalRecorder(repository),

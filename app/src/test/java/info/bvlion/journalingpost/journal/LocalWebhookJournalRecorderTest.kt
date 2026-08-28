@@ -16,12 +16,10 @@ class LocalWebhookJournalRecorderTest {
   private fun createRecorder(
     repository: FakeJournalEntryRepository = FakeJournalEntryRepository(),
     poster: (String) -> Boolean = { true },
-    isWebhookConfigured: () -> Boolean = { true },
   ) = LocalWebhookJournalRecorder(
     repository,
     JournalPoster { poster(it) },
     now = { fixedNow },
-    isWebhookConfigured = isWebhookConfigured,
   )
 
   @Test
@@ -67,31 +65,11 @@ class LocalWebhookJournalRecorderTest {
       repository,
       JournalPoster { throw RuntimeException("boom") },
       now = { fixedNow },
-      isWebhookConfigured = { true },
     )
 
     val result = recorder.record("today was good", mood = null, source = JournalSource.APP)
 
     assertEquals(DeliveryStatus.FAILED, result)
-    val entry = repository.entries.values.single()
-    assertEquals("today was good", entry.note)
-    assertEquals(DeliveryStatus.FAILED, entry.deliveryStatus)
-  }
-
-  @Test
-  fun `Webhook設定が不足している場合はネットワーク送信せずFAILEDになりローカル記録は残る`() = runTest {
-    val repository = FakeJournalEntryRepository()
-    var postCalled = false
-    val recorder = createRecorder(
-      repository,
-      poster = { postCalled = true; true },
-      isWebhookConfigured = { false },
-    )
-
-    val result = recorder.record("today was good", mood = null, source = JournalSource.APP)
-
-    assertEquals(DeliveryStatus.FAILED, result)
-    assertFalse(postCalled)
     val entry = repository.entries.values.single()
     assertEquals("today was good", entry.note)
     assertEquals(DeliveryStatus.FAILED, entry.deliveryStatus)
@@ -110,7 +88,6 @@ class LocalWebhookJournalRecorderTest {
       repository,
       JournalPoster { true },
       now = { fixedNow },
-      isWebhookConfigured = { true },
     )
 
     var thrown: Throwable? = null
@@ -140,7 +117,6 @@ class LocalWebhookJournalRecorderTest {
       repository,
       JournalPoster { true },
       now = { fixedNow },
-      isWebhookConfigured = { true },
     )
 
     val result = recorder.record("today was good", mood = null, source = JournalSource.APP)
@@ -165,7 +141,6 @@ class LocalWebhookJournalRecorderTest {
       repository,
       JournalPoster { true },
       now = { fixedNow },
-      isWebhookConfigured = { true },
     )
 
     var thrown: Throwable? = null

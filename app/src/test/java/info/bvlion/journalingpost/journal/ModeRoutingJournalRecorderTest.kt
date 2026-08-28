@@ -48,7 +48,7 @@ class ModeRoutingJournalRecorderTest {
     val recorder = ModeRoutingJournalRecorder(
       recordModeRepository = modeRepository,
       localOnlyRecorder = LocalOnlyJournalRecorder(repository),
-      localWebhookRecorder = LocalWebhookJournalRecorder(repository, JournalPoster { true }, isWebhookConfigured = { true }),
+      localWebhookRecorder = LocalWebhookJournalRecorder(repository, JournalPoster { true }),
     )
 
     recorder.record("today was good", mood = null, source = JournalSource.APP)
@@ -63,7 +63,7 @@ class ModeRoutingJournalRecorderTest {
     val recorder = ModeRoutingJournalRecorder(
       recordModeRepository = modeRepository,
       localOnlyRecorder = LocalOnlyJournalRecorder(repository),
-      localWebhookRecorder = LocalWebhookJournalRecorder(repository, JournalPoster { true }, isWebhookConfigured = { true }),
+      localWebhookRecorder = LocalWebhookJournalRecorder(repository, JournalPoster { true }),
     )
 
     recorder.record("first", mood = null, source = JournalSource.APP)
@@ -84,11 +84,7 @@ class ModeRoutingJournalRecorderTest {
   ) = ModeRoutingJournalRecorder(
     recordModeRepository = FakeRecordModeRepository(mode),
     localOnlyRecorder = LocalOnlyJournalRecorder(repository),
-    localWebhookRecorder = LocalWebhookJournalRecorder(
-      repository,
-      JournalPoster { poster(it) },
-      isWebhookConfigured = { true },
-    ),
+    localWebhookRecorder = LocalWebhookJournalRecorder(repository, JournalPoster { poster(it) }),
   )
 
   private class FakeRecordModeRepository(initialMode: RecordMode) : RecordModeRepository {

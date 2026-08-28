@@ -44,6 +44,9 @@ import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.history.JournalHistoryScreen
 import info.bvlion.journalingpost.settings.SettingsScreen
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
+import info.bvlion.journalingpost.webhook.LegacyWebhookConfigProvider
+import info.bvlion.journalingpost.webhook.WebhookSettingsMigrationCoordinator
+import info.bvlion.journalingpost.webhook.WebhookSettingsRepositoryStore
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
 import kotlinx.coroutines.launch
 
@@ -61,6 +64,16 @@ class MainActivity : ComponentActivity() {
 
     // Widget pickerのgenerated preview(Android 15+)登録。通常UI/入力フローには影響しない。
     lifecycleScope.launch { registerMoodWidgetPreviewOnce(applicationContext) }
+
+    // debug buildの自分用Webhook設定を初回起動時のみCustom Webhookへ移行する。移行の完了自体は
+    // WebhookJournalPoster側でも保証されるため、ここはWidget等より先にMainActivityが開かれた場合の
+    // 早期実行(体感速度の改善)に過ぎない。両者は同じcoordinatorを通るため競合しても二重importしない。
+    lifecycleScope.launch {
+      WebhookSettingsMigrationCoordinator.ensureMigrated(
+        repository = WebhookSettingsRepositoryStore.getInstance(applicationContext),
+        legacyConfigProvider = LegacyWebhookConfigProvider::get,
+      )
+    }
 
     setContent {
       JournalingPostTheme {
@@ -112,11 +125,29 @@ class MainActivity : ComponentActivity() {
               Screen.SETTINGS -> {
                 val recordMode by settingsViewModel.recordMode.collectAsState()
                 val saveFailed by settingsViewModel.saveFailed.collectAsState()
+                val webhookSettingsState by settingsViewModel.webhookSettingsState.collectAsState()
+                val isWebhookFormVisible by settingsViewModel.isWebhookFormVisible.collectAsState()
+                val webhookFormState by settingsViewModel.webhookFormState.collectAsState()
+                val webhookValidationErrors by settingsViewModel.webhookValidationErrors.collectAsState()
+                val webhookSaveFailed by settingsViewModel.webhookSaveFailed.collectAsState()
                 SettingsScreen(
                   recordMode = recordMode,
-                  isWebhookConfigured = settingsViewModel.isWebhookConfigured,
                   saveFailed = saveFailed,
                   onRecordModeChange = settingsViewModel::setRecordMode,
+                  webhookSettingsState = webhookSettingsState,
+                  isWebhookFormVisible = isWebhookFormVisible,
+                  webhookFormState = webhookFormState,
+                  webhookValidationErrors = webhookValidationErrors,
+                  webhookSaveFailed = webhookSaveFailed,
+                  onWebhookReveal = settingsViewModel::revealWebhookForm,
+                  onWebhookUrlChange = settingsViewModel::updateWebhookUrl,
+                  onWebhookHeaderAdd = settingsViewModel::addWebhookHeader,
+                  onWebhookHeaderRemove = settingsViewModel::removeWebhookHeader,
+                  onWebhookHeaderNameChange = settingsViewModel::updateWebhookHeaderName,
+                  onWebhookHeaderValueChange = settingsViewModel::updateWebhookHeaderValue,
+                  onWebhookBodyTemplateChange = settingsViewModel::updateWebhookBodyTemplate,
+                  onWebhookSave = settingsViewModel::saveWebhookSettings,
+                  onWebhookDelete = settingsViewModel::deleteWebhookSettings,
                   onBack = { screen = Screen.INPUT },
                 )
               }
