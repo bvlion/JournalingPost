@@ -10,19 +10,28 @@ import info.bvlion.journalingpost.webhook.WebhookSettingsRepositoryStore
 
 /** RecordModeRepository/WebhookSettingsRepositoryはMainViewModelFactoryと同じsingletonを再利用する。 */
 object SettingsViewModelFactory : ViewModelProvider.Factory {
-  private lateinit var recordModeRepository: RecordModeRepository
-  private lateinit var webhookSettingsRepository: WebhookSettingsRepository
+  @Volatile
+  private var dependencies: Dependencies? = null
 
   /** 各Activityのviewmodel取得より前に呼び出すこと。 */
   fun initialize(context: Context) {
-    if (::recordModeRepository.isInitialized) return
-    recordModeRepository = RecordModeRepositoryStore.getInstance(context)
-    webhookSettingsRepository = WebhookSettingsRepositoryStore.getInstance(context)
+    if (dependencies != null) return
+    // 両方取得できてから1つの参照としてまとめて確定させる。片方ずつfieldへ代入すると、後続の取得が
+    // 例外になった際に部分初期化状態がprocess内へ残り、次回initialize()も初期化済みとして早期returnして
+    // create()が未初期化のdependencyを参照してしまう。
+    val recordModeRepository = RecordModeRepositoryStore.getInstance(context)
+    val webhookSettingsRepository = WebhookSettingsRepositoryStore.getInstance(context)
+    dependencies = Dependencies(recordModeRepository, webhookSettingsRepository)
   }
 
   override fun <T : ViewModel> create(modelClass: Class<T>): T {
-    check(::recordModeRepository.isInitialized) { "SettingsViewModelFactory.initialize(context) was not called" }
+    val dependencies = checkNotNull(dependencies) { "SettingsViewModelFactory.initialize(context) was not called" }
     @Suppress("UNCHECKED_CAST")
-    return SettingsViewModel(recordModeRepository, webhookSettingsRepository) as T
+    return SettingsViewModel(dependencies.recordModeRepository, dependencies.webhookSettingsRepository) as T
   }
+
+  private class Dependencies(
+    val recordModeRepository: RecordModeRepository,
+    val webhookSettingsRepository: WebhookSettingsRepository,
+  )
 }
