@@ -54,10 +54,10 @@ jobs:
           BASE="${{ steps.diff-range.outputs.base }}"
           HEAD="${{ steps.diff-range.outputs.head }}"
 
-          # Android compile/test/lint に影響し得るパス(PRでの検証対象)
-          BUILD_REGEX='^(app/src/(main|test|androidTest)/|app/build\.gradle\.kts$|app/proguard-rules\.pro$|app/schemas/|build\.gradle\.kts$|settings\.gradle\.kts$|gradle\.properties$|gradle/|gradlew$|gradlew\.bat$)'
-          # release APKに影響し得るパス(testコードのみの変更は含まない)
-          RELEASE_REGEX='^(app/src/main/|app/schemas/|app/build\.gradle\.kts$|app/proguard-rules\.pro$|build\.gradle\.kts$|settings\.gradle\.kts$|gradle\.properties$|gradle/|gradlew$|gradlew\.bat$)'
+          # Android compile/test/lint に影響し得るパス(PRでの検証対象、source setの種類を問わない)
+          BUILD_REGEX='^(app/src/|app/build\.gradle\.kts$|app/proguard-rules\.pro$|app/schemas/|build\.gradle\.kts$|settings\.gradle\.kts$|gradle\.properties$|gradle/|gradlew$|gradlew\.bat$)'
+          # release APKに影響し得るパス(test/androidTest/debugのみの変更は含まない)
+          RELEASE_REGEX='^(app/src/(main|release)/|app/schemas/|app/build\.gradle\.kts$|app/proguard-rules\.pro$|build\.gradle\.kts$|settings\.gradle\.kts$|gradle\.properties$|gradle/|gradlew$|gradlew\.bat$)'
 
           if [ -z "$BASE" ]; then
             echo "No previous commit to compare against; treating as build/release affecting."
