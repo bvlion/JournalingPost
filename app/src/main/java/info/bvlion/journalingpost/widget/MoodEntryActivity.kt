@@ -95,10 +95,12 @@ fun MoodEntrySheet(
   }
 
   ModalBottomSheet(
-    onDismissRequest = onClose,
-    sheetState = sheetState,
     // dismissするとActivityごとfinishしてViewModelのcoroutineを破棄するため、記録処理中は
-    // swipe / scrim tap / Backのどれでも閉じられないようにする。
+    // swipe / scrim tap / Backのどれでも閉じられないようにする。sheetGesturesEnabled /
+    // shouldDismissOnBackPressはswipeとBackしか止めないため、scrim tapが呼ぶ
+    // onDismissRequest自体もisRecording中はonCloseを呼ばないよう明示的に無視する。
+    onDismissRequest = { if (!isRecording) onClose() },
+    sheetState = sheetState,
     sheetGesturesEnabled = !isRecording,
     properties = ModalBottomSheetProperties(shouldDismissOnBackPress = !isRecording),
   ) {
