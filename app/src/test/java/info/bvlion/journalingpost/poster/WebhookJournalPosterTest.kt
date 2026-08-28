@@ -1,5 +1,6 @@
 package info.bvlion.journalingpost.poster
 
+import info.bvlion.journalingpost.webhook.LegacyWebhookConfig
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettings
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
@@ -35,13 +36,14 @@ class WebhookJournalPosterTest {
   private fun createPoster(
     statusCode: HttpStatusCode,
     repository: WebhookSettingsRepository = FakeWebhookSettingsRepository(settings),
+    legacyConfigProvider: () -> LegacyWebhookConfig? = { error("not used in this test") },
     onRequest: (HttpRequestData) -> Unit = {},
   ): WebhookJournalPoster {
     val mockEngine = MockEngine { request ->
       onRequest(request)
       respond(content = "{}", status = statusCode, headers = headersOf("Content-Type", listOf("application/json")))
     }
-    return WebhookJournalPoster(HttpClient(mockEngine), repository, now = { fixedNow })
+    return WebhookJournalPoster(HttpClient(mockEngine), repository, now = { fixedNow }, legacyConfigProvider = legacyConfigProvider)
   }
 
   @Test
@@ -138,7 +140,35 @@ class WebhookJournalPosterTest {
     assertEquals(settings.url, requireNotNull(capturedRequest).url.toString())
   }
 
-  private class FakeWebhookSettingsRepository(initial: WebhookSettings?) : WebhookSettingsRepository {
+  @Test
+  fun `未設定かつlegacy設定がある場合はpost内でmigrationしてから送信する`() = runTest {
+    val repository = FakeWebhookSettingsRepository(initial = null, migrationCompleted = false)
+    val legacy = LegacyWebhookConfig(
+      postUrl = "https://legacy.example.com/webhook",
+      teamId = "T1",
+      token = "TOKEN",
+      channel = "C1",
+      user = "U1",
+    )
+    var capturedRequest: HttpRequestData? = null
+    val poster = createPoster(
+      HttpStatusCode.OK,
+      repository = repository,
+      legacyConfigProvider = { legacy },
+    ) { capturedRequest = it }
+
+    val result = poster.post("today was good")
+
+    assertTrue(result)
+    assertEquals(legacy.postUrl, requireNotNull(capturedRequest).url.toString())
+    assertTrue(repository.isLegacyMigrationCompleted())
+  }
+
+  /** migrationCompletedはデフォルトでtrue(migration済み)にし、送信挙動だけを検証するテストをlegacy providerと無関係にする。 */
+  private class FakeWebhookSettingsRepository(
+    initial: WebhookSettings?,
+    private var migrationCompleted: Boolean = true,
+  ) : WebhookSettingsRepository {
     private val state = MutableStateFlow(initial)
     override val settings: Flow<WebhookSettings?> = state
 
@@ -154,10 +184,10 @@ class WebhookJournalPosterTest {
       state.value = null
     }
 
-    override suspend fun isLegacyMigrationCompleted(): Boolean = error("not used in this test")
+    override suspend fun isLegacyMigrationCompleted(): Boolean = migrationCompleted
 
     override suspend fun markLegacyMigrationCompleted() {
-      error("not used in this test")
+      migrationCompleted = true
     }
   }
 }

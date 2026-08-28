@@ -135,7 +135,7 @@ class SettingsViewModelTest {
   }
 
   @Test
-  fun `保存成功時にisWebhookConfiguredがtrueになりvalidation errorはない`() = runTest(testDispatcher) {
+  fun `保存成功時にisWebhookConfiguredがtrueになりvalidation errorはなくフォームは再び隠れる`() = runTest(testDispatcher) {
     val webhookRepository = FakeWebhookSettingsRepository()
     val viewModel = SettingsViewModel(FakeRecordModeRepository(RecordMode.LOCAL_AND_WEBHOOK), webhookRepository)
     val collectJob = launchWebhookCollection(viewModel)
@@ -148,6 +148,8 @@ class SettingsViewModelTest {
     assertTrue(viewModel.isWebhookConfigured.value)
     assertTrue(viewModel.webhookValidationErrors.value.isEmpty())
     assertFalse(viewModel.webhookSaveFailed.value)
+    assertFalse(viewModel.isWebhookFormVisible.value)
+    assertEquals(WebhookFormState(), viewModel.webhookFormState.value)
     collectJob.cancel()
   }
 
@@ -202,11 +204,12 @@ class SettingsViewModelTest {
 
     assertFalse(viewModel.isWebhookConfigured.value)
     assertEquals(WebhookFormState(), viewModel.webhookFormState.value)
+    assertTrue(viewModel.isWebhookFormVisible.value)
     collectJob.cancel()
   }
 
   @Test
-  fun `起動時に既存のwebhook設定がフォームへ反映される`() = runTest(testDispatcher) {
+  fun `保存済み設定がある初期状態ではフォームを展開せずisWebhookFormVisibleはfalse`() = runTest(testDispatcher) {
     val existing = WebhookSettings(
       url = "https://example.com/webhook",
       headers = listOf(WebhookHeader("Authorization", "Bearer xxxxx")),
@@ -217,6 +220,40 @@ class SettingsViewModelTest {
     val collectJob = launchWebhookCollection(viewModel)
     testDispatcher.scheduler.advanceUntilIdle()
 
+    assertTrue(viewModel.isWebhookConfigured.value)
+    assertFalse(viewModel.isWebhookFormVisible.value)
+    assertEquals(WebhookFormState(), viewModel.webhookFormState.value)
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `未設定なら初期状態からisWebhookFormVisibleはtrueで新規入力できる`() = runTest(testDispatcher) {
+    val webhookRepository = FakeWebhookSettingsRepository(initial = null)
+    val viewModel = SettingsViewModel(FakeRecordModeRepository(RecordMode.LOCAL_AND_WEBHOOK), webhookRepository)
+    val collectJob = launchWebhookCollection(viewModel)
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertFalse(viewModel.isWebhookConfigured.value)
+    assertTrue(viewModel.isWebhookFormVisible.value)
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `revealWebhookFormを呼ぶと保存済み設定がフォームへ反映されisWebhookFormVisibleがtrueになる`() = runTest(testDispatcher) {
+    val existing = WebhookSettings(
+      url = "https://example.com/webhook",
+      headers = listOf(WebhookHeader("Authorization", "Bearer xxxxx")),
+      bodyTemplate = """{"text": "{{message}}"}""",
+    )
+    val webhookRepository = FakeWebhookSettingsRepository(initial = existing)
+    val viewModel = SettingsViewModel(FakeRecordModeRepository(RecordMode.LOCAL_AND_WEBHOOK), webhookRepository)
+    val collectJob = launchWebhookCollection(viewModel)
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    viewModel.revealWebhookForm()
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertTrue(viewModel.isWebhookFormVisible.value)
     assertEquals(existing.url, viewModel.webhookFormState.value.url)
     assertEquals(existing.headers, viewModel.webhookFormState.value.headers)
     assertEquals(existing.bodyTemplate, viewModel.webhookFormState.value.bodyTemplate)
@@ -227,7 +264,10 @@ class SettingsViewModelTest {
     CoroutineScope(testDispatcher).launch { viewModel.recordMode.collect {} }
 
   private fun launchWebhookCollection(viewModel: SettingsViewModel) =
-    CoroutineScope(testDispatcher).launch { viewModel.isWebhookConfigured.collect {} }
+    CoroutineScope(testDispatcher).launch {
+      launch { viewModel.isWebhookConfigured.collect {} }
+      launch { viewModel.isWebhookFormVisible.collect {} }
+    }
 
   /** setRecordMode()の完了/失敗を呼び出し順と切り離して制御し、write完了順の入れ替わりを再現するFake。 */
   private class ControllableRecordModeRepository(initial: RecordMode) : RecordModeRepository {

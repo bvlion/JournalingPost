@@ -43,12 +43,19 @@ internal class DataStoreWebhookSettingsRepository(
       true
     }
 
+  // pendingSettingsがnull(未pending)であることと、clear()によるpending中のnull(明示的な削除)を
+  // Elvis演算子1つで区別すると両方とも「persistedへfall back」になってしまい、削除直後もDataStore
+  // write完了までは旧設定を返してしまう。PendingSettingsをsealedにして両者を型で区別する。
   override val settings: Flow<WebhookSettings?> = combine(persistedSettings, pendingSettings) { persisted, pending ->
-    pending?.settings ?: persisted
+    when (pending) {
+      null -> persisted
+      is PendingSettings.Save -> pending.settings
+      is PendingSettings.Clear -> null
+    }
   }
 
   override suspend fun save(settings: WebhookSettings) {
-    val pending = PendingSettings(settings, generation.incrementAndGet())
+    val pending = PendingSettings.Save(settings, generation.incrementAndGet())
     pendingSettings.value = pending
     try {
       val plaintext = Json.encodeToString(settings).encodeToByteArray()
@@ -63,7 +70,7 @@ internal class DataStoreWebhookSettingsRepository(
   }
 
   override suspend fun clear() {
-    val pending = PendingSettings(null, generation.incrementAndGet())
+    val pending = PendingSettings.Clear(generation.incrementAndGet())
     pendingSettings.value = pending
     try {
       dataStore.edit { preferences ->
@@ -100,7 +107,12 @@ internal class DataStoreWebhookSettingsRepository(
     }
   }
 
-  private data class PendingSettings(val settings: WebhookSettings?, val generation: Int)
+  private sealed interface PendingSettings {
+    val generation: Int
+
+    data class Save(val settings: WebhookSettings, override val generation: Int) : PendingSettings
+    data class Clear(override val generation: Int) : PendingSettings
+  }
 
   private companion object {
     val KEY_CIPHERTEXT = stringPreferencesKey("ciphertext")

@@ -5,11 +5,19 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
+import info.bvlion.journalingpost.poster.WebhookJournalPoster
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.client.request.HttpRequestData
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import java.io.File
 import java.io.IOException
 import java.security.GeneralSecurityException
 import java.util.Base64
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
@@ -25,6 +33,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -84,6 +93,78 @@ class DataStoreWebhookSettingsRepositoryTest {
     repository.clear()
 
     assertNull(repository.settings.first())
+  }
+
+  @Test
+  fun `clear開始後はDataStore write完了前でも設定がnullになりWebhook送信を開始しない`() = runTest {
+    val dataStore = SucceedNTimesThenBlockDataStore(succeedCount = 2)
+    val repository = DataStoreWebhookSettingsRepository(dataStore, FakeWebhookSettingsCipher())
+    repository.markLegacyMigrationCompleted()
+    repository.save(sampleSettings)
+    assertEquals(sampleSettings, repository.settings.first())
+
+    backgroundScope.launch { repository.clear() }
+    runCurrent() // clearのwriteは意図的に完了させないため、pending clear反映直後まで進む
+
+    assertNull(repository.settings.first())
+
+    var capturedRequest: HttpRequestData? = null
+    val poster = WebhookJournalPoster(
+      httpClient = HttpClient(
+        MockEngine { request ->
+          capturedRequest = request
+          respond(content = "{}", status = HttpStatusCode.OK, headers = headersOf("Content-Type", listOf("application/json")))
+        },
+      ),
+      webhookSettingsRepository = repository,
+    )
+
+    val sent = poster.post("today was good")
+
+    assertFalse(sent)
+    assertNull(capturedRequest)
+  }
+
+  @Test
+  fun `saveの後にclearが呼ばれた場合、saveのwriteが後から完了してもclearのpendingが優先されnullのまま`() = runTest {
+    val dataStore = ControllableWriteDataStore()
+    val repository = DataStoreWebhookSettingsRepository(dataStore, FakeWebhookSettingsCipher())
+
+    backgroundScope.launch { repository.save(sampleSettings) }
+    runCurrent()
+    backgroundScope.launch { repository.clear() }
+    runCurrent()
+
+    assertNull(repository.settings.first())
+
+    dataStore.completeWrite(0)
+    runCurrent()
+    assertNull(repository.settings.first())
+
+    dataStore.completeWrite(1)
+    runCurrent()
+    assertNull(repository.settings.first())
+  }
+
+  @Test
+  fun `clearの後にsaveが呼ばれた場合、clearのwriteが後から完了してもsaveのpendingが優先され新しい設定のまま`() = runTest {
+    val dataStore = ControllableWriteDataStore()
+    val repository = DataStoreWebhookSettingsRepository(dataStore, FakeWebhookSettingsCipher())
+
+    backgroundScope.launch { repository.clear() }
+    runCurrent()
+    backgroundScope.launch { repository.save(sampleSettings) }
+    runCurrent()
+
+    assertEquals(sampleSettings, repository.settings.first())
+
+    dataStore.completeWrite(0)
+    runCurrent()
+    assertEquals(sampleSettings, repository.settings.first())
+
+    dataStore.completeWrite(1)
+    runCurrent()
+    assertEquals(sampleSettings, repository.settings.first())
   }
 
   @Test
@@ -248,6 +329,44 @@ class DataStoreWebhookSettingsRepositoryTest {
     override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
       delay(Long.MAX_VALUE)
       error("unreachable: このテストではwriteを意図的に完了させない")
+    }
+  }
+
+  /** 最初のsucceedCount回だけwriteを即座に成功させ、以降は意図的に完了させないFake。 */
+  private class SucceedNTimesThenBlockDataStore(private val succeedCount: Int) : DataStore<Preferences> {
+    private val backing = MutableStateFlow(emptyPreferences())
+    override val data: Flow<Preferences> = backing
+    private var callCount = 0
+
+    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
+      callCount++
+      if (callCount <= succeedCount) {
+        val updated = transform(backing.value)
+        backing.value = updated
+        return updated
+      }
+      delay(Long.MAX_VALUE)
+      error("unreachable: このテストではこれ以上のwriteを意図的に完了させない")
+    }
+  }
+
+  /** updateData()の完了を呼び出し順と切り離して制御し、write完了順の入れ替わりを再現するFake。 */
+  private class ControllableWriteDataStore : DataStore<Preferences> {
+    private val backing = MutableStateFlow(emptyPreferences())
+    override val data: Flow<Preferences> = backing
+    private val gates = mutableListOf<CompletableDeferred<Unit>>()
+
+    fun completeWrite(index: Int) {
+      gates[index].complete(Unit)
+    }
+
+    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
+      val gate = CompletableDeferred<Unit>()
+      gates += gate
+      gate.await()
+      val updated = transform(backing.value)
+      backing.value = updated
+      return updated
     }
   }
 

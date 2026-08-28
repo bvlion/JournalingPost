@@ -66,6 +66,20 @@ class WebhookSettingsValidatorTest {
   }
 
   @Test
+  fun `Header nameに改行を含む場合はINVALID_HEADER_SYNTAX`() {
+    val errors = WebhookSettingsValidator.validate(validUrl, listOf(WebhookHeader("X-Api\r\nKey", "v")), validBody)
+
+    assertEquals(listOf(WebhookSettingsValidator.ValidationError.INVALID_HEADER_SYNTAX), errors)
+  }
+
+  @Test
+  fun `Header valueに改行を含む場合はINVALID_HEADER_SYNTAX`() {
+    val errors = WebhookSettingsValidator.validate(validUrl, listOf(WebhookHeader("X-Api-Key", "v\r\nX-Injected: 1")), validBody)
+
+    assertEquals(listOf(WebhookSettingsValidator.ValidationError.INVALID_HEADER_SYNTAX), errors)
+  }
+
+  @Test
   fun `不正なJSON bodyはINVALID_BODY_TEMPLATE`() {
     val errors = WebhookSettingsValidator.validate(validUrl, emptyList(), "{not valid json")
 
@@ -75,6 +89,27 @@ class WebhookSettingsValidatorTest {
   @Test
   fun `未対応のplaceholderを含むbodyはINVALID_BODY_TEMPLATE`() {
     val errors = WebhookSettingsValidator.validate(validUrl, emptyList(), """{"text": "{{mood}}"}""")
+
+    assertEquals(listOf(WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE), errors)
+  }
+
+  @Test
+  fun `object key上のplaceholderはINVALID_BODY_TEMPLATE`() {
+    val errors = WebhookSettingsValidator.validate(validUrl, emptyList(), """{"{{message}}": "value"}""")
+
+    assertEquals(listOf(WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE), errors)
+  }
+
+  @Test
+  fun `hyphenを含むplaceholder記法はINVALID_BODY_TEMPLATE`() {
+    val errors = WebhookSettingsValidator.validate(validUrl, emptyList(), """{"text": "{{foo-bar}}"}""")
+
+    assertEquals(listOf(WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE), errors)
+  }
+
+  @Test
+  fun `内側に空白を含むplaceholder記法はINVALID_BODY_TEMPLATE`() {
+    val errors = WebhookSettingsValidator.validate(validUrl, emptyList(), """{"text": "{{ message }}"}""")
 
     assertEquals(listOf(WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE), errors)
   }

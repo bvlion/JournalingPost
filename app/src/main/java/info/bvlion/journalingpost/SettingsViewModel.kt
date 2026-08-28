@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -53,6 +55,19 @@ class SettingsViewModel(
   private val _webhookFormState = MutableStateFlow(WebhookFormState())
   val webhookFormState: StateFlow<WebhookFormState> = _webhookFormState.asStateFlow()
 
+  // ユーザーが「表示して編集」を選んだ状態。保存済みsecret(Header value/Body template等)は、
+  // これがtrueになるまでフォームへ展開しない。
+  private val _webhookFormRevealed = MutableStateFlow(false)
+
+  /**
+   * 未設定の場合は新規入力のため常にフォームを表示し、設定済みの場合はユーザーが明示的に
+   * 表示・編集を選ぶまで(_webhookFormRevealed)フォームを表示しない。isWebhookConfiguredが
+   * revealedより優先して変化しても、trueになった側でフォームが出続けるようにOR条件にする。
+   */
+  val isWebhookFormVisible: StateFlow<Boolean> = combine(isWebhookConfigured, _webhookFormRevealed) { configured, revealed ->
+    !configured || revealed
+  }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
   private val _webhookValidationErrors = MutableStateFlow<List<WebhookSettingsValidator.ValidationError>>(emptyList())
   val webhookValidationErrors: StateFlow<List<WebhookSettingsValidator.ValidationError>> = _webhookValidationErrors.asStateFlow()
 
@@ -61,51 +76,49 @@ class SettingsViewModel(
 
   private val webhookRequestGeneration = AtomicInteger(0)
 
-  // 移行処理がバックグラウンドで完了するまでのわずかな間、settingsの購読をそのままフォーム値へ
-  // 反映し続けるための状態。ユーザーが1度でも編集し始めたら、以降は外部の変更でフォームを上書きしない。
-  private var hasUserEditedWebhookForm = false
-
   init {
     viewModelScope.launch {
-      webhookSettingsRepository.settings.collect { current ->
-        if (!hasUserEditedWebhookForm) {
-          _webhookFormState.value = current?.toFormState() ?: WebhookFormState()
-        }
+      // 未設定の場合だけ、初回の認証済みsnapshotで新規入力フォームを開く。設定済みの場合は
+      // revealWebhookForm()を呼ぶまでフォーム内容を読み込まない(secretを画面へ先読み表示しない)。
+      if (webhookSettingsRepository.settings.first() == null) {
+        _webhookFormRevealed.value = true
       }
     }
   }
 
+  fun revealWebhookForm() {
+    viewModelScope.launch {
+      val current = webhookSettingsRepository.settings.first()
+      _webhookFormState.value = current?.toFormState() ?: WebhookFormState()
+      _webhookFormRevealed.value = true
+    }
+  }
+
   fun updateWebhookUrl(url: String) {
-    hasUserEditedWebhookForm = true
     _webhookFormState.update { it.copy(url = url) }
   }
 
   fun addWebhookHeader() {
-    hasUserEditedWebhookForm = true
     _webhookFormState.update { it.copy(headers = it.headers + WebhookHeader(name = "", value = "")) }
   }
 
   fun removeWebhookHeader(index: Int) {
-    hasUserEditedWebhookForm = true
     _webhookFormState.update { state -> state.copy(headers = state.headers.filterIndexed { i, _ -> i != index }) }
   }
 
   fun updateWebhookHeaderName(index: Int, name: String) {
-    hasUserEditedWebhookForm = true
     _webhookFormState.update { state ->
       state.copy(headers = state.headers.mapIndexed { i, header -> if (i == index) header.copy(name = name) else header })
     }
   }
 
   fun updateWebhookHeaderValue(index: Int, value: String) {
-    hasUserEditedWebhookForm = true
     _webhookFormState.update { state ->
       state.copy(headers = state.headers.mapIndexed { i, header -> if (i == index) header.copy(value = value) else header })
     }
   }
 
   fun updateWebhookBodyTemplate(bodyTemplate: String) {
-    hasUserEditedWebhookForm = true
     _webhookFormState.update { it.copy(bodyTemplate = bodyTemplate) }
   }
 
@@ -122,6 +135,10 @@ class SettingsViewModel(
     viewModelScope.launch {
       try {
         webhookSettingsRepository.save(WebhookSettings(form.url, form.headers, form.bodyTemplate))
+        if (generation == webhookRequestGeneration.get()) {
+          _webhookFormRevealed.value = false
+          _webhookFormState.value = WebhookFormState()
+        }
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {
@@ -132,13 +149,15 @@ class SettingsViewModel(
 
   fun deleteWebhookSettings() {
     val generation = webhookRequestGeneration.incrementAndGet()
-    hasUserEditedWebhookForm = true
     _webhookValidationErrors.value = emptyList()
     _webhookSaveFailed.value = false
     viewModelScope.launch {
       try {
         webhookSettingsRepository.clear()
-        if (generation == webhookRequestGeneration.get()) _webhookFormState.value = WebhookFormState()
+        if (generation == webhookRequestGeneration.get()) {
+          _webhookFormRevealed.value = false
+          _webhookFormState.value = WebhookFormState()
+        }
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {

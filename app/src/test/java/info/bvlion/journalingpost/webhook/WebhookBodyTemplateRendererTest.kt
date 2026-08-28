@@ -131,4 +131,50 @@ class WebhookBodyTemplateRendererTest {
 
     assertTrue(result is WebhookBodyTemplateRenderer.Result.Failure.InvalidJson)
   }
+
+  @Test
+  fun `object key上のplaceholderは名前がmessageと一致していても拒否される`() {
+    val result = WebhookBodyTemplateRenderer.render(
+      template = """{"{{message}}": "value"}""",
+      message = "today was good",
+      timestamp = "0",
+    )
+
+    assertTrue(result is WebhookBodyTemplateRenderer.Result.Failure.UnsupportedPlaceholder)
+  }
+
+  @Test
+  fun `hyphenを含むplaceholder記法は拒否される`() {
+    val result = WebhookBodyTemplateRenderer.render(
+      template = """{"text": "{{foo-bar}}"}""",
+      message = "today was good",
+      timestamp = "0",
+    )
+
+    assertTrue(result is WebhookBodyTemplateRenderer.Result.Failure.UnsupportedPlaceholder)
+    assertEquals("foo-bar", (result as WebhookBodyTemplateRenderer.Result.Failure.UnsupportedPlaceholder).name)
+  }
+
+  @Test
+  fun `内側に空白を含むplaceholder記法は拒否される`() {
+    val result = WebhookBodyTemplateRenderer.render(
+      template = """{"text": "{{ message }}"}""",
+      message = "today was good",
+      timestamp = "0",
+    )
+
+    assertTrue(result is WebhookBodyTemplateRenderer.Result.Failure.UnsupportedPlaceholder)
+    assertEquals(" message ", (result as WebhookBodyTemplateRenderer.Result.Failure.UnsupportedPlaceholder).name)
+  }
+
+  @Test
+  fun `厳密な記法のplaceholderを含むtemplateは成功する`() {
+    val result = WebhookBodyTemplateRenderer.render(
+      template = """{"text":"{{message}}"}""",
+      message = "today was good",
+      timestamp = "0",
+    )
+
+    assertTrue(result is WebhookBodyTemplateRenderer.Result.Success)
+  }
 }

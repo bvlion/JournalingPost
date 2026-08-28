@@ -32,9 +32,11 @@ fun SettingsScreen(
   isWebhookConfigured: Boolean,
   saveFailed: Boolean,
   onRecordModeChange: (RecordMode) -> Unit,
+  isWebhookFormVisible: Boolean,
   webhookFormState: WebhookFormState,
   webhookValidationErrors: List<WebhookSettingsValidator.ValidationError>,
   webhookSaveFailed: Boolean,
+  onWebhookReveal: () -> Unit,
   onWebhookUrlChange: (String) -> Unit,
   onWebhookHeaderAdd: () -> Unit,
   onWebhookHeaderRemove: (Int) -> Unit,
@@ -125,53 +127,73 @@ fun SettingsScreen(
         )
       }
 
-      OutlinedTextField(
-        value = webhookFormState.url,
-        onValueChange = onWebhookUrlChange,
-        label = { Text("URL") },
-        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-        singleLine = true,
-      )
-
-      Text(
-        text = "HTTP Headers",
-        style = MaterialTheme.typography.titleSmall,
-        modifier = Modifier.padding(top = 16.dp),
-      )
-      webhookFormState.headers.forEachIndexed { index, header ->
-        WebhookHeaderRow(
-          header = header,
-          onNameChange = { onWebhookHeaderNameChange(index, it) },
-          onValueChange = { onWebhookHeaderValueChange(index, it) },
-          onRemove = { onWebhookHeaderRemove(index) },
+      if (isWebhookFormVisible) {
+        OutlinedTextField(
+          value = webhookFormState.url,
+          onValueChange = onWebhookUrlChange,
+          label = { Text("URL") },
+          modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+          singleLine = true,
         )
-      }
-      TextButton(onClick = onWebhookHeaderAdd, modifier = Modifier.padding(top = 4.dp)) {
-        Text("Headerを追加")
-      }
 
-      Text(
-        text = "JSON Body template",
-        style = MaterialTheme.typography.titleSmall,
-        modifier = Modifier.padding(top = 16.dp),
-      )
-      Text(
-        text = "利用可能なplaceholder: {{message}} / {{timestamp}}",
-        style = MaterialTheme.typography.bodySmall,
-      )
-      OutlinedTextField(
-        value = webhookFormState.bodyTemplate,
-        onValueChange = onWebhookBodyTemplateChange,
-        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-        minLines = 5,
-      )
-
-      Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
-        TextButton(onClick = onWebhookSave) {
-          Text("Webhook設定を保存")
+        Text(
+          text = "HTTP Headers",
+          style = MaterialTheme.typography.titleSmall,
+          modifier = Modifier.padding(top = 16.dp),
+        )
+        webhookFormState.headers.forEachIndexed { index, header ->
+          WebhookHeaderRow(
+            header = header,
+            onNameChange = { onWebhookHeaderNameChange(index, it) },
+            onValueChange = { onWebhookHeaderValueChange(index, it) },
+            onRemove = { onWebhookHeaderRemove(index) },
+          )
         }
-        TextButton(onClick = onWebhookDelete, enabled = isWebhookConfigured) {
-          Text("Webhook設定を削除")
+        TextButton(onClick = onWebhookHeaderAdd, modifier = Modifier.padding(top = 4.dp)) {
+          Text("Headerを追加")
+        }
+
+        Text(
+          text = "JSON Body template",
+          style = MaterialTheme.typography.titleSmall,
+          modifier = Modifier.padding(top = 16.dp),
+        )
+        Text(
+          text = "利用可能なplaceholder: {{message}} / {{timestamp}}",
+          style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedTextField(
+          value = webhookFormState.bodyTemplate,
+          onValueChange = onWebhookBodyTemplateChange,
+          modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+          minLines = 5,
+        )
+
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
+          TextButton(onClick = onWebhookSave) {
+            Text("Webhook設定を保存")
+          }
+          if (isWebhookConfigured) {
+            TextButton(onClick = onWebhookDelete) {
+              Text("Webhook設定を削除")
+            }
+          }
+        }
+      } else {
+        // 保存済み設定にはHeader value・Body template等のsecretが含まれ得るため、画面を開いただけでは
+        // 表示せず、ユーザーが明示的に選んだ場合だけ展開する。
+        Text(
+          text = "設定済み",
+          style = MaterialTheme.typography.bodyMedium,
+          modifier = Modifier.padding(top = 12.dp),
+        )
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+          TextButton(onClick = onWebhookReveal) {
+            Text("設定内容を表示して編集")
+          }
+          TextButton(onClick = onWebhookDelete) {
+            Text("Webhook設定を削除")
+          }
         }
       }
     }
@@ -216,6 +238,7 @@ private fun WebhookSettingsValidator.ValidationError.toMessage(): String = when 
   WebhookSettingsValidator.ValidationError.BLANK_HEADER_NAME -> "Header名が空になっている項目があります"
   WebhookSettingsValidator.ValidationError.DUPLICATE_HEADER_NAME -> "同じHeader名が複数あります"
   WebhookSettingsValidator.ValidationError.RESERVED_CONTENT_TYPE_HEADER -> "Content-TypeはHeaderとして指定できません"
+  WebhookSettingsValidator.ValidationError.INVALID_HEADER_SYNTAX -> "Headerに改行を含めることはできません"
   WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE -> "Body templateが有効なJSON、またはサポート対象のplaceholderではありません"
 }
 
@@ -250,9 +273,11 @@ fun SettingsScreenPreview() {
       isWebhookConfigured = false,
       saveFailed = false,
       onRecordModeChange = {},
+      isWebhookFormVisible = true,
       webhookFormState = WebhookFormState(),
       webhookValidationErrors = emptyList(),
       webhookSaveFailed = false,
+      onWebhookReveal = {},
       onWebhookUrlChange = {},
       onWebhookHeaderAdd = {},
       onWebhookHeaderRemove = {},
