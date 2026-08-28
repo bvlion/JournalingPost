@@ -98,31 +98,43 @@ class SettingsViewModel(
   }
 
   fun updateWebhookUrl(url: String) {
-    _webhookFormState.update { it.copy(url = url) }
+    updateWebhookForm { it.copy(url = url) }
   }
 
   fun addWebhookHeader() {
-    _webhookFormState.update { it.copy(headers = it.headers + WebhookHeader(name = "", value = "")) }
+    updateWebhookForm { it.copy(headers = it.headers + WebhookHeader(name = "", value = "")) }
   }
 
   fun removeWebhookHeader(index: Int) {
-    _webhookFormState.update { state -> state.copy(headers = state.headers.filterIndexed { i, _ -> i != index }) }
+    updateWebhookForm { state -> state.copy(headers = state.headers.filterIndexed { i, _ -> i != index }) }
   }
 
   fun updateWebhookHeaderName(index: Int, name: String) {
-    _webhookFormState.update { state ->
+    updateWebhookForm { state ->
       state.copy(headers = state.headers.mapIndexed { i, header -> if (i == index) header.copy(name = name) else header })
     }
   }
 
   fun updateWebhookHeaderValue(index: Int, value: String) {
-    _webhookFormState.update { state ->
+    updateWebhookForm { state ->
       state.copy(headers = state.headers.mapIndexed { i, header -> if (i == index) header.copy(value = value) else header })
     }
   }
 
   fun updateWebhookBodyTemplate(bodyTemplate: String) {
-    _webhookFormState.update { it.copy(bodyTemplate = bodyTemplate) }
+    updateWebhookForm { it.copy(bodyTemplate = bodyTemplate) }
+  }
+
+  /**
+   * 編集でも世代を進めることで、保存開始後・DataStore write完了前に行われた編集内容を、古いsave/deleteの
+   * 完了処理がクリアしてしまわないようにする。あわせてrevealedを立てるのは、保存完了で永続状態が
+   * Configuredへ変わった際に、未保存の編集内容が入ったフォームが閉じてしまうのを防ぐため
+   * (編集できている時点でフォームは表示済みのため、これで新たにsecretが露出することはない)。
+   */
+  private fun updateWebhookForm(transform: (WebhookFormState) -> WebhookFormState) {
+    webhookRequestGeneration.incrementAndGet()
+    _webhookFormRevealed.value = true
+    _webhookFormState.update(transform)
   }
 
   fun saveWebhookSettings() {

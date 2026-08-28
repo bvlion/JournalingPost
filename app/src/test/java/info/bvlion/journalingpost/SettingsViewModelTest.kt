@@ -331,6 +331,69 @@ class SettingsViewModelTest {
     collectJob.cancel()
   }
 
+  @Test
+  fun `保存中にフォームを編集した場合、古いsaveの完了でフォーム内容が消えない`() = runTest(testDispatcher) {
+    val webhookRepository = GatedSaveWebhookSettingsRepository()
+    val viewModel = SettingsViewModel(FakeRecordModeRepository(RecordMode.LOCAL_AND_WEBHOOK), webhookRepository)
+    val collectJob = launchWebhookCollection(viewModel)
+    viewModel.updateWebhookUrl("https://a.example.com/webhook")
+    viewModel.updateWebhookBodyTemplate("""{"text": "{{message}}"}""")
+
+    viewModel.saveWebhookSettings()
+    testDispatcher.scheduler.runCurrent() // saveはgateで止まるため、write進行中の状態まで進む
+    viewModel.updateWebhookUrl("https://b.example.com/webhook")
+    webhookRepository.completeSave()
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals("https://a.example.com/webhook", webhookRepository.savedSettings?.url)
+    assertEquals("https://b.example.com/webhook", viewModel.webhookFormState.value.url)
+    assertEquals("""{"text": "{{message}}"}""", viewModel.webhookFormState.value.bodyTemplate)
+    assertTrue(viewModel.isWebhookFormVisible.value)
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `保存中にフォームを編集した場合、古いsaveの失敗でもフォーム内容が消えない`() = runTest(testDispatcher) {
+    val webhookRepository = GatedSaveWebhookSettingsRepository()
+    val viewModel = SettingsViewModel(FakeRecordModeRepository(RecordMode.LOCAL_AND_WEBHOOK), webhookRepository)
+    val collectJob = launchWebhookCollection(viewModel)
+    viewModel.updateWebhookUrl("https://a.example.com/webhook")
+    viewModel.updateWebhookBodyTemplate("""{"text": "{{message}}"}""")
+
+    viewModel.saveWebhookSettings()
+    testDispatcher.scheduler.runCurrent()
+    viewModel.updateWebhookUrl("https://b.example.com/webhook")
+    webhookRepository.failSave(IOException("disk error"))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals("https://b.example.com/webhook", viewModel.webhookFormState.value.url)
+    assertEquals("""{"text": "{{message}}"}""", viewModel.webhookFormState.value.bodyTemplate)
+    assertTrue(viewModel.isWebhookFormVisible.value)
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `保存中に編集したフォーム内容は古いsave完了後に改めて保存できる`() = runTest(testDispatcher) {
+    val webhookRepository = GatedSaveWebhookSettingsRepository()
+    val viewModel = SettingsViewModel(FakeRecordModeRepository(RecordMode.LOCAL_AND_WEBHOOK), webhookRepository)
+    val collectJob = launchWebhookCollection(viewModel)
+    viewModel.updateWebhookUrl("https://a.example.com/webhook")
+    viewModel.updateWebhookBodyTemplate("""{"text": "{{message}}"}""")
+    viewModel.saveWebhookSettings()
+    testDispatcher.scheduler.runCurrent()
+    viewModel.updateWebhookUrl("https://b.example.com/webhook")
+    webhookRepository.completeSave()
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    viewModel.saveWebhookSettings()
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals("https://b.example.com/webhook", webhookRepository.savedSettings?.url)
+    assertFalse(viewModel.isWebhookFormVisible.value)
+    assertEquals(WebhookFormState(), viewModel.webhookFormState.value)
+    collectJob.cancel()
+  }
+
   private fun launchCollection(viewModel: SettingsViewModel) =
     CoroutineScope(testDispatcher).launch { viewModel.recordMode.collect {} }
 
@@ -407,6 +470,38 @@ class SettingsViewModelTest {
 
     private fun WebhookSettings?.toState(): WebhookSettingsState =
       this?.let { WebhookSettingsState.Configured(it) } ?: WebhookSettingsState.NotConfigured
+  }
+
+  /** save()の完了/失敗をテストから制御し、DataStore write進行中のユーザー編集を再現するFake。 */
+  private class GatedSaveWebhookSettingsRepository : WebhookSettingsRepository {
+    private val state = MutableStateFlow<WebhookSettingsState>(WebhookSettingsState.NotConfigured)
+    override val settings: Flow<WebhookSettingsState> = state
+    private val gate = CompletableDeferred<Throwable?>()
+    var savedSettings: WebhookSettings? = null
+      private set
+
+    fun completeSave() {
+      gate.complete(null)
+    }
+
+    fun failSave(error: Throwable) {
+      gate.complete(error)
+    }
+
+    override suspend fun save(settings: WebhookSettings) {
+      val error = gate.await()
+      if (error != null) throw error
+      savedSettings = settings
+      state.value = WebhookSettingsState.Configured(settings)
+    }
+
+    override suspend fun clear() {
+      state.value = WebhookSettingsState.NotConfigured
+    }
+
+    override suspend fun isLegacyMigrationCompleted(): Boolean = true
+
+    override suspend fun markLegacyMigrationCompleted() = Unit
   }
 
   /** テストからstate遷移(Loading→Unavailable/NotConfigured/Configured)を直接制御するFake。 */
