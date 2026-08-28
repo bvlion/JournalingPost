@@ -14,6 +14,7 @@ import info.bvlion.journalingpost.journal.ModeRoutingJournalRecorder
 import info.bvlion.journalingpost.poster.JournalPoster
 import java.io.File
 import java.io.IOException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -126,6 +127,83 @@ class DataStoreRecordModeRepositoryTest {
   }
 
   @Test
+  fun `write失敗時はsetRecordModeが例外を投げる`() = runTest {
+    val repository = DataStoreRecordModeRepository(FailingWriteDataStore(IOException("disk error")))
+
+    var thrown: Throwable? = null
+    try {
+      repository.setRecordMode(RecordMode.LOCAL_ONLY)
+    } catch (e: IOException) {
+      thrown = e
+    }
+
+    assertEquals("disk error", thrown?.message)
+  }
+
+  @Test
+  fun `write失敗後はrecordModeが永続化前の有効なモードへ戻り楽観的なpendingが残り続けない`() = runTest {
+    val repository = DataStoreRecordModeRepository(FailingWriteDataStore(IOException("disk error")))
+    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+
+    try {
+      repository.setRecordMode(RecordMode.LOCAL_ONLY)
+    } catch (e: IOException) {
+      // このテストではwrite失敗後の状態のみ検証する。
+    }
+
+    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+  }
+
+  @Test
+  fun `複数のモード変更が重なった場合、古いwriteの完了は新しい選択のpendingを巻き戻さない`() = runTest {
+    val dataStore = ControllableWriteDataStore()
+    val repository = DataStoreRecordModeRepository(dataStore)
+
+    backgroundScope.launch { repository.setRecordMode(RecordMode.LOCAL_ONLY) }
+    runCurrent()
+    backgroundScope.launch { repository.setRecordMode(RecordMode.LOCAL_AND_WEBHOOK) }
+    runCurrent()
+
+    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+
+    // 1回目(古い)のwriteが後から完了しても、2回目(新しい)の選択が巻き戻らない。
+    dataStore.completeWrite(0)
+    runCurrent()
+    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+
+    dataStore.completeWrite(1)
+    runCurrent()
+    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+  }
+
+  @Test
+  fun `複数のモード変更が重なった場合、古いwriteの失敗は新しい選択のpendingへ影響しない`() = runTest {
+    val dataStore = ControllableWriteDataStore()
+    val repository = DataStoreRecordModeRepository(dataStore)
+
+    backgroundScope.launch {
+      try {
+        repository.setRecordMode(RecordMode.LOCAL_ONLY)
+      } catch (e: IOException) {
+        // 古い(1回目の)選択のwrite失敗。ここでは新しい選択への非干渉のみ検証する。
+      }
+    }
+    runCurrent()
+    backgroundScope.launch { repository.setRecordMode(RecordMode.LOCAL_AND_WEBHOOK) }
+    runCurrent()
+
+    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+
+    dataStore.failWrite(0, IOException("disk error"))
+    runCurrent()
+    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+
+    dataStore.completeWrite(1)
+    runCurrent()
+    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+  }
+
+  @Test
   fun `DataStore読み込みIOException時は記録がWebhookへルーティングされずlocal記録は継続できる`() = runTest {
     val journalRepository = FakeJournalEntryRepository()
     val repository = DataStoreRecordModeRepository(ThrowingDataStore(IOException("disk error")))
@@ -154,6 +232,41 @@ class DataStoreRecordModeRepositoryTest {
     override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
       delay(Long.MAX_VALUE)
       error("unreachable: このテストではwriteを意図的に完了させない")
+    }
+  }
+
+  private class FailingWriteDataStore(private val error: Throwable) : DataStore<Preferences> {
+    override val data: Flow<Preferences> = MutableStateFlow(emptyPreferences())
+
+    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences = throw error
+  }
+
+  /**
+   * updateData()の呼び出しごとにgate(index順)を積み、テスト側がcompleteWrite/failWriteで
+   * 呼び出し順とは独立に完了・失敗させられるFake。複数のsetRecordMode呼び出しが重なった
+   * 場合の完了/失敗順序を制御するために使う。
+   */
+  private class ControllableWriteDataStore : DataStore<Preferences> {
+    private val backing = MutableStateFlow(emptyPreferences())
+    override val data: Flow<Preferences> = backing
+    private val gates = mutableListOf<CompletableDeferred<Throwable?>>()
+
+    fun completeWrite(index: Int) {
+      gates[index].complete(null)
+    }
+
+    fun failWrite(index: Int, error: Throwable) {
+      gates[index].complete(error)
+    }
+
+    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
+      val gate = CompletableDeferred<Throwable?>()
+      gates += gate
+      val error = gate.await()
+      if (error != null) throw error
+      val updated = transform(backing.value)
+      backing.value = updated
+      return updated
     }
   }
 

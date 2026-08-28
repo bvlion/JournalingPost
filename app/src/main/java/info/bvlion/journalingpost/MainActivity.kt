@@ -111,9 +111,11 @@ class MainActivity : ComponentActivity() {
 
               Screen.SETTINGS -> {
                 val recordMode by settingsViewModel.recordMode.collectAsState()
+                val saveFailed by settingsViewModel.saveFailed.collectAsState()
                 SettingsScreen(
                   recordMode = recordMode,
                   isWebhookConfigured = settingsViewModel.isWebhookConfigured,
+                  saveFailed = saveFailed,
                   onRecordModeChange = settingsViewModel::setRecordMode,
                   onBack = { screen = Screen.INPUT },
                 )

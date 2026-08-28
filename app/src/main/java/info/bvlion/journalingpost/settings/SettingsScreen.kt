@@ -22,6 +22,7 @@ import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 fun SettingsScreen(
   recordMode: RecordMode,
   isWebhookConfigured: Boolean,
+  saveFailed: Boolean,
   onRecordModeChange: (RecordMode) -> Unit,
   onBack: () -> Unit,
 ) {
@@ -44,6 +45,15 @@ fun SettingsScreen(
         text = "記録の保存・送信方法",
         style = MaterialTheme.typography.titleSmall,
       )
+
+      if (saveFailed) {
+        Text(
+          text = "設定を保存できませんでした",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.error,
+          modifier = Modifier.padding(top = 4.dp),
+        )
+      }
 
       RecordModeOption(
         title = "ローカル保存 + Webhook送信",
@@ -86,7 +96,8 @@ private fun RecordModeOption(
       .selectable(selected = selected, onClick = onClick, role = Role.RadioButton),
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    RadioButton(selected = selected, onClick = onClick)
+    // 選択操作は親Rowのselectableへ集約し、TalkBack等が同じ選択肢を二重に読み上げないようにする。
+    RadioButton(selected = selected, onClick = null)
     Column(modifier = Modifier.padding(start = 8.dp)) {
       Text(text = title, style = MaterialTheme.typography.bodyLarge)
       Text(text = description, style = MaterialTheme.typography.bodySmall)
@@ -101,6 +112,7 @@ fun SettingsScreenPreview() {
     SettingsScreen(
       recordMode = RecordMode.LOCAL_AND_WEBHOOK,
       isWebhookConfigured = false,
+      saveFailed = false,
       onRecordModeChange = {},
       onBack = {},
     )
