@@ -1,5 +1,6 @@
 package info.bvlion.journalingpost.webhook
 
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -34,7 +35,7 @@ class WebhookSettingsMigrationCoordinatorTest {
     repository.completeSave()
     job.join()
 
-    assertEquals(legacyConfig.toWebhookSettings(), repository.settingsValue())
+    assertEquals(WebhookSettingsState.Configured(legacyConfig.toWebhookSettings()), repository.settingsValue())
     assertTrue(repository.isLegacyMigrationCompleted())
   }
 
@@ -89,13 +90,25 @@ class WebhookSettingsMigrationCoordinatorTest {
     assertFalse(repository.isLegacyMigrationCompleted())
   }
 
+  @Test
+  fun `isLegacyMigrationCompletedの読み取り失敗は未捕捉例外にならず未完了のまま残る`() = runTest {
+    val repository = GatedWebhookSettingsRepository(throwOnIsLegacyMigrationCompletedCount = 1)
+
+    // 例外が外へ伝播しなければこの呼び出し自体が正常終了する。
+    WebhookSettingsMigrationCoordinator.ensureMigrated(repository) { legacyConfig }
+
+    assertFalse(repository.isLegacyMigrationCompleted())
+  }
+
   /** save()をゲートで止め、migration実行中にmutexを保持し続ける状況を再現するFake。 */
   private class GatedWebhookSettingsRepository(
     private var migrationCompleted: Boolean = false,
+    private val throwOnIsLegacyMigrationCompletedCount: Int = 0,
   ) : WebhookSettingsRepository {
-    private val state = MutableStateFlow<WebhookSettings?>(null)
-    override val settings: Flow<WebhookSettings?> = state
+    private val state = MutableStateFlow<WebhookSettingsState>(WebhookSettingsState.NotConfigured)
+    override val settings: Flow<WebhookSettingsState> = state
     private val saveGate = CompletableDeferred<Unit>()
+    private var isLegacyMigrationCompletedCallCount = 0
     var saveCallCount = 0
       private set
 
@@ -103,19 +116,25 @@ class WebhookSettingsMigrationCoordinatorTest {
       saveGate.complete(Unit)
     }
 
-    fun settingsValue(): WebhookSettings? = state.value
+    fun settingsValue(): WebhookSettingsState = state.value
 
     override suspend fun save(settings: WebhookSettings) {
       saveCallCount++
       saveGate.await()
-      state.value = settings
+      state.value = WebhookSettingsState.Configured(settings)
     }
 
     override suspend fun clear() {
-      state.value = null
+      state.value = WebhookSettingsState.NotConfigured
     }
 
-    override suspend fun isLegacyMigrationCompleted(): Boolean = migrationCompleted
+    override suspend fun isLegacyMigrationCompleted(): Boolean {
+      isLegacyMigrationCompletedCallCount++
+      if (isLegacyMigrationCompletedCallCount <= throwOnIsLegacyMigrationCompletedCount) {
+        throw IOException("disk error")
+      }
+      return migrationCompleted
+    }
 
     override suspend fun markLegacyMigrationCompleted() {
       migrationCompleted = true

@@ -15,10 +15,21 @@ object WebhookSettingsMigrator {
   ) {
     try {
       if (repository.isLegacyMigrationCompleted()) return
-      if (repository.settings.first() == null) {
-        legacyConfigProvider()?.let { repository.save(it.toWebhookSettings()) }
+      when (val state = repository.settings.first()) {
+        WebhookSettingsState.NotConfigured -> {
+          legacyConfigProvider()?.let { repository.save(it.toWebhookSettings()) }
+          repository.markLegacyMigrationCompleted()
+        }
+        is WebhookSettingsState.Configured -> {
+          // 既にruntime設定があるためlegacy値で上書きしない。試行済みとして完了扱いにする。
+          repository.markLegacyMigrationCompleted()
+        }
+        WebhookSettingsState.Unavailable -> {
+          // 一時的に読み取れないだけの可能性があり、既存設定を誤って上書きしないためここではimportせず、
+          // 完了扱いにもしない(読み取りが復旧した後の次回呼び出しで再判定する)。
+        }
+        WebhookSettingsState.Loading -> Unit // repository実装はLoadingを流さないため到達しない
       }
-      repository.markLegacyMigrationCompleted()
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {

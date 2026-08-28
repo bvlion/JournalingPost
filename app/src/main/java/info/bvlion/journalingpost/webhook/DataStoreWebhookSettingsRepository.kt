@@ -32,25 +32,25 @@ internal class DataStoreWebhookSettingsRepository(
   private val pendingSettings = MutableStateFlow<PendingSettings?>(null)
   private val generation = AtomicInteger(0)
 
-  private val persistedSettings: Flow<WebhookSettings?> = dataStore.data
-    .map { preferences -> preferences.toWebhookSettingsOrNull() }
+  private val persistedState: Flow<WebhookSettingsState> = dataStore.data
+    .map { preferences -> preferences.toWebhookSettingsState() }
     .retryWhen { cause, _ ->
-      // 読み取れない場合は安全側(未設定)へ一旦フォールバックしたうえで再購読を試み続ける。
+      // 読み取れない場合は安全側(Unavailable)へ一旦フォールバックしたうえで再購読を試み続ける。
       // IOException以外は再送出する(リトライしない)。
       if (cause !is IOException) return@retryWhen false
-      emit(null)
+      emit(WebhookSettingsState.Unavailable)
       delay(RETRY_DELAY_MILLIS)
       true
     }
 
-  // pendingSettingsがnull(未pending)であることと、clear()によるpending中のnull(明示的な削除)を
+  // pendingSettingsがnull(未pending)であることと、clear()によるpending中の削除を
   // Elvis演算子1つで区別すると両方とも「persistedへfall back」になってしまい、削除直後もDataStore
   // write完了までは旧設定を返してしまう。PendingSettingsをsealedにして両者を型で区別する。
-  override val settings: Flow<WebhookSettings?> = combine(persistedSettings, pendingSettings) { persisted, pending ->
+  override val settings: Flow<WebhookSettingsState> = combine(persistedState, pendingSettings) { persisted, pending ->
     when (pending) {
       null -> persisted
-      is PendingSettings.Save -> pending.settings
-      is PendingSettings.Clear -> null
+      is PendingSettings.Save -> WebhookSettingsState.Configured(pending.settings)
+      is PendingSettings.Clear -> WebhookSettingsState.NotConfigured
     }
   }
 
@@ -89,21 +89,21 @@ internal class DataStoreWebhookSettingsRepository(
     dataStore.edit { it[KEY_MIGRATION_COMPLETED] = true }
   }
 
-  private fun Preferences.toWebhookSettingsOrNull(): WebhookSettings? {
-    val ciphertextBase64 = this[KEY_CIPHERTEXT] ?: return null
-    val ivBase64 = this[KEY_IV] ?: return null
+  private fun Preferences.toWebhookSettingsState(): WebhookSettingsState {
+    val ciphertextBase64 = this[KEY_CIPHERTEXT] ?: return WebhookSettingsState.NotConfigured
+    val ivBase64 = this[KEY_IV] ?: return WebhookSettingsState.NotConfigured
     return try {
       val encrypted = EncryptedWebhookSettings(
         ciphertext = Base64.getDecoder().decode(ciphertextBase64),
         iv = Base64.getDecoder().decode(ivBase64),
       )
       val plaintext = cipher.decrypt(encrypted).toString(Charsets.UTF_8)
-      Json.decodeFromString<WebhookSettings>(plaintext)
+      WebhookSettingsState.Configured(Json.decodeFromString<WebhookSettings>(plaintext))
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
       // 復号鍵の紛失・データ破損・format不整合等はネットワーク送信を止める安全側(未設定扱い)にする。
-      null
+      WebhookSettingsState.NotConfigured
     }
   }
 

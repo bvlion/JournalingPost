@@ -7,6 +7,7 @@ import info.bvlion.journalingpost.settings.RecordModeRepository
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettings
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
+import info.bvlion.journalingpost.webhook.WebhookSettingsState
 import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
@@ -28,10 +29,6 @@ class SettingsViewModel(
   val recordMode: StateFlow<RecordMode> = recordModeRepository.recordMode
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RecordMode.LOCAL_AND_WEBHOOK)
 
-  val isWebhookConfigured: StateFlow<Boolean> = webhookSettingsRepository.settings
-    .map { it != null }
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
-
   private val _saveFailed = MutableStateFlow(false)
   val saveFailed: StateFlow<Boolean> = _saveFailed.asStateFlow()
 
@@ -52,6 +49,16 @@ class SettingsViewModel(
     }
   }
 
+  // Loading/Unavailableと「本当に未設定」(NotConfigured)を区別する。読み込み中・読み込み不能の間は
+  // 新規設定フォームを確定表示しない(authoritativeな状態が分かる前に、既存設定を誤って
+  // 上書きしかねない編集画面を開かせないため)。
+  val webhookSettingsState: StateFlow<WebhookSettingsState> = webhookSettingsRepository.settings
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WebhookSettingsState.Loading)
+
+  val isWebhookConfigured: StateFlow<Boolean> = webhookSettingsState
+    .map { it is WebhookSettingsState.Configured }
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
   private val _webhookFormState = MutableStateFlow(WebhookFormState())
   val webhookFormState: StateFlow<WebhookFormState> = _webhookFormState.asStateFlow()
 
@@ -60,12 +67,16 @@ class SettingsViewModel(
   private val _webhookFormRevealed = MutableStateFlow(false)
 
   /**
-   * 未設定の場合は新規入力のため常にフォームを表示し、設定済みの場合はユーザーが明示的に
-   * 表示・編集を選ぶまで(_webhookFormRevealed)フォームを表示しない。isWebhookConfiguredが
-   * revealedより優先して変化しても、trueになった側でフォームが出続けるようにOR条件にする。
+   * NotConfiguredなら新規入力のため常にフォームを表示し、Configuredならユーザーが明示的に
+   * 表示・編集を選ぶまで(_webhookFormRevealed)フォームを表示しない。Loading/Unavailableの間は
+   * revealedの値に関わらずフォームを出さない。
    */
-  val isWebhookFormVisible: StateFlow<Boolean> = combine(isWebhookConfigured, _webhookFormRevealed) { configured, revealed ->
-    !configured || revealed
+  val isWebhookFormVisible: StateFlow<Boolean> = combine(webhookSettingsState, _webhookFormRevealed) { state, revealed ->
+    when (state) {
+      WebhookSettingsState.Loading, WebhookSettingsState.Unavailable -> false
+      WebhookSettingsState.NotConfigured -> true
+      is WebhookSettingsState.Configured -> revealed
+    }
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
   private val _webhookValidationErrors = MutableStateFlow<List<WebhookSettingsValidator.ValidationError>>(emptyList())
@@ -76,20 +87,12 @@ class SettingsViewModel(
 
   private val webhookRequestGeneration = AtomicInteger(0)
 
-  init {
-    viewModelScope.launch {
-      // 未設定の場合だけ、初回の認証済みsnapshotで新規入力フォームを開く。設定済みの場合は
-      // revealWebhookForm()を呼ぶまでフォーム内容を読み込まない(secretを画面へ先読み表示しない)。
-      if (webhookSettingsRepository.settings.first() == null) {
-        _webhookFormRevealed.value = true
-      }
-    }
-  }
-
   fun revealWebhookForm() {
     viewModelScope.launch {
       val current = webhookSettingsRepository.settings.first()
-      _webhookFormState.value = current?.toFormState() ?: WebhookFormState()
+      if (current is WebhookSettingsState.Configured) {
+        _webhookFormState.value = current.settings.toFormState()
+      }
       _webhookFormRevealed.value = true
     }
   }
@@ -125,16 +128,16 @@ class SettingsViewModel(
   fun saveWebhookSettings() {
     val generation = webhookRequestGeneration.incrementAndGet()
     val form = _webhookFormState.value
-    val errors = WebhookSettingsValidator.validate(form.url, form.headers, form.bodyTemplate)
-    if (errors.isNotEmpty()) {
-      _webhookValidationErrors.value = errors
+    val validation = WebhookSettingsValidator.validate(form.url, form.headers, form.bodyTemplate)
+    if (validation.errors.isNotEmpty()) {
+      _webhookValidationErrors.value = validation.errors
       return
     }
     _webhookValidationErrors.value = emptyList()
     _webhookSaveFailed.value = false
     viewModelScope.launch {
       try {
-        webhookSettingsRepository.save(WebhookSettings(form.url, form.headers, form.bodyTemplate))
+        webhookSettingsRepository.save(WebhookSettings(form.url, validation.normalizedHeaders, form.bodyTemplate))
         if (generation == webhookRequestGeneration.get()) {
           _webhookFormRevealed.value = false
           _webhookFormState.value = WebhookFormState()

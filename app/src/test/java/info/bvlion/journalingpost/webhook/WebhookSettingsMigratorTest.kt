@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -25,7 +24,7 @@ class WebhookSettingsMigratorTest {
 
     WebhookSettingsMigrator.migrateIfNeeded(repository) { legacyConfig }
 
-    assertEquals(legacyConfig.toWebhookSettings(), repository.settings.first())
+    assertEquals(WebhookSettingsState.Configured(legacyConfig.toWebhookSettings()), repository.settings.first())
     assertTrue(repository.isLegacyMigrationCompleted())
   }
 
@@ -38,7 +37,7 @@ class WebhookSettingsMigratorTest {
     WebhookSettingsMigrator.migrateIfNeeded(repository) { providerCalled = true; legacyConfig }
 
     assertFalse(providerCalled)
-    assertNull(repository.settings.first())
+    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
   }
 
   @Test
@@ -49,7 +48,7 @@ class WebhookSettingsMigratorTest {
 
     WebhookSettingsMigrator.migrateIfNeeded(repository) { legacyConfig }
 
-    assertEquals(existing, repository.settings.first())
+    assertEquals(WebhookSettingsState.Configured(existing), repository.settings.first())
     assertTrue(repository.isLegacyMigrationCompleted())
   }
 
@@ -59,7 +58,7 @@ class WebhookSettingsMigratorTest {
 
     WebhookSettingsMigrator.migrateIfNeeded(repository) { null }
 
-    assertNull(repository.settings.first())
+    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
     assertTrue(repository.isLegacyMigrationCompleted())
   }
 
@@ -71,20 +70,33 @@ class WebhookSettingsMigratorTest {
 
     WebhookSettingsMigrator.migrateIfNeeded(repository) { legacyConfig }
 
-    assertNull(repository.settings.first())
+    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
   }
 
-  private class FakeWebhookSettingsRepository : WebhookSettingsRepository {
-    private val state = MutableStateFlow<WebhookSettings?>(null)
-    override val settings: Flow<WebhookSettings?> = state
+  @Test
+  fun `読み取りが一時的に不能な場合はimportせず完了扱いにもしない`() = runTest {
+    val repository = FakeWebhookSettingsRepository(initial = WebhookSettingsState.Unavailable)
+    var providerCalled = false
+
+    WebhookSettingsMigrator.migrateIfNeeded(repository) { providerCalled = true; legacyConfig }
+
+    assertFalse(providerCalled)
+    assertFalse(repository.isLegacyMigrationCompleted())
+  }
+
+  private class FakeWebhookSettingsRepository(
+    initial: WebhookSettingsState = WebhookSettingsState.NotConfigured,
+  ) : WebhookSettingsRepository {
+    private val state = MutableStateFlow(initial)
+    override val settings: Flow<WebhookSettingsState> = state
     private var migrationCompleted = false
 
     override suspend fun save(settings: WebhookSettings) {
-      state.value = settings
+      state.value = WebhookSettingsState.Configured(settings)
     }
 
     override suspend fun clear() {
-      state.value = null
+      state.value = WebhookSettingsState.NotConfigured
     }
 
     override suspend fun isLegacyMigrationCompleted(): Boolean = migrationCompleted

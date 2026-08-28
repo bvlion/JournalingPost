@@ -24,14 +24,15 @@ import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.WebhookFormState
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.webhook.WebhookHeader
+import info.bvlion.journalingpost.webhook.WebhookSettingsState
 import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
 
 @Composable
 fun SettingsScreen(
   recordMode: RecordMode,
-  isWebhookConfigured: Boolean,
   saveFailed: Boolean,
   onRecordModeChange: (RecordMode) -> Unit,
+  webhookSettingsState: WebhookSettingsState,
   isWebhookFormVisible: Boolean,
   webhookFormState: WebhookFormState,
   webhookValidationErrors: List<WebhookSettingsValidator.ValidationError>,
@@ -47,6 +48,7 @@ fun SettingsScreen(
   onWebhookDelete: () -> Unit,
   onBack: () -> Unit,
 ) {
+  val isWebhookConfigured = webhookSettingsState is WebhookSettingsState.Configured
   Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
     Row(
       modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
@@ -127,7 +129,19 @@ fun SettingsScreen(
         )
       }
 
-      if (isWebhookFormVisible) {
+      if (webhookSettingsState is WebhookSettingsState.Loading || webhookSettingsState is WebhookSettingsState.Unavailable) {
+        // authoritativeな状態が分かるまでは新規設定フォームを確定表示しない
+        // (既存設定を誤って空フォームで上書きしないため)。
+        Text(
+          text = if (webhookSettingsState is WebhookSettingsState.Unavailable) {
+            "Webhook設定を読み込めませんでした"
+          } else {
+            "Webhook設定を読み込んでいます"
+          },
+          style = MaterialTheme.typography.bodyMedium,
+          modifier = Modifier.padding(top = 12.dp),
+        )
+      } else if (isWebhookFormVisible) {
         OutlinedTextField(
           value = webhookFormState.url,
           onValueChange = onWebhookUrlChange,
@@ -270,9 +284,9 @@ fun SettingsScreenPreview() {
   JournalingPostTheme {
     SettingsScreen(
       recordMode = RecordMode.LOCAL_AND_WEBHOOK,
-      isWebhookConfigured = false,
       saveFailed = false,
       onRecordModeChange = {},
+      webhookSettingsState = WebhookSettingsState.NotConfigured,
       isWebhookFormVisible = true,
       webhookFormState = WebhookFormState(),
       webhookValidationErrors = emptyList(),

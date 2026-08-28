@@ -1,5 +1,6 @@
 package info.bvlion.journalingpost.webhook
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -12,6 +13,9 @@ import kotlinx.coroutines.sync.withLock
  * (DataStoreのin-memory stateを読むだけで軽量)を確認することで、migration失敗時に誤って
  * 「完了扱い」のまま次の呼び出しを早期returnさせず、再試行の余地を残す。
  * mutexで並行呼び出しをserializeし、同じlegacy設定を競合して複数回importしないようにする。
+ * isLegacyMigrationCompleted()自体のDataStore読み取りがIOException等で失敗する可能性があるため
+ * 全体をtry/catchで囲む。MainActivityはこれをlifecycleScope.launchから未捕捉のまま呼んでおり、
+ * ここで拾わないと一時的な読み取り失敗が起動時の未捕捉例外としてアプリをクラッシュさせてしまう。
  */
 object WebhookSettingsMigrationCoordinator {
   private val mutex = Mutex()
@@ -20,10 +24,16 @@ object WebhookSettingsMigrationCoordinator {
     repository: WebhookSettingsRepository,
     legacyConfigProvider: () -> LegacyWebhookConfig?,
   ) {
-    if (repository.isLegacyMigrationCompleted()) return
-    mutex.withLock {
+    try {
       if (repository.isLegacyMigrationCompleted()) return
-      WebhookSettingsMigrator.migrateIfNeeded(repository, legacyConfigProvider)
+      mutex.withLock {
+        if (repository.isLegacyMigrationCompleted()) return
+        WebhookSettingsMigrator.migrateIfNeeded(repository, legacyConfigProvider)
+      }
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      // migration未完了のまま次回呼び出しで再試行する。
     }
   }
 }

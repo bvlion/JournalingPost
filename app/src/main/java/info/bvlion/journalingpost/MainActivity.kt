@@ -125,16 +125,16 @@ class MainActivity : ComponentActivity() {
               Screen.SETTINGS -> {
                 val recordMode by settingsViewModel.recordMode.collectAsState()
                 val saveFailed by settingsViewModel.saveFailed.collectAsState()
-                val isWebhookConfigured by settingsViewModel.isWebhookConfigured.collectAsState()
+                val webhookSettingsState by settingsViewModel.webhookSettingsState.collectAsState()
                 val isWebhookFormVisible by settingsViewModel.isWebhookFormVisible.collectAsState()
                 val webhookFormState by settingsViewModel.webhookFormState.collectAsState()
                 val webhookValidationErrors by settingsViewModel.webhookValidationErrors.collectAsState()
                 val webhookSaveFailed by settingsViewModel.webhookSaveFailed.collectAsState()
                 SettingsScreen(
                   recordMode = recordMode,
-                  isWebhookConfigured = isWebhookConfigured,
                   saveFailed = saveFailed,
                   onRecordModeChange = settingsViewModel::setRecordMode,
+                  webhookSettingsState = webhookSettingsState,
                   isWebhookFormVisible = isWebhookFormVisible,
                   webhookFormState = webhookFormState,
                   webhookValidationErrors = webhookValidationErrors,

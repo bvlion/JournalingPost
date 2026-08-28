@@ -5,6 +5,7 @@ import info.bvlion.journalingpost.settings.RecordModeRepository
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettings
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
+import info.bvlion.journalingpost.webhook.WebhookSettingsState
 import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
@@ -260,6 +261,76 @@ class SettingsViewModelTest {
     collectJob.cancel()
   }
 
+  @Test
+  fun `初回読み込み完了前はisWebhookFormVisibleがfalseで新規フォームを編集可能にしない`() = runTest(testDispatcher) {
+    val webhookRepository = ControllableWebhookSettingsRepository(initial = WebhookSettingsState.Loading)
+    val viewModel = SettingsViewModel(FakeRecordModeRepository(RecordMode.LOCAL_AND_WEBHOOK), webhookRepository)
+    val collectJob = launchWebhookCollection(viewModel)
+    testDispatcher.scheduler.runCurrent()
+
+    assertEquals(WebhookSettingsState.Loading, viewModel.webhookSettingsState.value)
+    assertFalse(viewModel.isWebhookFormVisible.value)
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `Loadingから未設定へ遷移すると新規フォームが表示される`() = runTest(testDispatcher) {
+    val webhookRepository = ControllableWebhookSettingsRepository(initial = WebhookSettingsState.Loading)
+    val viewModel = SettingsViewModel(FakeRecordModeRepository(RecordMode.LOCAL_AND_WEBHOOK), webhookRepository)
+    val collectJob = launchWebhookCollection(viewModel)
+    testDispatcher.scheduler.runCurrent()
+    assertFalse(viewModel.isWebhookFormVisible.value)
+
+    webhookRepository.emit(WebhookSettingsState.NotConfigured)
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertTrue(viewModel.isWebhookFormVisible.value)
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `一時的な読み込み不能から既存設定へ復旧すると空フォームを残さず設定済み状態になる`() = runTest(testDispatcher) {
+    val existing = WebhookSettings(
+      url = "https://example.com/webhook",
+      headers = emptyList(),
+      bodyTemplate = """{"text": "{{message}}"}""",
+    )
+    val webhookRepository = ControllableWebhookSettingsRepository(initial = WebhookSettingsState.Unavailable)
+    val viewModel = SettingsViewModel(FakeRecordModeRepository(RecordMode.LOCAL_AND_WEBHOOK), webhookRepository)
+    val collectJob = launchWebhookCollection(viewModel)
+    testDispatcher.scheduler.runCurrent()
+    assertFalse(viewModel.isWebhookFormVisible.value)
+
+    webhookRepository.emit(WebhookSettingsState.Configured(existing))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertTrue(viewModel.isWebhookConfigured.value)
+    assertFalse(viewModel.isWebhookFormVisible.value)
+    assertEquals(WebhookFormState(), viewModel.webhookFormState.value)
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `migration前のLoadingからmigration済み設定へ遷移すると空フォームを残さず設定済み状態になる`() = runTest(testDispatcher) {
+    val migrated = WebhookSettings(
+      url = "https://legacy.example.com/webhook",
+      headers = emptyList(),
+      bodyTemplate = """{"text": "{{message}}"}""",
+    )
+    val webhookRepository = ControllableWebhookSettingsRepository(initial = WebhookSettingsState.Loading)
+    val viewModel = SettingsViewModel(FakeRecordModeRepository(RecordMode.LOCAL_AND_WEBHOOK), webhookRepository)
+    val collectJob = launchWebhookCollection(viewModel)
+    testDispatcher.scheduler.runCurrent()
+
+    webhookRepository.emit(WebhookSettingsState.Configured(migrated))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertTrue(viewModel.isWebhookConfigured.value)
+    assertFalse(viewModel.isWebhookFormVisible.value)
+    assertEquals(WebhookFormState(), viewModel.webhookFormState.value)
+    collectJob.cancel()
+  }
+
   private fun launchCollection(viewModel: SettingsViewModel) =
     CoroutineScope(testDispatcher).launch { viewModel.recordMode.collect {} }
 
@@ -312,8 +383,8 @@ class SettingsViewModelTest {
     initial: WebhookSettings? = null,
     private var failNextSaves: Int = 0,
   ) : WebhookSettingsRepository {
-    private val state = MutableStateFlow(initial)
-    override val settings: Flow<WebhookSettings?> = state
+    private val state = MutableStateFlow(initial.toState())
+    override val settings: Flow<WebhookSettingsState> = state
     var saveCallCount = 0
       private set
 
@@ -323,11 +394,38 @@ class SettingsViewModelTest {
         failNextSaves--
         throw IOException("disk error")
       }
-      state.value = settings
+      state.value = WebhookSettingsState.Configured(settings)
     }
 
     override suspend fun clear() {
-      state.value = null
+      state.value = WebhookSettingsState.NotConfigured
+    }
+
+    override suspend fun isLegacyMigrationCompleted(): Boolean = true
+
+    override suspend fun markLegacyMigrationCompleted() = Unit
+
+    private fun WebhookSettings?.toState(): WebhookSettingsState =
+      this?.let { WebhookSettingsState.Configured(it) } ?: WebhookSettingsState.NotConfigured
+  }
+
+  /** テストからstate遷移(Loading→Unavailable/NotConfigured/Configured)を直接制御するFake。 */
+  private class ControllableWebhookSettingsRepository(
+    initial: WebhookSettingsState,
+  ) : WebhookSettingsRepository {
+    private val state = MutableStateFlow(initial)
+    override val settings: Flow<WebhookSettingsState> = state
+
+    fun emit(newState: WebhookSettingsState) {
+      state.value = newState
+    }
+
+    override suspend fun save(settings: WebhookSettings) {
+      state.value = WebhookSettingsState.Configured(settings)
+    }
+
+    override suspend fun clear() {
+      state.value = WebhookSettingsState.NotConfigured
     }
 
     override suspend fun isLegacyMigrationCompleted(): Boolean = true

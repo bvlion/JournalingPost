@@ -4,6 +4,7 @@ import info.bvlion.journalingpost.webhook.LegacyWebhookConfig
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettings
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
+import info.bvlion.journalingpost.webhook.WebhookSettingsState
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -169,19 +170,19 @@ class WebhookJournalPosterTest {
     initial: WebhookSettings?,
     private var migrationCompleted: Boolean = true,
   ) : WebhookSettingsRepository {
-    private val state = MutableStateFlow(initial)
-    override val settings: Flow<WebhookSettings?> = state
+    private val state = MutableStateFlow(initial.toState())
+    override val settings: Flow<WebhookSettingsState> = state
 
     fun update(value: WebhookSettings?) {
-      state.value = value
+      state.value = value.toState()
     }
 
     override suspend fun save(settings: WebhookSettings) {
-      state.value = settings
+      state.value = WebhookSettingsState.Configured(settings)
     }
 
     override suspend fun clear() {
-      state.value = null
+      state.value = WebhookSettingsState.NotConfigured
     }
 
     override suspend fun isLegacyMigrationCompleted(): Boolean = migrationCompleted
@@ -189,5 +190,8 @@ class WebhookJournalPosterTest {
     override suspend fun markLegacyMigrationCompleted() {
       migrationCompleted = true
     }
+
+    private fun WebhookSettings?.toState(): WebhookSettingsState =
+      this?.let { WebhookSettingsState.Configured(it) } ?: WebhookSettingsState.NotConfigured
   }
 }

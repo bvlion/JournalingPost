@@ -13,28 +13,48 @@ object WebhookSettingsValidator {
     INVALID_BODY_TEMPLATE,
   }
 
-  fun validate(url: String, headers: List<WebhookHeader>, bodyTemplate: String): List<ValidationError> {
+  /**
+   * normalizedHeadersはHeader名の前後空白をtrimしたもの。errorsが空の場合、保存にはこの値を使う
+   * (validationはtrim済み名で判定しているため、永続化・送信でtrim前の元の値を使うと
+   * 「validationは通ったのに実際の送信で使われる名前は別」という不整合が生じる)。
+   */
+  data class Result(
+    val errors: List<ValidationError>,
+    val normalizedHeaders: List<WebhookHeader>,
+  )
+
+  fun validate(url: String, headers: List<WebhookHeader>, bodyTemplate: String): Result {
     val errors = mutableListOf<ValidationError>()
     if (!isPostableHttpUrl(url)) errors += ValidationError.INVALID_URL
 
-    val names = headers.map { it.name.trim() }
-    if (names.any { it.isBlank() }) errors += ValidationError.BLANK_HEADER_NAME
+    val normalizedHeaders = headers.map { it.copy(name = it.name.trim()) }
+    if (normalizedHeaders.any { it.name.isBlank() }) errors += ValidationError.BLANK_HEADER_NAME
 
-    val nonBlankLowerNames = names.filter { it.isNotBlank() }.map { it.lowercase() }
+    val nonBlankLowerNames = normalizedHeaders.map { it.name }.filter { it.isNotBlank() }.map { it.lowercase() }
     if (nonBlankLowerNames.toSet().size != nonBlankLowerNames.size) errors += ValidationError.DUPLICATE_HEADER_NAME
     if (nonBlankLowerNames.any { it == CONTENT_TYPE_HEADER_NAME }) errors += ValidationError.RESERVED_CONTENT_TYPE_HEADER
 
-    // CR/LFはHTTP header framingを壊す(header injection)ため、保存前に拒否する。ここで弾かないと
-    // 保存自体は成功し、送信時にHTTP clientがrequest構築時に例外を投げて全ての記録がFAILEDになり続ける。
-    if (headers.any { it.name.containsCrOrLf() || it.value.containsCrOrLf() }) errors += ValidationError.INVALID_HEADER_SYNTAX
+    // HTTP field-nameとして送信できないnameは保存自体を拒否する。ここで弾かないと、保存は成功し
+    // 送信時にHTTP clientがrequest構築時に例外を投げて全ての記録がFAILEDになり続ける。
+    // valueはtoken文字に制限せず、CR/LF(header injection)だけを拒否する。
+    val hasInvalidHeaderSyntax = normalizedHeaders.any { header ->
+      (header.name.isNotBlank() && !header.name.isValidHeaderNameToken()) || header.value.containsCrOrLf()
+    }
+    if (hasInvalidHeaderSyntax) errors += ValidationError.INVALID_HEADER_SYNTAX
 
     // 実際の置換値には依存しない失敗種別(InvalidJson/UnsupportedPlaceholder)だけを検証するため、
     // renderへ渡す message/timestamp はダミー値で構わない。
     val rendered = WebhookBodyTemplateRenderer.render(bodyTemplate, message = "", timestamp = "")
     if (rendered is WebhookBodyTemplateRenderer.Result.Failure) errors += ValidationError.INVALID_BODY_TEMPLATE
 
-    return errors
+    return Result(errors, normalizedHeaders)
   }
+
+  // RFC 7230のtoken(field-nameの構文)。ASCII英数字とHEADER_NAME_EXTRA_TOKEN_CHARSのみ許可する。
+  private fun String.isValidHeaderNameToken(): Boolean =
+    isNotEmpty() && all { it.isAsciiAlphaNumeric() || it in HEADER_NAME_EXTRA_TOKEN_CHARS }
+
+  private fun Char.isAsciiAlphaNumeric(): Boolean = this in 'a'..'z' || this in 'A'..'Z' || this in '0'..'9'
 
   private fun String.containsCrOrLf(): Boolean = any { it == '\r' || it == '\n' }
 
@@ -49,4 +69,5 @@ object WebhookSettingsValidator {
   }
 
   private const val CONTENT_TYPE_HEADER_NAME = "content-type"
+  private const val HEADER_NAME_EXTRA_TOKEN_CHARS = "!#$%&'*+-.^_`|~"
 }

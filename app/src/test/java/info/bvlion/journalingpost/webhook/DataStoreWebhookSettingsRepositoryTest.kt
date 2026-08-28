@@ -34,7 +34,6 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -62,7 +61,7 @@ class DataStoreWebhookSettingsRepositoryTest {
   fun `初期状態は未設定になる`() = runTest {
     val repository = createRepository()
 
-    assertNull(repository.settings.first())
+    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
   }
 
   @Test
@@ -71,7 +70,7 @@ class DataStoreWebhookSettingsRepositoryTest {
 
     repository.save(sampleSettings)
 
-    assertEquals(sampleSettings, repository.settings.first())
+    assertEquals(WebhookSettingsState.Configured(sampleSettings), repository.settings.first())
   }
 
   @Test
@@ -92,7 +91,7 @@ class DataStoreWebhookSettingsRepositoryTest {
 
     repository.clear()
 
-    assertNull(repository.settings.first())
+    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
   }
 
   @Test
@@ -101,12 +100,12 @@ class DataStoreWebhookSettingsRepositoryTest {
     val repository = DataStoreWebhookSettingsRepository(dataStore, FakeWebhookSettingsCipher())
     repository.markLegacyMigrationCompleted()
     repository.save(sampleSettings)
-    assertEquals(sampleSettings, repository.settings.first())
+    assertEquals(WebhookSettingsState.Configured(sampleSettings), repository.settings.first())
 
     backgroundScope.launch { repository.clear() }
     runCurrent() // clearのwriteは意図的に完了させないため、pending clear反映直後まで進む
 
-    assertNull(repository.settings.first())
+    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
 
     var capturedRequest: HttpRequestData? = null
     val poster = WebhookJournalPoster(
@@ -122,7 +121,7 @@ class DataStoreWebhookSettingsRepositoryTest {
     val sent = poster.post("today was good")
 
     assertFalse(sent)
-    assertNull(capturedRequest)
+    assertEquals(null, capturedRequest)
   }
 
   @Test
@@ -135,15 +134,15 @@ class DataStoreWebhookSettingsRepositoryTest {
     backgroundScope.launch { repository.clear() }
     runCurrent()
 
-    assertNull(repository.settings.first())
+    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
 
     dataStore.completeWrite(0)
     runCurrent()
-    assertNull(repository.settings.first())
+    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
 
     dataStore.completeWrite(1)
     runCurrent()
-    assertNull(repository.settings.first())
+    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
   }
 
   @Test
@@ -156,15 +155,15 @@ class DataStoreWebhookSettingsRepositoryTest {
     backgroundScope.launch { repository.save(sampleSettings) }
     runCurrent()
 
-    assertEquals(sampleSettings, repository.settings.first())
+    assertEquals(WebhookSettingsState.Configured(sampleSettings), repository.settings.first())
 
     dataStore.completeWrite(0)
     runCurrent()
-    assertEquals(sampleSettings, repository.settings.first())
+    assertEquals(WebhookSettingsState.Configured(sampleSettings), repository.settings.first())
 
     dataStore.completeWrite(1)
     runCurrent()
-    assertEquals(sampleSettings, repository.settings.first())
+    assertEquals(WebhookSettingsState.Configured(sampleSettings), repository.settings.first())
   }
 
   @Test
@@ -201,7 +200,7 @@ class DataStoreWebhookSettingsRepositoryTest {
     repository.save(sampleSettings)
     cipher.failDecrypt = true
 
-    assertNull(repository.settings.first())
+    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
   }
 
   @Test
@@ -214,7 +213,7 @@ class DataStoreWebhookSettingsRepositoryTest {
 
     val reloaded = DataStoreWebhookSettingsRepository(dataStore, cipher)
 
-    assertEquals(sampleSettings, reloaded.settings.first())
+    assertEquals(WebhookSettingsState.Configured(sampleSettings), reloaded.settings.first())
   }
 
   @Test
@@ -224,14 +223,14 @@ class DataStoreWebhookSettingsRepositoryTest {
     backgroundScope.launch { repository.save(sampleSettings) }
     runCurrent() // BlockingWriteDataStoreのwriteは完了しないため、pendingSettings反映直後まで進む
 
-    assertEquals(sampleSettings, repository.settings.first())
+    assertEquals(WebhookSettingsState.Configured(sampleSettings), repository.settings.first())
   }
 
   @Test
-  fun `DataStore読み込みがIOExceptionを投げた場合は未設定へ倒す`() = runTest {
+  fun `DataStore読み込みがIOExceptionを投げた場合はUnavailableへ倒す`() = runTest {
     val repository = DataStoreWebhookSettingsRepository(ThrowingDataStore(IOException("disk error")), FakeWebhookSettingsCipher())
 
-    assertNull(repository.settings.first())
+    assertEquals(WebhookSettingsState.Unavailable, repository.settings.first())
   }
 
   @Test
@@ -252,11 +251,11 @@ class DataStoreWebhookSettingsRepositoryTest {
   fun `read IOExceptionから復旧すると同じ購読が新しい永続設定を取得できる`() = runTest {
     val repository = DataStoreWebhookSettingsRepository(RecoveringDataStore(), FakeWebhookSettingsCipher())
 
-    val collected = mutableListOf<WebhookSettings?>()
+    val collected = mutableListOf<WebhookSettingsState>()
     val job = launch { repository.settings.collect { collected += it } }
     advanceUntilIdle()
 
-    assertEquals(listOf(null, sampleSettings), collected)
+    assertEquals(listOf(WebhookSettingsState.Unavailable, WebhookSettingsState.Configured(sampleSettings)), collected)
     job.cancel()
   }
 
@@ -274,12 +273,12 @@ class DataStoreWebhookSettingsRepositoryTest {
       }
     }
     runCurrent()
-    assertEquals(sampleSettings, repository.settings.first())
+    assertEquals(WebhookSettingsState.Configured(sampleSettings), repository.settings.first())
 
     job.cancelAndJoin()
 
     assertTrue(thrown is CancellationException)
-    assertNull(repository.settings.first())
+    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
   }
 
   @Test
@@ -299,14 +298,14 @@ class DataStoreWebhookSettingsRepositoryTest {
   @Test
   fun `write失敗後はsettingsが永続化前の状態へ戻る`() = runTest {
     val repository = DataStoreWebhookSettingsRepository(FailingWriteDataStore(IOException("disk error")), FakeWebhookSettingsCipher())
-    assertNull(repository.settings.first())
+    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
 
     try {
       repository.save(sampleSettings)
     } catch (e: IOException) {
     }
 
-    assertNull(repository.settings.first())
+    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
   }
 
   private class FakeWebhookSettingsCipher(var failDecrypt: Boolean = false) : WebhookSettingsCipher {

@@ -5,6 +5,7 @@ import info.bvlion.journalingpost.webhook.LegacyWebhookConfigProvider
 import info.bvlion.journalingpost.webhook.WebhookBodyTemplateRenderer
 import info.bvlion.journalingpost.webhook.WebhookSettingsMigrationCoordinator
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
+import info.bvlion.journalingpost.webhook.WebhookSettingsState
 import io.ktor.client.HttpClient
 import io.ktor.client.request.headers
 import io.ktor.client.request.post
@@ -29,7 +30,8 @@ class WebhookJournalPoster(
 ) : JournalPoster {
   override suspend fun post(message: String): Boolean {
     WebhookSettingsMigrationCoordinator.ensureMigrated(webhookSettingsRepository, legacyConfigProvider)
-    val settings = webhookSettingsRepository.settings.first() ?: return false
+    val state = webhookSettingsRepository.settings.first()
+    val settings = (state as? WebhookSettingsState.Configured)?.settings ?: return false
 
     val rendered = WebhookBodyTemplateRenderer.render(
       template = settings.bodyTemplate,
