@@ -37,6 +37,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -67,6 +69,10 @@ class MoodEntryActivity : ComponentActivity() {
   private val viewModel: MainViewModel by viewModels { MainViewModelFactory }
   private var mood by mutableStateOf<Mood?>(null)
 
+  // Widgetのタップ1回を1つの入力sessionとして識別する。同じMoodを続けてタップした場合でも
+  // 前回のnote/メモ展開状態を引き継がないよう、Moodではなくこの値をComposeのkeyにする。
+  private var sessionId by mutableIntStateOf(0)
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     MainViewModelFactory.initialize(applicationContext)
@@ -77,30 +83,40 @@ class MoodEntryActivity : ComponentActivity() {
       return
     }
     mood = initialMood
+    sessionId = savedInstanceState?.getInt(STATE_SESSION_ID) ?: 0
     // scrimをsystem bar領域まで途切れなく描くため、translucent windowでもcontentを全画面へ広げる。
     enableEdgeToEdge()
 
     setContent {
       JournalingPostTheme {
         mood?.let { currentMood ->
+          val currentSessionId = sessionId
           val uiState by viewModel.uiState.collectAsState()
           val moodLabel = stringResource(currentMood.labelRes)
 
-          MoodEntryScreen(
-            mood = currentMood,
-            uiState = uiState,
-            onRecord = { note ->
-              viewModel.record(
-                note = note,
-                mood = MoodSnapshot(id = currentMood.name, emoji = currentMood.emoji, label = moodLabel),
-                source = JournalSource.WIDGET,
-              )
-            },
-            onClose = { finish() },
-          )
+          key(currentSessionId) {
+            MoodEntryScreen(
+              mood = currentMood,
+              uiState = uiState,
+              onRecord = { note ->
+                viewModel.record(
+                  note = note,
+                  mood = MoodSnapshot(id = currentMood.name, emoji = currentMood.emoji, label = moodLabel),
+                  source = JournalSource.WIDGET,
+                )
+              },
+              onClose = { closeSession(currentSessionId) },
+            )
+          }
         }
       }
     }
+  }
+
+  // sessionIdが復元されないと、構成変更後にrememberSaveableのkeyがずれて入力中のnoteを失う。
+  override fun onSaveInstanceState(outState: Bundle) {
+    super.onSaveInstanceState(outState)
+    outState.putInt(STATE_SESSION_ID, sessionId)
   }
 
   /** launchMode=singleTaskのため、Widgetを再度タップしても新しいinstanceは作られずここへ届く。 */
@@ -111,20 +127,28 @@ class MoodEntryActivity : ComponentActivity() {
     // 構成変更でActivityが作り直されたときも新しいMoodを読めるようにIntentごと差し替える。
     setIntent(intent)
     mood = newMood
+    sessionId++
     viewModel.resetState()
+  }
+
+  /** 古いsessionのfadeが遅れて完了しても、その間に始まった新しいsessionをfinishしない。 */
+  private fun closeSession(id: Int) {
+    if (id != sessionId) return
+    finish()
   }
 
   companion object {
     const val EXTRA_MOOD = "info.bvlion.journalingpost.extra.MOOD"
+    private const val STATE_SESSION_ID = "info.bvlion.journalingpost.state.SESSION_ID"
   }
 }
 
 /**
- * 記録処理を始めた後にWidgetから届いた新しいMoodは反映しない。実行中のrecord()と画面のMoodが
- * ずれるうえ、成功時のfade/finishやToastがどちらのMoodのものか曖昧になるため。
+ * 記録処理中(LOADING)だけは、新しいentryへ置き換えると実行中のrecord()をcancelしてしまうため
+ * 受け付けない。完了済みのSUCCESS系は次のWidgetタップを取りこぼさないよう受け付ける。
  */
 internal fun MainViewModel.UiState.acceptsNewMoodEntry(): Boolean =
-  this == MainViewModel.UiState.INIT || this == MainViewModel.UiState.FAILURE
+  this != MainViewModel.UiState.LOADING
 
 private const val CLOSE_FADE_DURATION_MS = 250
 private const val SCRIM_ALPHA = 0.32f
@@ -136,21 +160,26 @@ fun MoodEntryScreen(
   onRecord: (String) -> Unit,
   onClose: () -> Unit,
 ) {
-  // Widgetから別のMoodが届いたときに前回の入力を引き継がないよう、moodをinputにしている。
-  var note by rememberSaveable(mood) { mutableStateOf("") }
-  var isNoteVisible by rememberSaveable(mood) { mutableStateOf(false) }
+  var note by rememberSaveable { mutableStateOf("") }
+  var isNoteVisible by rememberSaveable { mutableStateOf(false) }
+  // MainViewModelは前のsessionの結果を保持したままなので、このsessionが記録を始めるまでは
+  // その結果へ反応しない。そうしないと、直前の記録が成功したまま開かれたsessionが
+  // いきなりfade/finishしてWidgetタップを失う。
+  var hasRequestedRecord by rememberSaveable { mutableStateOf(false) }
   var isClosing by remember { mutableStateOf(false) }
   val context = LocalContext.current
   val coroutineScope = rememberCoroutineScope()
   val contentAlpha = remember { Animatable(1f) }
 
-  val isRecording = uiState == MainViewModel.UiState.LOADING
-  val isSuccess = uiState == MainViewModel.UiState.SUCCESS || uiState == MainViewModel.UiState.SUCCESS_DELIVERY_FAILED
+  val sessionState = if (hasRequestedRecord) uiState else MainViewModel.UiState.INIT
+  val isRecording = sessionState == MainViewModel.UiState.LOADING
+  val isSuccess =
+    sessionState == MainViewModel.UiState.SUCCESS || sessionState == MainViewModel.UiState.SUCCESS_DELIVERY_FAILED
   // SUCCESS到達後もrecomposeで「記録」ボタンが一瞬通常表示へ戻らないよう、LOADING/SUCCESS系/
   // fade中(isClosing)のすべてを「操作不能」として扱う。MainViewModelはINITへ戻さないため、
   // この操作lockはUI側だけで判定する。
   val isInteractionLocked = isRecording || isSuccess || isClosing
-  val hasFailure = uiState == MainViewModel.UiState.FAILURE
+  val hasFailure = sessionState == MainViewModel.UiState.FAILURE
 
   // finish()するとViewModelのcoroutineごと破棄されるため、fade outを完了させてから
   // Activityを閉じる。Toastはfinish後でも安全なapplicationContextを使い、閉じたあとに出す。
@@ -166,7 +195,7 @@ fun MoodEntryScreen(
     }
   }
 
-  LaunchedEffect(uiState) {
+  LaunchedEffect(sessionState) {
     // Webhook配送失敗を記録自体の失敗として扱わず、SUCCESSと同様に画面を閉じる。
     if (isSuccess) {
       requestClose(showSuccessToast = true)
@@ -265,7 +294,13 @@ fun MoodEntryScreen(
             TextButton(onClick = { requestClose(showSuccessToast = false) }, enabled = !isInteractionLocked) {
               Text("記録しない")
             }
-            Button(onClick = { onRecord(note) }, enabled = !isInteractionLocked) {
+            Button(
+              onClick = {
+                hasRequestedRecord = true
+                onRecord(note)
+              },
+              enabled = !isInteractionLocked,
+            ) {
               if (isInteractionLocked) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
               } else {

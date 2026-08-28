@@ -7,15 +7,15 @@ import org.junit.Test
 
 class MoodEntryUiStateTest {
   @Test
-  fun `INITとFAILUREではWidgetからの新しいMoodを受け付ける`() {
+  fun `記録処理中以外はWidgetからの新しいMoodを受け付ける`() {
     assertTrue(MainViewModel.UiState.INIT.acceptsNewMoodEntry())
     assertTrue(MainViewModel.UiState.FAILURE.acceptsNewMoodEntry())
+    assertTrue(MainViewModel.UiState.SUCCESS.acceptsNewMoodEntry())
+    assertTrue(MainViewModel.UiState.SUCCESS_DELIVERY_FAILED.acceptsNewMoodEntry())
   }
 
   @Test
-  fun `記録処理中と記録成功後はWidgetからの新しいMoodを受け付けない`() {
+  fun `記録処理中はWidgetからの新しいMoodを受け付けない`() {
     assertFalse(MainViewModel.UiState.LOADING.acceptsNewMoodEntry())
-    assertFalse(MainViewModel.UiState.SUCCESS.acceptsNewMoodEntry())
-    assertFalse(MainViewModel.UiState.SUCCESS_DELIVERY_FAILED.acceptsNewMoodEntry())
   }
 }
