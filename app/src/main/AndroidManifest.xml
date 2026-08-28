@@ -19,10 +19,17 @@
             </intent-filter>
         </activity>
 
+        <!--
+            taskAffinityを空にして、Widgetからの一時入力をアプリ本体のtaskへ入れない。
+            GlanceのactionStartActivityはflagなしのIntentをPendingIntentへ包むだけで、
+            widget hostからの起動では実質FLAG_ACTIVITY_NEW_TASK扱いになるため、既定の
+            affinityのままだと既存MainActivityのtaskごと前面へ引き上げてしまう。
+        -->
         <activity
             android:name=".widget.MoodEntryActivity"
             android:exported="false"
             android:excludeFromRecents="true"
+            android:taskAffinity=""
             android:theme="@style/Theme.JournalingPost.MoodEntry"
             android:windowSoftInputMode="adjustResize" />
 

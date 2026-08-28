@@ -3,9 +3,8 @@
   <style name="Theme.JournalingPost" parent="android:Theme.Material.Light.NoActionBar" />
 
   <!--
-    Widgetから起動し、launcher等の背後を残したままMaterial 3のBottomSheetを重ねるためのtheme。
-    windowAnimationStyleを無効にしているのは、Activityのwindow遷移animationが動くと
-    BottomSheet自身のslide-inと二重になり、擬似Dialogのpop-inのように見えるため。
+    Widgetからの一時入力Activity用。直前に見ていた画面を背後へ残すためtranslucentにし、
+    window遷移animationはDialog自身のanimationと二重にならないよう無効化する。
   -->
   <style name="Theme.JournalingPost.MoodEntry" parent="Theme.JournalingPost">
     <item name="android:windowIsTranslucent">true</item>

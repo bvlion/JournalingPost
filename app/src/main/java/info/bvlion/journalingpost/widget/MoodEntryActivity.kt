@@ -4,35 +4,36 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import info.bvlion.journalingpost.MainViewModel
 import info.bvlion.journalingpost.MainViewModelFactory
 import info.bvlion.journalingpost.journal.JournalSource
@@ -59,7 +60,7 @@ class MoodEntryActivity : ComponentActivity() {
       JournalingPostTheme {
         val uiState by viewModel.uiState.collectAsState()
 
-        MoodEntrySheet(
+        MoodEntryDialog(
           mood = mood,
           uiState = uiState,
           onRecord = { note -> viewModel.record(note = note, mood = moodSnapshot, source = JournalSource.WIDGET) },
@@ -74,113 +75,102 @@ class MoodEntryActivity : ComponentActivity() {
   }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MoodEntrySheet(
+fun MoodEntryDialog(
   mood: Mood,
   uiState: MainViewModel.UiState,
   onRecord: (String) -> Unit,
   onClose: () -> Unit,
 ) {
-  val note = rememberSaveable { mutableStateOf("") }
-  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+  var note by rememberSaveable { mutableStateOf("") }
+  var isNoteVisible by rememberSaveable { mutableStateOf(false) }
   val isRecording = uiState == MainViewModel.UiState.LOADING
+  val hasFailure = uiState == MainViewModel.UiState.FAILURE
 
   LaunchedEffect(uiState) {
     // Webhook配送失敗を記録自体の失敗として扱わず、SUCCESSと同様に画面を閉じる。
     if (uiState == MainViewModel.UiState.SUCCESS || uiState == MainViewModel.UiState.SUCCESS_DELIVERY_FAILED) {
-      sheetState.hide()
       onClose()
     }
   }
 
-  ModalBottomSheet(
+  AlertDialog(
     // dismissするとActivityごとfinishしてViewModelのcoroutineを破棄するため、記録処理中は
-    // swipe / scrim tap / Backのどれでも閉じられないようにする。sheetGesturesEnabled /
-    // shouldDismissOnBackPressはswipeとBackしか止めないため、scrim tapが呼ぶ
-    // onDismissRequest自体もisRecording中はonCloseを呼ばないよう明示的に無視する。
+    // DialogPropertiesに加えてonDismissRequest自体でもonCloseを呼ばないようにする。
     onDismissRequest = { if (!isRecording) onClose() },
-    sheetState = sheetState,
-    sheetGesturesEnabled = !isRecording,
-    properties = ModalBottomSheetProperties(shouldDismissOnBackPress = !isRecording),
-  ) {
-    MoodEntrySheetContent(
-      mood = mood,
-      uiState = uiState,
-      note = note.value,
-      onNoteChange = { note.value = it },
-      onRecord = { onRecord(note.value) },
-    )
-  }
-}
-
-@Composable
-private fun MoodEntrySheetContent(
-  mood: Mood,
-  uiState: MainViewModel.UiState,
-  note: String,
-  onNoteChange: (String) -> Unit,
-  onRecord: () -> Unit,
-) {
-  val isRecording = uiState == MainViewModel.UiState.LOADING
-
-  Column(
-    modifier = Modifier
-      .fillMaxWidth()
-      .padding(horizontal = 24.dp)
-      .padding(bottom = 24.dp)
-      .imePadding(),
-  ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-      Text(text = mood.emoji, style = MaterialTheme.typography.headlineSmall)
-      Spacer(Modifier.width(8.dp))
-      Text(text = stringResource(mood.labelRes), style = MaterialTheme.typography.titleMedium)
-    }
-
-    // 文章を書かなくても記録が成立することを崩さないため、初期表示ではfocusを要求せず
-    // ソフトキーボードも出さない。入力欄をタップしたときだけ通常どおり表示させる。
-    TextField(
-      value = note,
-      onValueChange = onNoteChange,
-      modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-      label = { Text("メモ（任意）") },
-      enabled = !isRecording,
-    )
-
-    if (uiState == MainViewModel.UiState.FAILURE) {
-      Text(
-        text = "記録に失敗しました。もう一度お試しください",
-        color = MaterialTheme.colorScheme.error,
-        style = MaterialTheme.typography.bodySmall,
-        modifier = Modifier.padding(top = 8.dp),
-      )
-    }
-
-    Row(
-      modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-      horizontalArrangement = Arrangement.End,
-    ) {
-      Button(onClick = onRecord, enabled = !isRecording) {
+    properties = DialogProperties(
+      dismissOnBackPress = !isRecording,
+      dismissOnClickOutside = !isRecording,
+    ),
+    title = {
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(text = mood.emoji, style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.width(8.dp))
+        Text(text = stringResource(mood.labelRes), style = MaterialTheme.typography.titleMedium)
+      }
+    },
+    text = if (isNoteVisible || hasFailure) {
+      {
+        Column {
+          if (isNoteVisible) {
+            val focusRequester = remember { FocusRequester() }
+            // 「メモを追加」を選んだ直後だけfocusを移し、ソフトキーボードを表示させる。
+            // 初期表示から入力欄を出さないのは、文章を書かなくても記録が成立することを
+            // UI自体で表現するため。
+            LaunchedEffect(Unit) {
+              focusRequester.requestFocus()
+            }
+            TextField(
+              value = note,
+              onValueChange = { note = it },
+              modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+              enabled = !isRecording,
+              maxLines = 4,
+            )
+          }
+          if (hasFailure) {
+            Text(
+              text = "記録に失敗しました。もう一度お試しください",
+              color = MaterialTheme.colorScheme.error,
+              style = MaterialTheme.typography.bodySmall,
+              modifier = Modifier.padding(top = 8.dp),
+            )
+          }
+        }
+      }
+    } else {
+      null
+    },
+    dismissButton = if (isNoteVisible) {
+      null
+    } else {
+      {
+        TextButton(onClick = { isNoteVisible = true }, enabled = !isRecording) {
+          Text("メモを追加")
+        }
+      }
+    },
+    confirmButton = {
+      Button(onClick = { onRecord(note) }, enabled = !isRecording) {
         if (isRecording) {
           CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
         } else {
           Text("記録")
         }
       }
-    }
-  }
+    },
+  )
 }
 
 @Preview(showBackground = true)
 @Composable
-fun MoodEntrySheetContentPreview() {
+fun MoodEntryDialogPreview() {
   JournalingPostTheme {
-    MoodEntrySheetContent(
+    MoodEntryDialog(
       mood = Mood.HAPPY,
       uiState = MainViewModel.UiState.INIT,
-      note = "",
-      onNoteChange = {},
       onRecord = {},
+      onClose = {},
     )
   }
 }
