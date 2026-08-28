@@ -3,7 +3,6 @@ package info.bvlion.journalingpost.journal
 import info.bvlion.journalingpost.mood.MoodSnapshot
 import java.time.Instant
 
-/** Webhookを一切呼ばず、ローカル保存のみで記録を完結させる。 */
 class LocalOnlyJournalRecorder(
   private val repository: JournalEntryRepository,
   private val now: () -> Instant = Instant::now,

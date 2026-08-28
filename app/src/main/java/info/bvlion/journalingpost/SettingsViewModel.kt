@@ -24,12 +24,6 @@ class SettingsViewModel(
   private val _saveFailed = MutableStateFlow(false)
   val saveFailed: StateFlow<Boolean> = _saveFailed.asStateFlow()
 
-  /**
-   * recordModeRepository.setRecordMode()は永続化失敗時に例外を投げる。ここで拾わずに
-   * viewModelScopeへ伝播させると未処理例外としてアプリを終了させかねないため、ここで
-   * catchしてsaveFailedへ反映する(recordModeRepository側で楽観的なpendingは既に
-   * 元へ戻されているため、recordModeは永続化前の有効なモードへ自然に戻る)。
-   */
   fun setRecordMode(mode: RecordMode) {
     viewModelScope.launch {
       _saveFailed.value = false

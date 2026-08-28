@@ -24,13 +24,6 @@ import org.junit.Assert.assertSame
 import org.junit.Before
 import org.junit.Test
 
-/**
- * MainViewModelFactory/SettingsViewModelFactoryがそれぞれ別々にRecordModeRepositoryを
- * 生成すると、DataStoreRecordModeRepository.pendingMode(記録開始時点のモードをDataStore
- * write完了前でも参照できるようにするための即時反映用の値)がインスタンスごとに分かれてしまい、
- * 設定画面での変更が記録処理側へ伝わらない競合が再発する。ここではRecordModeRepositoryStore
- * がその2箇所に対して常に同一インスタンスを返すことを検証する。
- */
 @OptIn(ExperimentalCoroutinesApi::class)
 class RecordModeRepositoryStoreTest {
 
@@ -53,8 +46,6 @@ class RecordModeRepositoryStoreTest {
   fun `Settings側とMain側が別々にgetInstanceしてもwrite未完了のLOCAL_ONLYがMain側の記録へ反映される`() =
     runTest {
       val dataStore = BlockingWriteDataStore()
-      // MainViewModelFactory.initialize()とSettingsViewModelFactory.initialize()が
-      // それぞれ別のタイミングでRecordModeRepositoryStore.getInstance(context)を呼ぶ状況を再現する。
       val settingsSideRepository = RecordModeRepositoryStore.getInstance(dataStore)
       val mainSideRepository = RecordModeRepositoryStore.getInstance(dataStore)
 
@@ -78,7 +69,6 @@ class RecordModeRepositoryStoreTest {
       assertFalse(postCalled)
     }
 
-  /** dataStore.editの実体であるupdateData()を、テスト中ずっと完了しないようにするFake。 */
   private class BlockingWriteDataStore : DataStore<Preferences> {
     override val data: Flow<Preferences> = MutableStateFlow(emptyPreferences())
 

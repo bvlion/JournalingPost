@@ -17,14 +17,9 @@ internal class DataStoreRecordModeRepository(
   private val dataStore: DataStore<Preferences>,
 ) : RecordModeRepository {
   /**
-   * setRecordMode()呼び出し時にdataStore.editへ到達する前に同期的へ更新する即時反映用の値。
-   * DataStoreへの永続化(ディスクI/O)が完了する前でも、以降にrecordModeを取得する呼び出しが
-   * 常にこの値を優先して読むため、選択直後の記録が旧モードを参照する競合を防げる。
-   *
-   * generationは、短時間に複数回setRecordMode()が呼ばれた場合に、古い呼び出しのwrite完了/失敗が
-   * より新しい呼び出しが設定したpendingを誤って上書き・巻き戻ししないようにするための世代番号。
-   * write完了/失敗時にpendingModeをクリアする際、自分がpendingModeを設定した時点と同じ世代の
-   * ままであることをcompareAndSetで確認し、既に新しい呼び出しに上書きされていれば何もしない。
+   * write完了前でも選択モードを記録処理へ即時反映するための値。generationは、複数回の
+   * setRecordMode()が重なった際、古い呼び出しのwrite完了/失敗がより新しい選択を
+   * 誤って上書き・巻き戻ししないよう、pendingModeをクリアする際に確認する世代番号。
    */
   private val pendingMode = MutableStateFlow<PendingMode?>(null)
   private val generation = AtomicInteger(0)
@@ -32,8 +27,7 @@ internal class DataStoreRecordModeRepository(
   private val persistedRecordMode: Flow<RecordMode> = dataStore.data
     .map { preferences -> preferences.toRecordModeOrDefault() }
     .catch { e ->
-      // 設定を読み取れない場合は外部送信を行わない安全側(LOCAL_ONLY)へ倒す。
-      // IOException以外(プログラミングミス等)はここで握り潰さず再送出する。
+      // 読み取れない場合は外部送信を行わない安全側(LOCAL_ONLY)へ倒す。IOException以外は再送出する。
       if (e is IOException) emit(RecordMode.LOCAL_ONLY) else throw e
     }
 
@@ -46,14 +40,10 @@ internal class DataStoreRecordModeRepository(
     pendingMode.value = pending
     try {
       dataStore.edit { it[KEY] = mode.name }
-      // 永続化に成功した場合、以降はpersistedRecordModeへ委ねてよいのでpendingを片付ける。
-      // 既により新しい呼び出しに上書きされていれば(世代が変わっていれば)何もしない。
       pendingMode.compareAndSet(pending, null)
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
-      // 永続化に失敗した場合、楽観的に反映していたpendingを元(persisted側)へ戻す。
-      // これも既により新しい呼び出しに上書きされていれば何もしない。
       pendingMode.compareAndSet(pending, null)
       throw e
     }

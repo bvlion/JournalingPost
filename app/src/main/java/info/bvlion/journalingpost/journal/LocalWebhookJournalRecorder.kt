@@ -8,11 +8,9 @@ import java.time.Instant
 import kotlinx.coroutines.CancellationException
 
 /**
- * ローカル保存(insert)が成功した時点で記録は成功として扱う。Webhookが失敗・例外を
- * 投げても、あるいはinsert後のdeliveryStatus更新自体が失敗しても、JournalEntryは
- * 既に保存済みのためこの関数は例外を投げずに正常終了する(status更新に失敗した場合、
- * deliveryStatusは初期値のPENDINGのまま残るが、戻り値には実際のWebhook配送結果を
- * 返す)。insert自体が失敗した場合のみ、その例外をそのまま呼び出し元へ伝える。
+ * ローカル保存(insert)が成功した時点で記録は成功として扱う。Webhookの失敗・例外や
+ * deliveryStatus更新の失敗はこの関数を例外にせず、戻り値のDeliveryStatusへ反映する
+ * (status更新に失敗した場合はPENDINGのまま残る)。insert自体の失敗のみ例外を伝播する。
  */
 class LocalWebhookJournalRecorder(
   private val repository: JournalEntryRepository,
@@ -53,8 +51,7 @@ class LocalWebhookJournalRecorder(
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
-      // insertは既に成功しており記録自体は成功扱いのため、status更新の失敗はここで飲み込む。
-      // deliveryStatusは初期値のPENDINGのまま残り、自動再送や復旧は今回のスコープ外。
+      // insertは既に成功しているため、status更新の失敗はここで飲み込む(PENDINGのまま残る)。
     }
 
     return status

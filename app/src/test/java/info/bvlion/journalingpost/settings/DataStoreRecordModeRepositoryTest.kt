@@ -74,10 +74,7 @@ class DataStoreRecordModeRepositoryTest {
     val repository = DataStoreRecordModeRepository(BlockingWriteDataStore())
 
     backgroundScope.launch { repository.setRecordMode(RecordMode.LOCAL_ONLY) }
-    // setRecordMode()内のdataStore.edit(実体はupdateData)はBlockingWriteDataStoreにより
-    // このテストの間ずっと完了しない。pendingModeへの同期反映はそれより前に行われるため、
-    // runCurrent()でその手前まで進めた時点で既にLOCAL_ONLYが読めることを確認する。
-    runCurrent()
+    runCurrent() // BlockingWriteDataStoreのwriteは完了しないため、pendingMode反映直後まで進む
 
     assertEquals(RecordMode.LOCAL_ONLY, repository.recordMode.first())
   }
@@ -148,7 +145,6 @@ class DataStoreRecordModeRepositoryTest {
     try {
       repository.setRecordMode(RecordMode.LOCAL_ONLY)
     } catch (e: IOException) {
-      // このテストではwrite失敗後の状態のみ検証する。
     }
 
     assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
@@ -166,7 +162,6 @@ class DataStoreRecordModeRepositoryTest {
 
     assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
 
-    // 1回目(古い)のwriteが後から完了しても、2回目(新しい)の選択が巻き戻らない。
     dataStore.completeWrite(0)
     runCurrent()
     assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
@@ -185,7 +180,7 @@ class DataStoreRecordModeRepositoryTest {
       try {
         repository.setRecordMode(RecordMode.LOCAL_ONLY)
       } catch (e: IOException) {
-        // 古い(1回目の)選択のwrite失敗。ここでは新しい選択への非干渉のみ検証する。
+        // backgroundScopeのjobを失敗させないためここでcatchする。
       }
     }
     runCurrent()
@@ -225,7 +220,6 @@ class DataStoreRecordModeRepositoryTest {
     assertEquals("today was good", journalRepository.entries.values.single().note)
   }
 
-  /** dataStore.editの実体であるupdateData()を、テスト中ずっと完了しないようにするFake。 */
   private class BlockingWriteDataStore : DataStore<Preferences> {
     override val data: Flow<Preferences> = MutableStateFlow(emptyPreferences())
 
@@ -241,11 +235,7 @@ class DataStoreRecordModeRepositoryTest {
     override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences = throw error
   }
 
-  /**
-   * updateData()の呼び出しごとにgate(index順)を積み、テスト側がcompleteWrite/failWriteで
-   * 呼び出し順とは独立に完了・失敗させられるFake。複数のsetRecordMode呼び出しが重なった
-   * 場合の完了/失敗順序を制御するために使う。
-   */
+  /** updateData()の完了/失敗を呼び出し順と切り離して制御し、write完了順の入れ替わりを再現するFake。 */
   private class ControllableWriteDataStore : DataStore<Preferences> {
     private val backing = MutableStateFlow(emptyPreferences())
     override val data: Flow<Preferences> = backing

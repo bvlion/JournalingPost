@@ -145,8 +145,7 @@ class LocalWebhookJournalRecorderTest {
 
     val result = recorder.record("today was good", mood = null, source = JournalSource.APP)
 
-    // status更新自体が失敗してもrecord()はWebhook配送の実際の結果(SENT)を返す。
-    // 永続化されたJournalEntryは更新に失敗したため初期値のPENDINGのまま残る(既存契約)。
+    // 戻り値は実際のWebhook配送結果(SENT)を返すが、永続化は更新失敗のためPENDINGのまま残る。
     assertEquals(DeliveryStatus.SENT, result)
     val entry = entries.values.single()
     assertEquals("today was good", entry.note)
