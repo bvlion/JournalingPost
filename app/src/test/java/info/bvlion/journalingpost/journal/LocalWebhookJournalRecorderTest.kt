@@ -6,6 +6,7 @@ import java.time.Instant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -15,7 +16,13 @@ class LocalWebhookJournalRecorderTest {
   private fun createRecorder(
     repository: FakeJournalEntryRepository = FakeJournalEntryRepository(),
     poster: (String) -> Boolean = { true },
-  ) = LocalWebhookJournalRecorder(repository, JournalPoster { poster(it) }, now = { fixedNow })
+    isWebhookConfigured: () -> Boolean = { true },
+  ) = LocalWebhookJournalRecorder(
+    repository,
+    JournalPoster { poster(it) },
+    now = { fixedNow },
+    isWebhookConfigured = isWebhookConfigured,
+  )
 
   @Test
   fun `recordはdeliveryStatus更新より先にローカル保存する`() = runTest {
@@ -32,8 +39,9 @@ class LocalWebhookJournalRecorderTest {
     val repository = FakeJournalEntryRepository()
     val recorder = createRecorder(repository, poster = { true })
 
-    recorder.record("today was good", mood = null, source = JournalSource.APP)
+    val result = recorder.record("today was good", mood = null, source = JournalSource.APP)
 
+    assertEquals(DeliveryStatus.SENT, result)
     val entry = repository.entries.values.single()
     assertEquals(DeliveryStatus.SENT, entry.deliveryStatus)
   }
@@ -44,8 +52,9 @@ class LocalWebhookJournalRecorderTest {
       val repository = FakeJournalEntryRepository()
       val recorder = createRecorder(repository, poster = { false })
 
-      recorder.record("today was good", mood = null, source = JournalSource.APP)
+      val result = recorder.record("today was good", mood = null, source = JournalSource.APP)
 
+      assertEquals(DeliveryStatus.FAILED, result)
       val entry = repository.entries.values.single()
       assertEquals("today was good", entry.note)
       assertEquals(DeliveryStatus.FAILED, entry.deliveryStatus)
@@ -58,10 +67,31 @@ class LocalWebhookJournalRecorderTest {
       repository,
       JournalPoster { throw RuntimeException("boom") },
       now = { fixedNow },
+      isWebhookConfigured = { true },
     )
 
-    recorder.record("today was good", mood = null, source = JournalSource.APP)
+    val result = recorder.record("today was good", mood = null, source = JournalSource.APP)
 
+    assertEquals(DeliveryStatus.FAILED, result)
+    val entry = repository.entries.values.single()
+    assertEquals("today was good", entry.note)
+    assertEquals(DeliveryStatus.FAILED, entry.deliveryStatus)
+  }
+
+  @Test
+  fun `Webhook設定が不足している場合はネットワーク送信せずFAILEDになりローカル記録は残る`() = runTest {
+    val repository = FakeJournalEntryRepository()
+    var postCalled = false
+    val recorder = createRecorder(
+      repository,
+      poster = { postCalled = true; true },
+      isWebhookConfigured = { false },
+    )
+
+    val result = recorder.record("today was good", mood = null, source = JournalSource.APP)
+
+    assertEquals(DeliveryStatus.FAILED, result)
+    assertFalse(postCalled)
     val entry = repository.entries.values.single()
     assertEquals("today was good", entry.note)
     assertEquals(DeliveryStatus.FAILED, entry.deliveryStatus)
@@ -76,7 +106,12 @@ class LocalWebhookJournalRecorderTest {
         error("must not be called when insert fails")
       }
     }
-    val recorder = LocalWebhookJournalRecorder(repository, JournalPoster { true }, now = { fixedNow })
+    val recorder = LocalWebhookJournalRecorder(
+      repository,
+      JournalPoster { true },
+      now = { fixedNow },
+      isWebhookConfigured = { true },
+    )
 
     var thrown: Throwable? = null
     try {
@@ -101,10 +136,17 @@ class LocalWebhookJournalRecorderTest {
         throw RuntimeException("db boom")
       }
     }
-    val recorder = LocalWebhookJournalRecorder(repository, JournalPoster { true }, now = { fixedNow })
+    val recorder = LocalWebhookJournalRecorder(
+      repository,
+      JournalPoster { true },
+      now = { fixedNow },
+      isWebhookConfigured = { true },
+    )
 
-    recorder.record("today was good", mood = null, source = JournalSource.APP)
+    val result = recorder.record("today was good", mood = null, source = JournalSource.APP)
 
+    // 戻り値は実際のWebhook配送結果(SENT)を返すが、永続化は更新失敗のためPENDINGのまま残る。
+    assertEquals(DeliveryStatus.SENT, result)
     val entry = entries.values.single()
     assertEquals("today was good", entry.note)
     assertEquals(DeliveryStatus.PENDING, entry.deliveryStatus)
@@ -119,7 +161,12 @@ class LocalWebhookJournalRecorderTest {
         throw CancellationException("cancelled")
       }
     }
-    val recorder = LocalWebhookJournalRecorder(repository, JournalPoster { true }, now = { fixedNow })
+    val recorder = LocalWebhookJournalRecorder(
+      repository,
+      JournalPoster { true },
+      now = { fixedNow },
+      isWebhookConfigured = { true },
+    )
 
     var thrown: Throwable? = null
     try {
