@@ -57,7 +57,6 @@ class RecordModeRepositoryStoreTest {
         localWebhookRecorder = LocalWebhookJournalRecorder(
           journalRepository,
           JournalPoster { postCalled = true; true },
-          isWebhookConfigured = { true },
         ),
       )
 

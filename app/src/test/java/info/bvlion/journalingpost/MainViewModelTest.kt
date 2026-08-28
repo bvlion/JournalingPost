@@ -17,7 +17,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
@@ -112,7 +111,7 @@ class MainViewModelTest {
   fun `ローカル保存成功後にWebhook送信が失敗するとSUCCESS_DELIVERY_FAILEDになる`() =
     runTest(testDispatcher) {
       val repository = InMemoryJournalEntryRepository()
-      val recorder = LocalWebhookJournalRecorder(repository, JournalPoster { false }, isWebhookConfigured = { true })
+      val recorder = LocalWebhookJournalRecorder(repository, JournalPoster { false })
       val viewModel = MainViewModel(recorder)
 
       viewModel.record("today was good", source = JournalSource.APP)
@@ -120,26 +119,6 @@ class MainViewModelTest {
 
       assertEquals(MainViewModel.UiState.SUCCESS_DELIVERY_FAILED, viewModel.uiState.value)
       assertEquals(DeliveryStatus.FAILED, repository.entries.values.single().deliveryStatus)
-    }
-
-  @Test
-  fun `Webhook設定不足時はローカル記録が残りSUCCESS_DELIVERY_FAILEDになる`() =
-    runTest(testDispatcher) {
-      val repository = InMemoryJournalEntryRepository()
-      var postCalled = false
-      val recorder = LocalWebhookJournalRecorder(
-        repository,
-        JournalPoster { postCalled = true; true },
-        isWebhookConfigured = { false },
-      )
-      val viewModel = MainViewModel(recorder)
-
-      viewModel.record("today was good", source = JournalSource.APP)
-      testDispatcher.scheduler.advanceUntilIdle()
-
-      assertEquals(MainViewModel.UiState.SUCCESS_DELIVERY_FAILED, viewModel.uiState.value)
-      assertFalse(postCalled)
-      assertEquals("today was good", repository.entries.values.single().note)
     }
 
   @Test

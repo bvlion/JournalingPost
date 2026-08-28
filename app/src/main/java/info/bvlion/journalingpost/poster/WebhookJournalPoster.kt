@@ -1,32 +1,42 @@
 package info.bvlion.journalingpost.poster
 
-import info.bvlion.journalingpost.BuildConfig
+import info.bvlion.journalingpost.webhook.WebhookBodyTemplateRenderer
+import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
 import io.ktor.client.HttpClient
+import io.ktor.client.request.headers
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.util.Locale
+import kotlinx.coroutines.flow.first
 
-/** HTTP status < 400を成功として扱う。 */
+/**
+ * HTTP status < 400を成功として扱う。設定snapshotの取得・body renderのどちらかが失敗した場合は
+ * HTTP requestを開始せずfalseを返す(1回のpost()呼び出し内では同じsettings snapshotだけを使う)。
+ */
 class WebhookJournalPoster(
   private val httpClient: HttpClient,
+  private val webhookSettingsRepository: WebhookSettingsRepository,
   private val now: () -> Instant = Instant::now,
 ) : JournalPoster {
   override suspend fun post(message: String): Boolean {
-    val response = httpClient.post(BuildConfig.POST_URL) {
+    val settings = webhookSettingsRepository.settings.first() ?: return false
+
+    val rendered = WebhookBodyTemplateRenderer.render(
+      template = settings.bodyTemplate,
+      message = message,
+      timestamp = now().toWebhookTimestamp(),
+    )
+    val body = (rendered as? WebhookBodyTemplateRenderer.Result.Success)?.json ?: return false
+
+    val response = httpClient.post(settings.url) {
       contentType(ContentType.Application.Json)
-      setBody(
-        WebhookRequestBody(
-          event = WebhookEvent(
-            ts = now().toWebhookTimestamp(),
-            text = message,
-          ),
-        ),
-      )
+      headers {
+        settings.headers.forEach { header -> append(header.name, header.value) }
+      }
+      setBody(body)
     }
     return response.status.value < 400
   }
@@ -34,18 +44,3 @@ class WebhookJournalPoster(
 
 private fun Instant.toWebhookTimestamp(): String =
   String.format(Locale.US, "%.6f", epochSecond + nano / 1_000_000_000.0)
-
-@Serializable
-internal data class WebhookRequestBody(
-  @SerialName("team_id") val teamId: String = BuildConfig.TEAM_ID,
-  val token: String = BuildConfig.TOKEN,
-  val event: WebhookEvent,
-)
-
-@Serializable
-internal data class WebhookEvent(
-  val channel: String = BuildConfig.CHANNEL,
-  val user: String = BuildConfig.USER,
-  val ts: String,
-  val text: String,
-)

@@ -28,21 +28,26 @@ android {
       .takeIf { it.exists() }?.inputStream()?.use { load(it) }
   }
 
-  defaultConfig {
-    buildConfigField("String", "POST_URL", "\"${localProperties.getProperty("POST_URL")}\"")
-    buildConfigField("String", "TEAM_ID", "\"${localProperties.getProperty("TEAM_ID")}\"")
-    buildConfigField("String", "TOKEN", "\"${localProperties.getProperty("TOKEN")}\"")
-    buildConfigField("String", "CHANNEL", "\"${localProperties.getProperty("CHANNEL")}\"")
-    buildConfigField("String", "USER", "\"${localProperties.getProperty("USER")}\"")
-  }
-
   buildTypes {
+    debug {
+      // 自分用Webhookのlegacy migrationにのみ使う値。releaseへは絶対に含めない(release blockでは常に空文字)。
+      buildConfigField("String", "LEGACY_POST_URL", "\"${localProperties.getProperty("POST_URL", "")}\"")
+      buildConfigField("String", "LEGACY_TEAM_ID", "\"${localProperties.getProperty("TEAM_ID", "")}\"")
+      buildConfigField("String", "LEGACY_TOKEN", "\"${localProperties.getProperty("TOKEN", "")}\"")
+      buildConfigField("String", "LEGACY_CHANNEL", "\"${localProperties.getProperty("CHANNEL", "")}\"")
+      buildConfigField("String", "LEGACY_USER", "\"${localProperties.getProperty("USER", "")}\"")
+    }
     release {
       isMinifyEnabled = true
       proguardFiles(
         getDefaultProguardFile("proguard-android-optimize.txt"),
         "proguard-rules.pro"
       )
+      buildConfigField("String", "LEGACY_POST_URL", "\"\"")
+      buildConfigField("String", "LEGACY_TEAM_ID", "\"\"")
+      buildConfigField("String", "LEGACY_TOKEN", "\"\"")
+      buildConfigField("String", "LEGACY_CHANNEL", "\"\"")
+      buildConfigField("String", "LEGACY_USER", "\"\"")
     }
   }
   compileOptions {
