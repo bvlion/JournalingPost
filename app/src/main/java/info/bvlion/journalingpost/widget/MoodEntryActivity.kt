@@ -4,35 +4,33 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.MainViewModel
@@ -61,18 +59,11 @@ class MoodEntryActivity : ComponentActivity() {
       JournalingPostTheme {
         val uiState by viewModel.uiState.collectAsState()
 
-        LaunchedEffect(uiState) {
-          // Webhook配送失敗を記録自体の失敗として扱わず、SUCCESSと同様に画面を閉じる。
-          if (uiState == MainViewModel.UiState.SUCCESS || uiState == MainViewModel.UiState.SUCCESS_DELIVERY_FAILED) {
-            finish()
-          }
-        }
-
-        MoodEntryScreen(
+        MoodEntrySheet(
           mood = mood,
           uiState = uiState,
           onRecord = { note -> viewModel.record(note = note, mood = moodSnapshot, source = JournalSource.WIDGET) },
-          onRecordMoodOnly = { viewModel.record(note = "", mood = moodSnapshot, source = JournalSource.WIDGET) },
+          onClose = { finish() },
         )
       }
     }
@@ -83,60 +74,95 @@ class MoodEntryActivity : ComponentActivity() {
   }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MoodEntryScreen(
+fun MoodEntrySheet(
   mood: Mood,
   uiState: MainViewModel.UiState,
   onRecord: (String) -> Unit,
-  onRecordMoodOnly: () -> Unit,
+  onClose: () -> Unit,
 ) {
   val note = rememberSaveable { mutableStateOf("") }
-  val isLoading = uiState == MainViewModel.UiState.LOADING
+  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+  val isRecording = uiState == MainViewModel.UiState.LOADING
 
-  Box(
-    modifier = Modifier
-      .fillMaxSize()
-      .background(Color.Black.copy(alpha = 0.4f))
-      .padding(24.dp),
-    contentAlignment = Alignment.Center,
+  LaunchedEffect(uiState) {
+    // Webhook配送失敗を記録自体の失敗として扱わず、SUCCESSと同様に画面を閉じる。
+    if (uiState == MainViewModel.UiState.SUCCESS || uiState == MainViewModel.UiState.SUCCESS_DELIVERY_FAILED) {
+      sheetState.hide()
+      onClose()
+    }
+  }
+
+  ModalBottomSheet(
+    onDismissRequest = onClose,
+    sheetState = sheetState,
+    // dismissするとActivityごとfinishしてViewModelのcoroutineを破棄するため、記録処理中は
+    // swipe / scrim tap / Backのどれでも閉じられないようにする。
+    sheetGesturesEnabled = !isRecording,
+    properties = ModalBottomSheetProperties(shouldDismissOnBackPress = !isRecording),
   ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-      Column(modifier = Modifier.padding(24.dp)) {
-        Text(text = mood.emoji, style = MaterialTheme.typography.displayLarge)
+    MoodEntrySheetContent(
+      mood = mood,
+      uiState = uiState,
+      note = note.value,
+      onNoteChange = { note.value = it },
+      onRecord = { onRecord(note.value) },
+    )
+  }
+}
 
-        Spacer(Modifier.height(16.dp))
+@Composable
+private fun MoodEntrySheetContent(
+  mood: Mood,
+  uiState: MainViewModel.UiState,
+  note: String,
+  onNoteChange: (String) -> Unit,
+  onRecord: () -> Unit,
+) {
+  val isRecording = uiState == MainViewModel.UiState.LOADING
 
-        Text(text = "何か残しますか？", style = MaterialTheme.typography.titleMedium)
-        TextField(
-          value = note.value,
-          onValueChange = { note.value = it },
-          modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-          enabled = !isLoading,
-        )
+  Column(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 24.dp)
+      .padding(bottom = 24.dp)
+      .imePadding(),
+  ) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      Text(text = mood.emoji, style = MaterialTheme.typography.headlineSmall)
+      Spacer(Modifier.width(8.dp))
+      Text(text = stringResource(mood.labelRes), style = MaterialTheme.typography.titleMedium)
+    }
 
-        if (uiState == MainViewModel.UiState.FAILURE) {
-          Text(
-            text = "送信に失敗しました。もう一度お試しください",
-            color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.padding(top = 8.dp),
-          )
-        }
+    // 文章を書かなくても記録が成立することを崩さないため、初期表示ではfocusを要求せず
+    // ソフトキーボードも出さない。入力欄をタップしたときだけ通常どおり表示させる。
+    TextField(
+      value = note,
+      onValueChange = onNoteChange,
+      modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+      label = { Text("メモ（任意）") },
+      enabled = !isRecording,
+    )
 
-        Row(
-          modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-          horizontalArrangement = Arrangement.End,
-        ) {
-          TextButton(onClick = onRecordMoodOnly, enabled = !isLoading) {
-            Text("気分だけ記録")
-          }
-          Spacer(Modifier.width(8.dp))
-          Button(onClick = { onRecord(note.value) }, enabled = !isLoading) {
-            if (isLoading) {
-              CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-            } else {
-              Text("記録")
-            }
-          }
+    if (uiState == MainViewModel.UiState.FAILURE) {
+      Text(
+        text = "記録に失敗しました。もう一度お試しください",
+        color = MaterialTheme.colorScheme.error,
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.padding(top = 8.dp),
+      )
+    }
+
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+      horizontalArrangement = Arrangement.End,
+    ) {
+      Button(onClick = onRecord, enabled = !isRecording) {
+        if (isRecording) {
+          CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+        } else {
+          Text("記録")
         }
       }
     }
@@ -145,13 +171,14 @@ fun MoodEntryScreen(
 
 @Preview(showBackground = true)
 @Composable
-fun MoodEntryScreenPreview() {
+fun MoodEntrySheetContentPreview() {
   JournalingPostTheme {
-    MoodEntryScreen(
+    MoodEntrySheetContent(
       mood = Mood.HAPPY,
       uiState = MainViewModel.UiState.INIT,
+      note = "",
+      onNoteChange = {},
       onRecord = {},
-      onRecordMoodOnly = {},
     )
   }
 }
