@@ -3,18 +3,17 @@ package info.bvlion.journalingpost
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import info.bvlion.journalingpost.settings.DataStoreRecordModeRepository
 import info.bvlion.journalingpost.settings.RecordModeRepository
-import info.bvlion.journalingpost.settings.RecordModeSettingsStore
+import info.bvlion.journalingpost.settings.RecordModeRepositoryStore
 
-/** RecordModeのDataStoreはMainViewModelFactoryと同じsingletonを再利用する。 */
+/** RecordModeRepositoryはMainViewModelFactoryと同じsingletonを再利用する。 */
 object SettingsViewModelFactory : ViewModelProvider.Factory {
   private lateinit var recordModeRepository: RecordModeRepository
 
   /** 各Activityのviewmodel取得より前に呼び出すこと。 */
   fun initialize(context: Context) {
     if (::recordModeRepository.isInitialized) return
-    recordModeRepository = DataStoreRecordModeRepository(RecordModeSettingsStore.getInstance(context))
+    recordModeRepository = RecordModeRepositoryStore.getInstance(context)
   }
 
   override fun <T : ViewModel> create(modelClass: Class<T>): T {

@@ -10,8 +10,7 @@ import info.bvlion.journalingpost.journal.ModeRoutingJournalRecorder
 import info.bvlion.journalingpost.journal.db.JournalDatabase
 import info.bvlion.journalingpost.journal.db.RoomJournalEntryRepository
 import info.bvlion.journalingpost.poster.WebhookJournalPoster
-import info.bvlion.journalingpost.settings.DataStoreRecordModeRepository
-import info.bvlion.journalingpost.settings.RecordModeSettingsStore
+import info.bvlion.journalingpost.settings.RecordModeRepositoryStore
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -32,7 +31,7 @@ object MainViewModelFactory : ViewModelProvider.Factory {
     if (::journalRecorder.isInitialized) return
     val database = JournalDatabase.getInstance(context)
     val repository = RoomJournalEntryRepository(database.journalEntryDao())
-    val recordModeRepository = DataStoreRecordModeRepository(RecordModeSettingsStore.getInstance(context))
+    val recordModeRepository = RecordModeRepositoryStore.getInstance(context)
     journalRecorder = ModeRoutingJournalRecorder(
       recordModeRepository = recordModeRepository,
       localOnlyRecorder = LocalOnlyJournalRecorder(repository),
