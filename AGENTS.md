@@ -71,17 +71,20 @@ productionコードの識別子（クラス、関数、プロパティ、定数�
 
 ## ビルドとテスト
 
-変更範囲に対応する、最小限かつ十分な検証を実行してください。release buildのみで顕在化する互換性問題が過去にあったため、debug/releaseの両方を標準検証に含めます。
+検証コマンドを慣習的に全部実行するのではなく、「何が壊れる可能性があり、その確認にどの検証が有効か」を変更内容から判断してください。変更範囲に対応する、最小限かつ十分な検証を選んで実行します。
 
-- `./gradlew :app:testDebugUnitTest`
-- `./gradlew :app:assembleDebug`
-- `./gradlew :app:assembleRelease`
-- `./gradlew :app:lintDebug`
-- `git diff --check`
+- `git diff --check` は軽量なので、変更内容に関わらず実行して構いません。
+- documentationやrepository運用設定（`AGENTS.md`、README等のMarkdown、`.editorconfig`、`.gitattributes`、`.gitignore`等）のみの変更では、Gradleを起動する検証（unit test / lint / assemble）を実行する必要はありません。
+- Androidのproductionコード・テスト・build設定等に影響する変更のPRでは、原則として以下を実行してください。
+  - `./gradlew :app:testDebugUnitTest`
+  - `./gradlew :app:lintDebug`
+- `./gradlew :app:assembleDebug` は標準検証から外しています。debug APKはCI後に配布・利用していないため、通常はビルド不要です。
+- `./gradlew :app:assembleRelease` は通常のPR作業ごとの標準検証にはしません。release/minify(R8)/ProGuard設定等に直接関係する変更で、実装中にrelease buildが成立することを確認する価値がある場合は、必要に応じて実行してください。
+- mainブランチでは、release APKへ影響する変更（productionコード・resource・Manifest・ProGuard/R8設定・依存関係・Gradle設定等）が含まれる場合にCIが`./gradlew :app:assembleRelease`を自動実行します。releaseのみで顕在化する互換性問題を防ぐための最終確認です。testコードのみの変更はrelease APKに影響しないため、対象になりません。
 
 検証を実行できなかった場合や失敗した場合は、成功したものとして扱わず、実行コマンドと理由を報告してください。
 
-`.github/workflows/ci.yml`により、pull_requestおよびmainへのpush時に上記コマンド（`git diff --check`含む）がGitHub Actions上でも自動実行されます。ローカル検証を代替するものではないため、両方とも実施してください。
+`.github/workflows/ci.yml`により、pull_requestおよびmainへのpush時に、変更されたパスに応じて上記の検証がGitHub Actions上でも自動実行されます（`git diff --check`は常時実行）。CIでの自動実行はローカル検証を代替するものではないため、両方とも実施してください。
 
 ## UI操作
 

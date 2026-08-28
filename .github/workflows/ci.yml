@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  ci:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -22,36 +22,89 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Determine diff range
+        id: diff-range
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "base=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+            echo "head=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            BASE="${{ github.event.before }}"
+            if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+              echo "base=" >> "$GITHUB_OUTPUT"
+            else
+              echo "base=$BASE" >> "$GITHUB_OUTPUT"
+            fi
+            echo "head=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: git diff --check
+        run: |
+          BASE="${{ steps.diff-range.outputs.base }}"
+          HEAD="${{ steps.diff-range.outputs.head }}"
+          if [ -z "$BASE" ]; then
+            echo "No previous commit to compare against; skipping."
+          else
+            git diff --check "$BASE" "$HEAD"
+          fi
+
+      - name: Classify changed paths
+        id: changes
+        run: |
+          BASE="${{ steps.diff-range.outputs.base }}"
+          HEAD="${{ steps.diff-range.outputs.head }}"
+
+          # Android compile/test/lint に影響し得るパス(PRでの検証対象、source setの種類を問わない)
+          BUILD_REGEX='^(app/src/|app/build\.gradle\.kts$|app/proguard-rules\.pro$|app/schemas/|build\.gradle\.kts$|settings\.gradle\.kts$|gradle\.properties$|gradle/|gradlew$|gradlew\.bat$)'
+          # release APKに影響し得るパス(test/androidTest/debugのみの変更は含まない)
+          RELEASE_REGEX='^(app/src/(main|release)/|app/schemas/|app/build\.gradle\.kts$|app/proguard-rules\.pro$|build\.gradle\.kts$|settings\.gradle\.kts$|gradle\.properties$|gradle/|gradlew$|gradlew\.bat$)'
+
+          if [ -z "$BASE" ]; then
+            echo "No previous commit to compare against; treating as build/release affecting."
+            echo "build_affecting=true" >> "$GITHUB_OUTPUT"
+            echo "release_affecting=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED_FILES="$(git diff --name-only "$BASE" "$HEAD")"
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          if echo "$CHANGED_FILES" | grep -Eq "$BUILD_REGEX"; then
+            echo "build_affecting=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "build_affecting=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$CHANGED_FILES" | grep -Eq "$RELEASE_REGEX"; then
+            echo "release_affecting=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_affecting=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up JDK 17
+        if: >-
+          (github.event_name == 'pull_request' && steps.changes.outputs.build_affecting == 'true') ||
+          (github.event_name == 'push' && steps.changes.outputs.release_affecting == 'true')
         uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Setup Gradle
+        if: >-
+          (github.event_name == 'pull_request' && steps.changes.outputs.build_affecting == 'true') ||
+          (github.event_name == 'push' && steps.changes.outputs.release_affecting == 'true')
         uses: gradle/actions/setup-gradle@v6
 
-      - name: git diff --check
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git diff --check "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
-          else
-            BASE="${{ github.event.before }}"
-            if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-              echo "No previous commit to compare against; skipping."
-            else
-              git diff --check "$BASE" "${{ github.sha }}"
-            fi
-          fi
-
       - name: Unit tests
+        if: github.event_name == 'pull_request' && steps.changes.outputs.build_affecting == 'true'
         run: ./gradlew :app:testDebugUnitTest
 
       - name: Lint
+        if: github.event_name == 'pull_request' && steps.changes.outputs.build_affecting == 'true'
         run: ./gradlew :app:lintDebug
 
-      - name: Assemble debug
-        run: ./gradlew :app:assembleDebug
-
       - name: Assemble release
+        if: github.event_name == 'push' && steps.changes.outputs.release_affecting == 'true'
         run: ./gradlew :app:assembleRelease
