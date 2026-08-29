@@ -43,6 +43,7 @@ import androidx.lifecycle.lifecycleScope
 import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.history.JournalHistoryScreen
 import info.bvlion.journalingpost.settings.SettingsScreen
+import info.bvlion.journalingpost.settings.WebhookSettingsScreen
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.webhook.LegacyWebhookConfigProvider
 import info.bvlion.journalingpost.webhook.WebhookSettingsMigrationCoordinator
@@ -82,8 +83,15 @@ class MainActivity : ComponentActivity() {
         var screen by rememberSaveable { mutableStateOf(Screen.INPUT) }
 
         // INPUT表示中はActivityの標準Back動作(終了)を保つため、他画面表示中のみ有効化する。
+        // WEBHOOK_SETTINGSはSETTINGSの下位画面のため、Backは1段階だけ戻す。
         BackHandler(enabled = screen != Screen.INPUT) {
-          screen = Screen.INPUT
+          when (screen) {
+            Screen.WEBHOOK_SETTINGS -> {
+              settingsViewModel.onWebhookSettingsScreenClosed()
+              screen = Screen.SETTINGS
+            }
+            else -> screen = Screen.INPUT
+          }
         }
 
         Scaffold(
@@ -140,31 +148,53 @@ class MainActivity : ComponentActivity() {
               Screen.SETTINGS -> {
                 val selectedIntegration by settingsViewModel.selectedAnalysisIntegration.collectAsState()
                 val integrationSaveFailed by settingsViewModel.integrationSaveFailed.collectAsState()
-                val webhookOverview by settingsViewModel.webhookOverview.collectAsState()
-                val isWebhookEditing by settingsViewModel.isWebhookEditing.collectAsState()
-                val webhookFormState by settingsViewModel.webhookFormState.collectAsState()
-                val webhookValidationErrors by settingsViewModel.webhookValidationErrors.collectAsState()
-                val webhookOperationFailure by settingsViewModel.webhookOperationFailure.collectAsState()
+                val webhookDestinationLabel by settingsViewModel.webhookDestinationLabel.collectAsState()
+                val webhookSetupRequested by settingsViewModel.webhookSetupRequested.collectAsState()
+
+                // 保存済みWebhook設定がないままCustom Webhookを選んだ場合、ViewModel側の判定結果を
+                // 一度だけ受け取ってセットアップ用にWebhook設定画面へ進む。
+                LaunchedEffect(webhookSetupRequested) {
+                  if (webhookSetupRequested) {
+                    settingsViewModel.consumeWebhookSetupRequest()
+                    settingsViewModel.onWebhookSettingsScreenOpened()
+                    screen = Screen.WEBHOOK_SETTINGS
+                  }
+                }
+
                 SettingsScreen(
                   selectedIntegration = selectedIntegration,
                   integrationSaveFailed = integrationSaveFailed,
                   onAnalysisIntegrationChange = settingsViewModel::setAnalysisIntegration,
-                  webhookOverview = webhookOverview,
-                  isWebhookEditing = isWebhookEditing,
-                  webhookFormState = webhookFormState,
-                  webhookValidationErrors = webhookValidationErrors,
-                  webhookOperationFailure = webhookOperationFailure,
-                  onWebhookEditStart = settingsViewModel::startWebhookEdit,
-                  onWebhookEditCancel = settingsViewModel::cancelWebhookEdit,
-                  onWebhookUrlChange = settingsViewModel::updateWebhookUrl,
-                  onWebhookHeaderAdd = settingsViewModel::addWebhookHeader,
-                  onWebhookHeaderRemove = settingsViewModel::removeWebhookHeader,
-                  onWebhookHeaderNameChange = settingsViewModel::updateWebhookHeaderName,
-                  onWebhookHeaderValueChange = settingsViewModel::updateWebhookHeaderValue,
-                  onWebhookBodyTemplateChange = settingsViewModel::updateWebhookBodyTemplate,
-                  onWebhookSave = settingsViewModel::saveWebhookSettings,
-                  onWebhookDelete = settingsViewModel::deleteWebhookSettings,
+                  webhookDestinationLabel = webhookDestinationLabel,
+                  onWebhookSettingsOpen = {
+                    settingsViewModel.onWebhookSettingsScreenOpened()
+                    screen = Screen.WEBHOOK_SETTINGS
+                  },
                   onBack = { screen = Screen.INPUT },
+                )
+              }
+
+              Screen.WEBHOOK_SETTINGS -> {
+                val webhookSettingsLoadState by settingsViewModel.webhookSettingsLoadState.collectAsState()
+                val webhookFormState by settingsViewModel.webhookFormState.collectAsState()
+                val webhookValidationErrors by settingsViewModel.webhookValidationErrors.collectAsState()
+                val webhookSaveFailed by settingsViewModel.webhookSaveFailed.collectAsState()
+                WebhookSettingsScreen(
+                  loadState = webhookSettingsLoadState,
+                  formState = webhookFormState,
+                  validationErrors = webhookValidationErrors,
+                  saveFailed = webhookSaveFailed,
+                  onUrlChange = settingsViewModel::updateWebhookUrl,
+                  onHeaderAdd = settingsViewModel::addWebhookHeader,
+                  onHeaderRemove = settingsViewModel::removeWebhookHeader,
+                  onHeaderNameChange = settingsViewModel::updateWebhookHeaderName,
+                  onHeaderValueChange = settingsViewModel::updateWebhookHeaderValue,
+                  onBodyTemplateChange = settingsViewModel::updateWebhookBodyTemplate,
+                  onSave = settingsViewModel::saveWebhookSettings,
+                  onBack = {
+                    settingsViewModel.onWebhookSettingsScreenClosed()
+                    screen = Screen.SETTINGS
+                  },
                 )
               }
             }
@@ -214,6 +244,7 @@ class MainActivity : ComponentActivity() {
     INPUT,
     HISTORY,
     SETTINGS,
+    WEBHOOK_SETTINGS,
   }
 }
 
