@@ -1,4 +1,3 @@
-import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -23,31 +22,13 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
-  val localProperties = Properties().apply {
-    rootProject.file("local.properties")
-      .takeIf { it.exists() }?.inputStream()?.use { load(it) }
-  }
-
   buildTypes {
-    debug {
-      // 自分用Webhookのlegacy migrationにのみ使う値。releaseへは絶対に含めない(release blockでは常に空文字)。
-      buildConfigField("String", "LEGACY_POST_URL", "\"${localProperties.getProperty("POST_URL", "")}\"")
-      buildConfigField("String", "LEGACY_TEAM_ID", "\"${localProperties.getProperty("TEAM_ID", "")}\"")
-      buildConfigField("String", "LEGACY_TOKEN", "\"${localProperties.getProperty("TOKEN", "")}\"")
-      buildConfigField("String", "LEGACY_CHANNEL", "\"${localProperties.getProperty("CHANNEL", "")}\"")
-      buildConfigField("String", "LEGACY_USER", "\"${localProperties.getProperty("USER", "")}\"")
-    }
     release {
       isMinifyEnabled = true
       proguardFiles(
         getDefaultProguardFile("proguard-android-optimize.txt"),
         "proguard-rules.pro"
       )
-      buildConfigField("String", "LEGACY_POST_URL", "\"\"")
-      buildConfigField("String", "LEGACY_TEAM_ID", "\"\"")
-      buildConfigField("String", "LEGACY_TOKEN", "\"\"")
-      buildConfigField("String", "LEGACY_CHANNEL", "\"\"")
-      buildConfigField("String", "LEGACY_USER", "\"\"")
     }
   }
   compileOptions {

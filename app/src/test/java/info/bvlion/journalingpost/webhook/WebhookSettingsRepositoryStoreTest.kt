@@ -26,7 +26,7 @@ class WebhookSettingsRepositoryStoreTest {
   }
 
   @Test
-  fun `getInstanceは同一DataStoreとcipherに対して常に同じrepositoryインスタンスを返す`() {
+  fun `getInstanceは同じrepositoryインスタンスを返す`() {
     val dataStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
       produceFile = { File(tempFolder.root, "webhook_settings.preferences_pb") },
     )
@@ -42,7 +42,7 @@ class WebhookSettingsRepositoryStoreTest {
   }
 
   @Test
-  fun `初回のgetInstanceでのみrepository生成のfactoryが実行される`() {
+  fun `repository生成factoryは初回だけ実行する`() {
     val createCallCount = AtomicInteger(0)
     val createRepository = { createCallCount.incrementAndGet(); FakeWebhookSettingsRepository() }
 
@@ -78,12 +78,6 @@ class WebhookSettingsRepositoryStoreTest {
     override val settings: Flow<WebhookSettingsState> = MutableStateFlow(WebhookSettingsState.NotConfigured)
 
     override suspend fun save(settings: WebhookSettings) = Unit
-
-    override suspend fun clear() = Unit
-
-    override suspend fun isLegacyMigrationCompleted(): Boolean = false
-
-    override suspend fun markLegacyMigrationCompleted() = Unit
   }
 
   private companion object {

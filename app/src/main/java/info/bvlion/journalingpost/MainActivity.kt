@@ -45,9 +45,6 @@ import info.bvlion.journalingpost.journal.history.JournalHistoryScreen
 import info.bvlion.journalingpost.settings.SettingsScreen
 import info.bvlion.journalingpost.settings.WebhookSettingsScreen
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
-import info.bvlion.journalingpost.webhook.LegacyWebhookConfigProvider
-import info.bvlion.journalingpost.webhook.WebhookSettingsMigrationCoordinator
-import info.bvlion.journalingpost.webhook.WebhookSettingsRepositoryStore
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
 import kotlinx.coroutines.launch
 
@@ -65,17 +62,6 @@ class MainActivity : ComponentActivity() {
 
     // Widget pickerのgenerated preview(Android 15+)登録。通常UI/入力フローには影響しない。
     lifecycleScope.launch { registerMoodWidgetPreviewOnce(applicationContext) }
-
-    // debug buildの自分用Webhook設定を初回起動時のみCustom Webhookへ移行する。移行の完了自体は
-    // WebhookSettingsMigrationCoordinatorを経由する他の参照点(routing判定・Webhook設定画面・実際の
-    // 送信)でも保証されるため、ここはWidget等より先にMainActivityが開かれた場合の早期実行
-    // (体感速度の改善)に過ぎない。同じcoordinatorを通るため競合しても二重importしない。
-    lifecycleScope.launch {
-      WebhookSettingsMigrationCoordinator.ensureMigrated(
-        repository = WebhookSettingsRepositoryStore.getInstance(applicationContext),
-        legacyConfigProvider = LegacyWebhookConfigProvider::get,
-      )
-    }
 
     setContent {
       JournalingPostTheme {
@@ -278,12 +264,12 @@ fun InputView(
     )
     Row(
       modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.End
+      horizontalArrangement = Arrangement.End,
     ) {
       Button(
         onClick = {
           postMessage(text.value)
-        }
+        },
       ) {
         Text("登録")
       }
@@ -297,7 +283,7 @@ fun LoadingOverlay(isLoading: Boolean) {
     Box(
       modifier = Modifier.fillMaxSize()
         .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)),
-      contentAlignment = Alignment.Center
+      contentAlignment = Alignment.Center,
     ) {
       CircularProgressIndicator()
     }

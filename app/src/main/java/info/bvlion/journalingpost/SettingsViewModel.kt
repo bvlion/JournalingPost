@@ -4,11 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
-import info.bvlion.journalingpost.webhook.LegacyWebhookConfig
-import info.bvlion.journalingpost.webhook.LegacyWebhookConfigProvider
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettings
-import info.bvlion.journalingpost.webhook.WebhookSettingsMigrationCoordinator
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
 import info.bvlion.journalingpost.webhook.WebhookSettingsState
 import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
@@ -22,7 +19,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -30,17 +26,11 @@ import kotlinx.coroutines.launch
 class SettingsViewModel(
   private val analysisIntegrationRepository: AnalysisIntegrationRepository,
   private val webhookSettingsRepository: WebhookSettingsRepository,
-  private val legacyConfigProvider: () -> LegacyWebhookConfig? = LegacyWebhookConfigProvider::get,
 ) : ViewModel() {
-  /**
-   * 実際に有効になっている解析・連携。読み込みが確定するまではnull(JournalHistoryUiState.Loadingと
-   * 同様、未確定の状態を確定済みの値として表示しないための区別)。CUSTOM_WEBHOOKなら保存済みWebhook
-   * 設定が存在する。
-   */
+  /** 読み込み確定前の値を「使用しない」と誤表示しないため、初期値はnullにする。 */
   val analysisIntegration: StateFlow<AnalysisIntegration?> = analysisIntegrationRepository.analysisIntegration
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-  // 設定を保存しないまま画面を離れれば「使用しない」のまま(有効化はsaveWebhookSettings成功時のみ)。
   private val _pendingCustomWebhookSelection = MutableStateFlow(false)
 
   private val selectedIntegrationFlow: Flow<AnalysisIntegration?> = combine(
@@ -50,30 +40,21 @@ class SettingsViewModel(
     if (pendingCustomWebhook) AnalysisIntegration.CUSTOM_WEBHOOK else integration
   }
 
-  /** 親Settingsのradioが示す選択。未確定のCustom Webhook選択を含むため、[analysisIntegration]とは一致しないことがある。 */
+  /** 未設定からCustom Webhookを選んだ直後は、保存完了前でもradioだけは利用者の選択を示す。 */
   val selectedAnalysisIntegration: StateFlow<AnalysisIntegration?> = selectedIntegrationFlow
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
   private val _integrationSaveFailed = MutableStateFlow(false)
   val integrationSaveFailed: StateFlow<Boolean> = _integrationSaveFailed.asStateFlow()
 
-  // 未完了のlegacy migration中はNotConfiguredを暫定値として返し得る(WebhookAwareAnalysisIntegrationRepository
-  // と同じ理由でここでも待つ)。待たずにNotConfiguredをauthoritativeとして扱うと、Webhook設定画面が
-  // migration完了前の空フォームで確定してしまい、後から届くConfiguredへの更新を拾えなくなる。
   private val webhookSettingsState: StateFlow<WebhookSettingsState> = webhookSettingsRepository.settings
-    .onStart { WebhookSettingsMigrationCoordinator.ensureMigrated(webhookSettingsRepository, legacyConfigProvider) }
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WebhookSettingsState.Loading)
 
-  /**
-   * 親Settingsの「Webhook設定」項目を出すかどうかと、その短い送信先表示を兼ねる。CUSTOM_WEBHOOKが
-   * 実際に有効(保存済み設定が存在する)場合のみ非nullになるため、この値がnullの間は項目自体を出さない。
-   */
   val webhookDestinationLabel: StateFlow<String?> = combine(analysisIntegration, webhookSettingsState) { integration, state ->
     if (integration != AnalysisIntegration.CUSTOM_WEBHOOK) return@combine null
     (state as? WebhookSettingsState.Configured)?.settings?.destinationLabel()
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-  /** 消費側(MainActivity)がconsumeWebhookSetupRequest()で戻すまでの一度きりのnavigation要求。 */
   private val _webhookSetupRequested = MutableStateFlow(false)
   val webhookSetupRequested: StateFlow<Boolean> = _webhookSetupRequested.asStateFlow()
 
@@ -84,10 +65,8 @@ class SettingsViewModel(
   private val integrationRequestGeneration = AtomicInteger(0)
 
   /**
-   * 使用しないを選んだ場合はその時点で永続化する。Custom Webhookは、保存済み設定がある場合だけ
-   * この時点で有効化する。未設定(またはDataStoreを一時的に読めない)場合は有効化せず、
-   * Webhook設定画面でのセットアップへ進む要求を出す(有効なのに送信先が無い状態を通常操作で
-   * 作らないため)。未設定から選んだ場合は、設定の保存に成功した時点で有効になる([saveWebhookSettings])。
+   * Custom Webhookは保存済み設定がある場合だけ有効化する。未設定または一時的に読み込めない場合は、
+   * 選択を保留してWebhook設定画面へ進める。
    */
   fun setAnalysisIntegration(integration: AnalysisIntegration) {
     val generation = integrationRequestGeneration.incrementAndGet()
@@ -97,6 +76,7 @@ class SettingsViewModel(
       viewModelScope.launch { persistAnalysisIntegration(integration, generation) }
       return
     }
+
     _pendingCustomWebhookSelection.value = true
     viewModelScope.launch {
       val current = webhookSettingsRepository.settings.first()
@@ -123,8 +103,7 @@ class SettingsViewModel(
   private val _webhookFormState = MutableStateFlow(WebhookFormState())
   val webhookFormState: StateFlow<WebhookFormState> = _webhookFormState.asStateFlow()
 
-  // 今回のWebhook設定画面の表示中に、フォームへ初期値を読み込み済みかどうか。読み込み済みになった後は
-  // 上流のwebhookSettingsStateが変化しても(legacy migration等)フォーム値を上書きしない。
+  // 画面を開いた時点のsnapshotを編集中に上流の更新で巻き戻さない。
   private val _webhookFormLoaded = MutableStateFlow(false)
 
   val webhookSettingsLoadState: StateFlow<WebhookSettingsLoadState> = combine(
@@ -132,7 +111,6 @@ class SettingsViewModel(
     _webhookFormLoaded,
   ) { state, loaded ->
     when {
-      // 一度フォームへ読み込んだ後は、上流が一時的にUnavailableへ揺れても編集画面を隠さない。
       loaded -> WebhookSettingsLoadState.READY
       state is WebhookSettingsState.NotConfigured || state is WebhookSettingsState.Configured -> WebhookSettingsLoadState.READY
       state is WebhookSettingsState.Unavailable -> WebhookSettingsLoadState.UNAVAILABLE
@@ -149,10 +127,8 @@ class SettingsViewModel(
   private val webhookRequestGeneration = AtomicInteger(0)
 
   /**
-   * 世代を進めるのは、前回のSettings表示中に開始された[setAnalysisIntegration]のCustom Webhook判定
-   * (webhookSettingsRepository.settings.first()待ち)がまだ終わっていない場合に無効化するため。
-   * 世代を進めずにwebhookSetupRequestedだけを消しても、この後その判定が完了した時点で再びtrueへ
-   * 書き換えられ、意図しないタイミングでWebhook設定画面へ遷移してしまう。
+   * 前回のSettings表示中に開始したCustom Webhook判定が後から完了して、次回表示を勝手に遷移させないよう
+   * 世代を進めて無効化する。
    */
   fun onSettingsOpened() {
     integrationRequestGeneration.incrementAndGet()
@@ -161,14 +137,6 @@ class SettingsViewModel(
     _webhookSetupRequested.value = false
   }
 
-  /**
-   * Webhook設定画面を開いたときに呼ぶ。authoritativeな状態(NotConfigured/Configured)が分かった
-   * 最初の1回だけフォームへ値を読み込み、以降はこの画面を表示している間ずっとその値を保持する。
-   * 前回の保存結果(validation error / 保存失敗)もここでクリアする。
-   *
-   * process recreation等でWEBHOOK_SETTINGS画面がそのまま復元された場合に、新しいViewModelでもこれが
-   * 確実に呼ばれるよう[ensureWebhookSettingsScreenOpened]から呼ばれることがある。
-   */
   fun onWebhookSettingsScreenOpened() {
     webhookSettingsScreenInitialized = true
     val generation = webhookRequestGeneration.incrementAndGet()
@@ -177,17 +145,13 @@ class SettingsViewModel(
     _webhookFormLoaded.value = false
     _webhookFormState.value = WebhookFormState()
     viewModelScope.launch {
-      // Loading/Unavailableの間はスキップし、authoritativeな状態(NotConfigured/Configured)の
-      // 最初の1件だけを待つ。firstは条件を満たした時点で購読を終えるため、この画面を何度
-      // 開閉してもコルーチンが残り続けない。
       val settled = webhookSettingsState.first {
         it is WebhookSettingsState.NotConfigured || it is WebhookSettingsState.Configured
       }
       if (generation != webhookRequestGeneration.get()) return@launch
       if (settled is WebhookSettingsState.Configured) {
         _webhookFormState.value = settled.settings.toFormState()
-        // Webhook設定を一時的に読めずセットアップへ進んだ後、実際には既存の保存済み設定があると
-        // 分かった場合はここで有効化する(利用者に意味のない再保存を要求しない)。
+        // 一時的な読み取り失敗から復旧して既存設定が見つかった場合、意味のない再保存を要求しない。
         if (_pendingCustomWebhookSelection.value) {
           persistAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK, integrationRequestGeneration.incrementAndGet())
           _pendingCustomWebhookSelection.value = false
@@ -197,10 +161,6 @@ class SettingsViewModel(
     }
   }
 
-  /**
-   * Webhook設定画面を閉じたとき(Back)に呼ぶ。未設定のままセットアップ中だった場合、Custom Webhookの
-   * 選択も未確定のままなので「使用しない」へ戻す。
-   */
   fun onWebhookSettingsScreenClosed() {
     webhookSettingsScreenInitialized = false
     webhookRequestGeneration.incrementAndGet()
@@ -211,17 +171,9 @@ class SettingsViewModel(
     _pendingCustomWebhookSelection.value = false
   }
 
-  // このViewModelインスタンスに対してWebhook設定画面の初期化(onWebhookSettingsScreenOpened)が
-  // 済んでいるか。rotation等でViewModelが生き残る間はtrueを維持し、process recreationで
-  // ViewModelが作り直された場合は必ずfalseから始まる。単一のMain dispatcher上でのみ読み書きする。
+  // ViewModelが生き残るrotationでは入力中フォームを再初期化せず、process recreation時だけ初期化し直す。
   private var webhookSettingsScreenInitialized = false
 
-  /**
-   * process recreationでWEBHOOK_SETTINGS画面がそのまま復元された場合(このViewModelではまだ
-   * onWebhookSettingsScreenOpened()が呼ばれていない)にのみ、それを呼んでフォームを初期化する。
-   * 通常のrecompositionや、ViewModelが生き残るrotation等、既に初期化済みの場合は何もしない
-   * (入力中のフォームを不用意に巻き戻さないため)。
-   */
   fun ensureWebhookSettingsScreenOpened() {
     if (webhookSettingsScreenInitialized) return
     onWebhookSettingsScreenOpened()
@@ -260,18 +212,8 @@ class SettingsViewModel(
   }
 
   /**
-   * 保存に成功した時点で初めてCustom Webhookを有効にする(保存失敗時は途中でreturnするため、
-   * 「有効なのに設定がない」状態を作らない)。確認/編集の画面を分けていないため、保存後も
-   * フォームは閉じずそのまま表示・再編集できる状態を保つ。
-   *
-   * 保存中に利用者がさらに編集した場合(generationが進んだ場合)も、この関数はwebhookFormStateを
-   * 書き換えない。保存開始時点のスナップショットで永続化する一方、フォームに残っているのは常に
-   * 利用者の最新の入力なので、上書きすると保存中に行った編集が失われてしまう。
-   *
-   * 有効化(persistAnalysisIntegration)自体はgenerationが一致する場合のみ行う。保存が完了するより前に
-   * この画面を離れ、戻ったSettingsで「使用しない」を選んだ場合、離脱時にwebhookRequestGenerationが
-   * 進むためこのチェックで弾かれる。ここを無条件にすると、後から完了したこの保存がCUSTOM_WEBHOOKを
-   * 永続化してしまい、利用者の直後の「使用しない」という選択より優先されてしまう。
+   * Webhook設定の永続化に成功した後だけCustom Webhookを有効化する。保存開始後に画面を離れた場合は、
+   * 古い保存完了で後続の「使用しない」選択を上書きしない。
    */
   fun saveWebhookSettings() {
     val generation = webhookRequestGeneration.incrementAndGet()
@@ -300,7 +242,6 @@ class SettingsViewModel(
   }
 }
 
-/** Webhook設定画面で、読み込み中/読み込み不能/編集可能のどれを表示するか。 */
 enum class WebhookSettingsLoadState {
   LOADING,
   UNAVAILABLE,

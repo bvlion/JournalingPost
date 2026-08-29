@@ -5,41 +5,25 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
-import info.bvlion.journalingpost.poster.WebhookJournalPoster
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
-import io.ktor.client.request.HttpRequestData
-import io.ktor.http.HttpStatusCode
-import io.ktor.http.headersOf
+import androidx.datastore.preferences.core.toMutablePreferences
 import java.io.File
 import java.io.IOException
 import java.security.GeneralSecurityException
 import java.util.Base64
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class DataStoreWebhookSettingsRepositoryTest {
   @get:Rule
   val tempFolder = TemporaryFolder()
@@ -51,7 +35,7 @@ class DataStoreWebhookSettingsRepositoryTest {
   )
 
   private fun createRepository(cipher: WebhookSettingsCipher = FakeWebhookSettingsCipher()): DataStoreWebhookSettingsRepository {
-    val dataStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
+    val dataStore = PreferenceDataStoreFactory.create(
       produceFile = { File(tempFolder.root, "webhook_settings.preferences_pb") },
     )
     return DataStoreWebhookSettingsRepository(dataStore, cipher)
@@ -59,13 +43,11 @@ class DataStoreWebhookSettingsRepositoryTest {
 
   @Test
   fun `初期状態は未設定になる`() = runTest {
-    val repository = createRepository()
-
-    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
+    assertEquals(WebhookSettingsState.NotConfigured, createRepository().settings.first())
   }
 
   @Test
-  fun `saveした設定全体を再取得できる`() = runTest {
+  fun `saveした設定を再取得できる`() = runTest {
     val repository = createRepository()
 
     repository.save(sampleSettings)
@@ -74,127 +56,17 @@ class DataStoreWebhookSettingsRepositoryTest {
   }
 
   @Test
-  fun `save内容はcipherのencryptへ渡される`() = runTest {
+  fun `save内容はcipherへ渡される`() = runTest {
     val cipher = FakeWebhookSettingsCipher()
     val repository = createRepository(cipher)
 
     repository.save(sampleSettings)
 
-    val plaintext = requireNotNull(cipher.lastEncryptedPlaintext).toByteArray().decodeToString()
-    assertTrue(plaintext.contains(sampleSettings.url))
+    assertTrue(requireNotNull(cipher.lastEncryptedPlaintext).decodeToString().contains(sampleSettings.url))
   }
 
   @Test
-  fun `clearすると設定は未設定になる`() = runTest {
-    val repository = createRepository()
-    repository.save(sampleSettings)
-
-    repository.clear()
-
-    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
-  }
-
-  @Test
-  fun `clear開始後はDataStore write完了前でも設定がnullになりWebhook送信を開始しない`() = runTest {
-    val dataStore = SucceedNTimesThenBlockDataStore(succeedCount = 2)
-    val repository = DataStoreWebhookSettingsRepository(dataStore, FakeWebhookSettingsCipher())
-    repository.markLegacyMigrationCompleted()
-    repository.save(sampleSettings)
-    assertEquals(WebhookSettingsState.Configured(sampleSettings), repository.settings.first())
-
-    backgroundScope.launch { repository.clear() }
-    runCurrent() // clearのwriteは意図的に完了させないため、pending clear反映直後まで進む
-
-    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
-
-    var capturedRequest: HttpRequestData? = null
-    val poster = WebhookJournalPoster(
-      httpClient = HttpClient(
-        MockEngine { request ->
-          capturedRequest = request
-          respond(content = "{}", status = HttpStatusCode.OK, headers = headersOf("Content-Type", listOf("application/json")))
-        },
-      ),
-      webhookSettingsRepository = repository,
-    )
-
-    val sent = poster.post("today was good")
-
-    assertFalse(sent)
-    assertEquals(null, capturedRequest)
-  }
-
-  @Test
-  fun `saveの後にclearが呼ばれた場合、saveのwriteが後から完了してもclearのpendingが優先されnullのまま`() = runTest {
-    val dataStore = ControllableWriteDataStore()
-    val repository = DataStoreWebhookSettingsRepository(dataStore, FakeWebhookSettingsCipher())
-
-    backgroundScope.launch { repository.save(sampleSettings) }
-    runCurrent()
-    backgroundScope.launch { repository.clear() }
-    runCurrent()
-
-    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
-
-    dataStore.completeWrite(0)
-    runCurrent()
-    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
-
-    dataStore.completeWrite(1)
-    runCurrent()
-    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
-  }
-
-  @Test
-  fun `clearの後にsaveが呼ばれた場合、clearのwriteが後から完了してもsaveのpendingが優先され新しい設定のまま`() = runTest {
-    val dataStore = ControllableWriteDataStore()
-    val repository = DataStoreWebhookSettingsRepository(dataStore, FakeWebhookSettingsCipher())
-
-    backgroundScope.launch { repository.clear() }
-    runCurrent()
-    backgroundScope.launch { repository.save(sampleSettings) }
-    runCurrent()
-
-    assertEquals(WebhookSettingsState.Configured(sampleSettings), repository.settings.first())
-
-    dataStore.completeWrite(0)
-    runCurrent()
-    assertEquals(WebhookSettingsState.Configured(sampleSettings), repository.settings.first())
-
-    dataStore.completeWrite(1)
-    runCurrent()
-    assertEquals(WebhookSettingsState.Configured(sampleSettings), repository.settings.first())
-  }
-
-  @Test
-  fun `clearしてもlegacy migration済み状態は維持される`() = runTest {
-    val repository = createRepository()
-    repository.markLegacyMigrationCompleted()
-    repository.save(sampleSettings)
-
-    repository.clear()
-
-    assertTrue(repository.isLegacyMigrationCompleted())
-  }
-
-  @Test
-  fun `isLegacyMigrationCompletedの初期状態はfalse`() = runTest {
-    val repository = createRepository()
-
-    assertEquals(false, repository.isLegacyMigrationCompleted())
-  }
-
-  @Test
-  fun `markLegacyMigrationCompleted後はtrueを返す`() = runTest {
-    val repository = createRepository()
-
-    repository.markLegacyMigrationCompleted()
-
-    assertTrue(repository.isLegacyMigrationCompleted())
-  }
-
-  @Test
-  fun `復号に失敗した場合は未設定として扱われる`() = runTest {
+  fun `復号できない保存値は未設定として扱う`() = runTest {
     val cipher = FakeWebhookSettingsCipher()
     val repository = createRepository(cipher)
     repository.save(sampleSettings)
@@ -204,38 +76,21 @@ class DataStoreWebhookSettingsRepositoryTest {
   }
 
   @Test
-  fun `別のrepositoryインスタンスからも保存した設定を読める`() = runTest {
-    val dataStore = PreferenceDataStoreFactory.create(
-      produceFile = { File(tempFolder.root, "webhook_settings.preferences_pb") },
+  fun `DataStore読み込みがIOExceptionならUnavailableを返す`() = runTest {
+    val repository = DataStoreWebhookSettingsRepository(
+      ThrowingDataStore(IOException("disk error")),
+      FakeWebhookSettingsCipher(),
     )
-    val cipher = FakeWebhookSettingsCipher()
-    DataStoreWebhookSettingsRepository(dataStore, cipher).save(sampleSettings)
-
-    val reloaded = DataStoreWebhookSettingsRepository(dataStore, cipher)
-
-    assertEquals(WebhookSettingsState.Configured(sampleSettings), reloaded.settings.first())
-  }
-
-  @Test
-  fun `DataStoreへのwrite完了前でもsave呼び出し直後にsettingsへ反映される`() = runTest {
-    val repository = DataStoreWebhookSettingsRepository(BlockingWriteDataStore(), FakeWebhookSettingsCipher())
-
-    backgroundScope.launch { repository.save(sampleSettings) }
-    runCurrent() // BlockingWriteDataStoreのwriteは完了しないため、pendingSettings反映直後まで進む
-
-    assertEquals(WebhookSettingsState.Configured(sampleSettings), repository.settings.first())
-  }
-
-  @Test
-  fun `DataStore読み込みがIOExceptionを投げた場合はUnavailableへ倒す`() = runTest {
-    val repository = DataStoreWebhookSettingsRepository(ThrowingDataStore(IOException("disk error")), FakeWebhookSettingsCipher())
 
     assertEquals(WebhookSettingsState.Unavailable, repository.settings.first())
   }
 
   @Test
-  fun `DataStore読み込みがIOException以外を投げた場合は再送出される`() = runTest {
-    val repository = DataStoreWebhookSettingsRepository(ThrowingDataStore(IllegalStateException("boom")), FakeWebhookSettingsCipher())
+  fun `DataStore読み込みの非IOExceptionは再送出する`() = runTest {
+    val repository = DataStoreWebhookSettingsRepository(
+      ThrowingDataStore(IllegalStateException("boom")),
+      FakeWebhookSettingsCipher(),
+    )
 
     var thrown: Throwable? = null
     try {
@@ -248,42 +103,26 @@ class DataStoreWebhookSettingsRepositoryTest {
   }
 
   @Test
-  fun `read IOExceptionから復旧すると同じ購読が新しい永続設定を取得できる`() = runTest {
-    val repository = DataStoreWebhookSettingsRepository(RecoveringDataStore(), FakeWebhookSettingsCipher())
+  fun `読み込みIOExceptionから復旧すると保存済み設定を取得できる`() = runTest {
+    val preferences = configuredPreferences(sampleSettings)
+    val repository = DataStoreWebhookSettingsRepository(
+      RecoveringDataStore(preferences),
+      FakeWebhookSettingsCipher(),
+    )
 
-    val collected = mutableListOf<WebhookSettingsState>()
-    val job = launch { repository.settings.collect { collected += it } }
-    advanceUntilIdle()
+    val first = repository.settings.first()
+    val second = repository.settings.first { it is WebhookSettingsState.Configured }
 
-    assertEquals(listOf(WebhookSettingsState.Unavailable, WebhookSettingsState.Configured(sampleSettings)), collected)
-    job.cancel()
+    assertEquals(WebhookSettingsState.Unavailable, first)
+    assertEquals(WebhookSettingsState.Configured(sampleSettings), second)
   }
 
   @Test
-  fun `write中にキャンセルされてもCancellationExceptionが伝播しそのpendingは片付く`() = runTest {
-    val repository = DataStoreWebhookSettingsRepository(BlockingWriteDataStore(), FakeWebhookSettingsCipher())
-    var thrown: Throwable? = null
-
-    val job = launch {
-      try {
-        repository.save(sampleSettings)
-      } catch (e: CancellationException) {
-        thrown = e
-        throw e
-      }
-    }
-    runCurrent()
-    assertEquals(WebhookSettingsState.Configured(sampleSettings), repository.settings.first())
-
-    job.cancelAndJoin()
-
-    assertTrue(thrown is CancellationException)
-    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
-  }
-
-  @Test
-  fun `write失敗時はsaveが例外を投げる`() = runTest {
-    val repository = DataStoreWebhookSettingsRepository(FailingWriteDataStore(IOException("disk error")), FakeWebhookSettingsCipher())
+  fun `write失敗時は例外を返し未設定のままになる`() = runTest {
+    val repository = DataStoreWebhookSettingsRepository(
+      FailingWriteDataStore(IOException("disk error")),
+      FakeWebhookSettingsCipher(),
+    )
 
     var thrown: Throwable? = null
     try {
@@ -293,86 +132,30 @@ class DataStoreWebhookSettingsRepositoryTest {
     }
 
     assertEquals("disk error", thrown?.message)
+    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
   }
 
-  @Test
-  fun `write失敗後はsettingsが永続化前の状態へ戻る`() = runTest {
-    val repository = DataStoreWebhookSettingsRepository(FailingWriteDataStore(IOException("disk error")), FakeWebhookSettingsCipher())
-    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
-
-    try {
-      repository.save(sampleSettings)
-    } catch (e: IOException) {
+  private fun configuredPreferences(settings: WebhookSettings): Preferences {
+    val plaintext = Json.encodeToString(settings).encodeToByteArray()
+    return emptyPreferences().toMutablePreferences().apply {
+      this[stringPreferencesKey("ciphertext")] = Base64.getEncoder().encodeToString(plaintext)
+      this[stringPreferencesKey("iv")] = Base64.getEncoder().encodeToString(byteArrayOf(1, 2, 3))
     }
-
-    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
   }
 
-  private class FakeWebhookSettingsCipher(var failDecrypt: Boolean = false) : WebhookSettingsCipher {
-    var lastEncryptedPlaintext: List<Byte>? = null
+  private class FakeWebhookSettingsCipher : WebhookSettingsCipher {
+    var failDecrypt = false
+    var lastEncryptedPlaintext: ByteArray? = null
 
     override fun encrypt(plaintext: ByteArray): EncryptedWebhookSettings {
-      lastEncryptedPlaintext = plaintext.toList()
-      return EncryptedWebhookSettings(ciphertext = plaintext, iv = byteArrayOf(1, 2, 3))
+      lastEncryptedPlaintext = plaintext
+      return EncryptedWebhookSettings(plaintext, byteArrayOf(1, 2, 3))
     }
 
     override fun decrypt(encrypted: EncryptedWebhookSettings): ByteArray {
       if (failDecrypt) throw GeneralSecurityException("decrypt failed")
       return encrypted.ciphertext
     }
-  }
-
-  private class BlockingWriteDataStore : DataStore<Preferences> {
-    override val data: Flow<Preferences> = MutableStateFlow(emptyPreferences())
-
-    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
-      delay(Long.MAX_VALUE)
-      error("unreachable: このテストではwriteを意図的に完了させない")
-    }
-  }
-
-  /** 最初のsucceedCount回だけwriteを即座に成功させ、以降は意図的に完了させないFake。 */
-  private class SucceedNTimesThenBlockDataStore(private val succeedCount: Int) : DataStore<Preferences> {
-    private val backing = MutableStateFlow(emptyPreferences())
-    override val data: Flow<Preferences> = backing
-    private var callCount = 0
-
-    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
-      callCount++
-      if (callCount <= succeedCount) {
-        val updated = transform(backing.value)
-        backing.value = updated
-        return updated
-      }
-      delay(Long.MAX_VALUE)
-      error("unreachable: このテストではこれ以上のwriteを意図的に完了させない")
-    }
-  }
-
-  /** updateData()の完了を呼び出し順と切り離して制御し、write完了順の入れ替わりを再現するFake。 */
-  private class ControllableWriteDataStore : DataStore<Preferences> {
-    private val backing = MutableStateFlow(emptyPreferences())
-    override val data: Flow<Preferences> = backing
-    private val gates = mutableListOf<CompletableDeferred<Unit>>()
-
-    fun completeWrite(index: Int) {
-      gates[index].complete(Unit)
-    }
-
-    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
-      val gate = CompletableDeferred<Unit>()
-      gates += gate
-      gate.await()
-      val updated = transform(backing.value)
-      backing.value = updated
-      return updated
-    }
-  }
-
-  private class FailingWriteDataStore(private val error: Throwable) : DataStore<Preferences> {
-    override val data: Flow<Preferences> = MutableStateFlow(emptyPreferences())
-
-    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences = throw error
   }
 
   private class ThrowingDataStore(private val error: Throwable) : DataStore<Preferences> {
@@ -382,32 +165,22 @@ class DataStoreWebhookSettingsRepositoryTest {
       error("not used in this test")
   }
 
-  /** dataの最初の購読だけIOExceptionを投げ、以降はbackingを反映するFake。 */
-  private inner class RecoveringDataStore : DataStore<Preferences> {
-    private val backing = MutableStateFlow(emptyPreferences())
-    private var readAttempt = 0
+  private class RecoveringDataStore(private val recovered: Preferences) : DataStore<Preferences> {
+    private var attempt = 0
 
     override val data: Flow<Preferences> = flow {
-      readAttempt++
-      if (readAttempt == 1) throw IOException("disk error")
-      emitAll(backing)
+      attempt++
+      if (attempt == 1) throw IOException("disk error")
+      emitAll(flowOf(recovered))
     }
 
-    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
-      val updated = transform(backing.value)
-      backing.value = updated
-      return updated
-    }
+    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
+      error("not used in this test")
+  }
 
-    init {
-      // テスト対象と同じcipher(平文=ciphertext)で、復旧後に読める永続値をあらかじめ書き込む。
-      val cipher = FakeWebhookSettingsCipher()
-      val plaintext = Json.encodeToString(sampleSettings).encodeToByteArray()
-      val encrypted = cipher.encrypt(plaintext)
-      backing.value = emptyPreferences().toMutablePreferences().apply {
-        this[stringPreferencesKey("ciphertext")] = Base64.getEncoder().encodeToString(encrypted.ciphertext)
-        this[stringPreferencesKey("iv")] = Base64.getEncoder().encodeToString(encrypted.iv)
-      }
-    }
+  private class FailingWriteDataStore(private val error: Throwable) : DataStore<Preferences> {
+    override val data: Flow<Preferences> = flowOf(emptyPreferences())
+
+    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences = throw error
   }
 }

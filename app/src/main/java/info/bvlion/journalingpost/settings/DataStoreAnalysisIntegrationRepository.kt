@@ -17,9 +17,8 @@ internal class DataStoreAnalysisIntegrationRepository(
   private val dataStore: DataStore<Preferences>,
 ) : AnalysisIntegrationRepository {
   /**
-   * write完了前でも選択を記録処理へ即時反映するための値。generationは、複数回の
-   * setAnalysisIntegration()が重なった際、古い呼び出しのwrite完了/失敗/キャンセルがより新しい選択を
-   * 誤って上書き・巻き戻ししないよう、pendingIntegrationをクリアする際に確認する世代番号。
+   * 「使用しない」の選択をDataStoreのwrite完了前から記録処理へ反映し、外部送信停止の意思を待たせない。
+   * generationは古いwriteの完了・失敗が新しい選択のpendingを消さないために使う。
    */
   private val pendingIntegration = MutableStateFlow<PendingIntegration?>(null)
   private val generation = AtomicInteger(0)
@@ -27,8 +26,6 @@ internal class DataStoreAnalysisIntegrationRepository(
   private val persistedAnalysisIntegration: Flow<AnalysisIntegration> = dataStore.data
     .map { preferences -> preferences.toAnalysisIntegrationOrDefault() }
     .retryWhen { cause, _ ->
-      // 読み取れない場合は安全側(送信しないNONE)へ一旦フォールバックしたうえで再購読を試み続ける。
-      // IOException以外は再送出する(リトライしない)。
       if (cause !is IOException) return@retryWhen false
       emit(AnalysisIntegration.NONE)
       delay(RETRY_DELAY_MILLIS)
@@ -50,25 +47,15 @@ internal class DataStoreAnalysisIntegrationRepository(
     }
   }
 
-  /**
-   * key/fileの名前と、#31以前に保存された値(LOCAL_AND_WEBHOOK/LOCAL_ONLY)の読み取りは、
-   * 既存端末の選択を引き継ぐためそのまま受け付ける。名称変更のためだけに保存済みの選択を
-   * 既定値へ戻さない。既定値も#31以前と同じ意味(Custom Webhookへ送信する)を維持している。
-   */
-  private fun Preferences.toAnalysisIntegrationOrDefault(): AnalysisIntegration =
-    when (val stored = this[KEY]) {
-      null -> AnalysisIntegration.CUSTOM_WEBHOOK
-      LEGACY_LOCAL_ONLY -> AnalysisIntegration.NONE
-      LEGACY_LOCAL_AND_WEBHOOK -> AnalysisIntegration.CUSTOM_WEBHOOK
-      else -> AnalysisIntegration.entries.firstOrNull { it.name == stored } ?: AnalysisIntegration.CUSTOM_WEBHOOK
-    }
+  private fun Preferences.toAnalysisIntegrationOrDefault(): AnalysisIntegration {
+    val stored = this[KEY] ?: return AnalysisIntegration.NONE
+    return AnalysisIntegration.entries.firstOrNull { it.name == stored } ?: AnalysisIntegration.NONE
+  }
 
   private data class PendingIntegration(val integration: AnalysisIntegration, val generation: Int)
 
   private companion object {
-    val KEY = stringPreferencesKey("record_mode")
-    const val LEGACY_LOCAL_ONLY = "LOCAL_ONLY"
-    const val LEGACY_LOCAL_AND_WEBHOOK = "LOCAL_AND_WEBHOOK"
+    val KEY = stringPreferencesKey("analysis_integration")
     const val RETRY_DELAY_MILLIS = 1_000L
   }
 }
