@@ -13,7 +13,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -33,11 +32,11 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
-  private val testDispatcher = StandardTestDispatcher()
+  private val dispatcher = StandardTestDispatcher()
 
   @Before
   fun setUp() {
-    Dispatchers.setMain(testDispatcher)
+    Dispatchers.setMain(dispatcher)
   }
 
   @After
@@ -46,10 +45,10 @@ class SettingsViewModelTest {
   }
 
   @Test
-  fun `解析連携は読み込み確定まで未選択として扱う`() = runTest(testDispatcher) {
+  fun `解析連携は読み込み確定まで未選択として扱う`() = runTest(dispatcher) {
     val integrationRepository = GatedAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK)
     val viewModel = SettingsViewModel(integrationRepository, FakeWebhookSettingsRepository(configuredSettings()))
-    val collectJob = collectState(viewModel)
+    val collection = collectState(viewModel)
     runCurrent()
 
     assertNull(viewModel.analysisIntegration.value)
@@ -59,11 +58,11 @@ class SettingsViewModelTest {
     advanceUntilIdle()
 
     assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, viewModel.selectedAnalysisIntegration.value)
-    collectJob.cancel()
+    collection.cancel()
   }
 
   @Test
-  fun `使用しないを選ぶとNONEを保存する`() = runTest(testDispatcher) {
+  fun `使用しないを選ぶとNONEを保存する`() = runTest(dispatcher) {
     val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK)
     val viewModel = SettingsViewModel(integrationRepository, FakeWebhookSettingsRepository(configuredSettings()))
 
@@ -75,7 +74,7 @@ class SettingsViewModelTest {
   }
 
   @Test
-  fun `設定済みCustom Webhookを選ぶとその場で有効化する`() = runTest(testDispatcher) {
+  fun `設定済みCustom Webhookを選ぶとその場で有効化する`() = runTest(dispatcher) {
     val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE)
     val viewModel = SettingsViewModel(integrationRepository, FakeWebhookSettingsRepository(configuredSettings()))
 
@@ -87,9 +86,11 @@ class SettingsViewModelTest {
   }
 
   @Test
-  fun `Webhook未設定でCustom Webhookを選ぶと保存せず設定画面を要求する`() = runTest(testDispatcher) {
+  fun `Webhook未設定でCustom Webhookを選ぶと設定画面を要求する`() = runTest(dispatcher) {
     val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE)
     val viewModel = SettingsViewModel(integrationRepository, FakeWebhookSettingsRepository())
+    val collection = collectState(viewModel)
+    runCurrent()
 
     viewModel.setAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK)
     advanceUntilIdle()
@@ -97,10 +98,11 @@ class SettingsViewModelTest {
     assertEquals(AnalysisIntegration.NONE, integrationRepository.current)
     assertTrue(viewModel.webhookSetupRequested.value)
     assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, viewModel.selectedAnalysisIntegration.value)
+    collection.cancel()
   }
 
   @Test
-  fun `Custom Webhook有効時だけ親Settingsへ安全な送信先を出す`() = runTest(testDispatcher) {
+  fun `Custom Webhook有効時だけ親Settingsへ安全な送信先を出す`() = runTest(dispatcher) {
     val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK)
     val webhookRepository = FakeWebhookSettingsRepository(
       WebhookSettings(
@@ -110,7 +112,7 @@ class SettingsViewModelTest {
       ),
     )
     val viewModel = SettingsViewModel(integrationRepository, webhookRepository)
-    val collectJob = collectState(viewModel)
+    val collection = collectState(viewModel)
     advanceUntilIdle()
 
     assertEquals("https://hooks.example.com", viewModel.webhookDestinationLabel.value)
@@ -119,17 +121,17 @@ class SettingsViewModelTest {
     advanceUntilIdle()
 
     assertNull(viewModel.webhookDestinationLabel.value)
-    collectJob.cancel()
+    collection.cancel()
   }
 
   @Test
-  fun `Webhook設定画面を開くと保存済み設定をフォームへ読み込む`() = runTest(testDispatcher) {
+  fun `Webhook設定画面を開くと保存済み設定を読み込む`() = runTest(dispatcher) {
     val saved = configuredSettings()
     val viewModel = SettingsViewModel(
       FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK),
       FakeWebhookSettingsRepository(saved),
     )
-    val collectJob = collectState(viewModel)
+    val collection = collectState(viewModel)
 
     viewModel.onWebhookSettingsScreenOpened()
     advanceUntilIdle()
@@ -138,24 +140,24 @@ class SettingsViewModelTest {
     assertEquals(saved.url, viewModel.webhookFormState.value.url)
     assertEquals(saved.headers, viewModel.webhookFormState.value.headers)
     assertEquals(saved.bodyTemplate, viewModel.webhookFormState.value.bodyTemplate)
-    collectJob.cancel()
+    collection.cancel()
   }
 
   @Test
-  fun `Webhook設定を読めない間は編集画面をUnavailableにする`() = runTest(testDispatcher) {
+  fun `Webhook設定を読めない間はUnavailableにする`() = runTest(dispatcher) {
     val viewModel = SettingsViewModel(
       FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
       FakeWebhookSettingsRepository(initialState = WebhookSettingsState.Unavailable),
     )
-    val collectJob = collectState(viewModel)
+    val collection = collectState(viewModel)
     advanceUntilIdle()
 
     assertEquals(WebhookSettingsLoadState.UNAVAILABLE, viewModel.webhookSettingsLoadState.value)
-    collectJob.cancel()
+    collection.cancel()
   }
 
   @Test
-  fun `有効なWebhook設定の保存成功後だけCustom Webhookを有効化する`() = runTest(testDispatcher) {
+  fun `Webhook設定の保存成功後だけCustom Webhookを有効化する`() = runTest(dispatcher) {
     val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE)
     val webhookRepository = FakeWebhookSettingsRepository()
     val viewModel = SettingsViewModel(integrationRepository, webhookRepository)
@@ -170,7 +172,7 @@ class SettingsViewModelTest {
   }
 
   @Test
-  fun `Webhook設定の保存失敗時はCustom Webhookを有効化しない`() = runTest(testDispatcher) {
+  fun `Webhook設定の保存失敗時はCustom Webhookを有効化しない`() = runTest(dispatcher) {
     val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE)
     val webhookRepository = FakeWebhookSettingsRepository(failNextSaves = 1)
     val viewModel = SettingsViewModel(integrationRepository, webhookRepository)
@@ -184,7 +186,7 @@ class SettingsViewModelTest {
   }
 
   @Test
-  fun `validation失敗時はWebhook設定を保存しない`() = runTest(testDispatcher) {
+  fun `validation失敗時はWebhook設定を保存しない`() = runTest(dispatcher) {
     val webhookRepository = FakeWebhookSettingsRepository()
     val viewModel = SettingsViewModel(FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE), webhookRepository)
     viewModel.updateWebhookUrl("not a url")
@@ -198,14 +200,14 @@ class SettingsViewModelTest {
   }
 
   @Test
-  fun `保存せずWebhook設定画面を閉じると保存済み設定は変わらない`() = runTest(testDispatcher) {
+  fun `保存せずWebhook設定画面を閉じると保存済み設定は変わらない`() = runTest(dispatcher) {
     val saved = configuredSettings()
     val webhookRepository = FakeWebhookSettingsRepository(saved)
     val viewModel = SettingsViewModel(
       FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK),
       webhookRepository,
     )
-    val collectJob = collectState(viewModel)
+    val collection = collectState(viewModel)
     viewModel.onWebhookSettingsScreenOpened()
     advanceUntilIdle()
 
@@ -214,16 +216,16 @@ class SettingsViewModelTest {
 
     assertEquals(saved, webhookRepository.savedSettings)
     assertEquals(WebhookFormState(), viewModel.webhookFormState.value)
-    collectJob.cancel()
+    collection.cancel()
   }
 
   @Test
-  fun `初期化済み画面でensureを再度呼んでも入力中フォームを巻き戻さない`() = runTest(testDispatcher) {
+  fun `初期化済み画面でensureを再度呼んでも入力中フォームを巻き戻さない`() = runTest(dispatcher) {
     val viewModel = SettingsViewModel(
       FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK),
       FakeWebhookSettingsRepository(configuredSettings()),
     )
-    val collectJob = collectState(viewModel)
+    val collection = collectState(viewModel)
     viewModel.ensureWebhookSettingsScreenOpened()
     advanceUntilIdle()
     viewModel.updateWebhookUrl("https://edited.example.com")
@@ -232,11 +234,11 @@ class SettingsViewModelTest {
     advanceUntilIdle()
 
     assertEquals("https://edited.example.com", viewModel.webhookFormState.value.url)
-    collectJob.cancel()
+    collection.cancel()
   }
 
   @Test
-  fun `Settings再入場後は古いCustom Webhook判定が設定画面要求を出さない`() = runTest(testDispatcher) {
+  fun `Settings再入場後は古いCustom Webhook判定が設定画面要求を出さない`() = runTest(dispatcher) {
     val webhookRepository = GatedReadWebhookSettingsRepository(WebhookSettingsState.NotConfigured)
     val viewModel = SettingsViewModel(FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE), webhookRepository)
 
@@ -250,7 +252,7 @@ class SettingsViewModelTest {
   }
 
   @Test
-  fun `Webhook保存中に画面を離れると後から完了した保存でCustom Webhookを有効化しない`() = runTest(testDispatcher) {
+  fun `Webhook保存中に画面を離れると後から完了した保存で有効化しない`() = runTest(dispatcher) {
     val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE)
     val webhookRepository = GatedSaveWebhookSettingsRepository()
     val viewModel = SettingsViewModel(integrationRepository, webhookRepository)
@@ -266,10 +268,10 @@ class SettingsViewModelTest {
   }
 
   private fun TestScope.collectState(viewModel: SettingsViewModel): Job = backgroundScope.launch {
-    launch { viewModel.analysisIntegration.collect() }
-    launch { viewModel.selectedAnalysisIntegration.collect() }
-    launch { viewModel.webhookDestinationLabel.collect() }
-    launch { viewModel.webhookSettingsLoadState.collect() }
+    launch { viewModel.analysisIntegration.collect {} }
+    launch { viewModel.selectedAnalysisIntegration.collect {} }
+    launch { viewModel.webhookDestinationLabel.collect {} }
+    launch { viewModel.webhookSettingsLoadState.collect {} }
   }
 
   private fun fillValidForm(viewModel: SettingsViewModel) {
@@ -286,19 +288,12 @@ class SettingsViewModelTest {
     bodyTemplate = validBody,
   )
 
-  private class FakeAnalysisIntegrationRepository(
-    initial: AnalysisIntegration,
-    private var failNextWrites: Int = 0,
-  ) : AnalysisIntegrationRepository {
+  private class FakeAnalysisIntegrationRepository(initial: AnalysisIntegration) : AnalysisIntegrationRepository {
     private val state = MutableStateFlow(initial)
     override val analysisIntegration: Flow<AnalysisIntegration> = state
     val current: AnalysisIntegration get() = state.value
 
     override suspend fun setAnalysisIntegration(integration: AnalysisIntegration) {
-      if (failNextWrites > 0) {
-        failNextWrites--
-        throw IOException("write failed")
-      }
       state.value = integration
     }
   }
