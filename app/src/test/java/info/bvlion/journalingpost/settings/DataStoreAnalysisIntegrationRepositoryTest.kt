@@ -4,8 +4,8 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.preferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.toMutablePreferences
 import info.bvlion.journalingpost.journal.DeliveryStatus
 import info.bvlion.journalingpost.journal.IntegrationRoutingJournalRecorder
 import info.bvlion.journalingpost.journal.JournalEntry
@@ -57,9 +57,7 @@ class DataStoreAnalysisIntegrationRepositoryTest {
 
   @Test
   fun `旧record_modeだけが残っていても互換読み替えせずNONEになる`() = runTest {
-    val preferences = emptyPreferences().toMutablePreferences().apply {
-      this[stringPreferencesKey("record_mode")] = "LOCAL_AND_WEBHOOK"
-    }
+    val preferences = preferencesOf(stringPreferencesKey("record_mode") to "LOCAL_AND_WEBHOOK")
     val repository = DataStoreAnalysisIntegrationRepository(StaticDataStore(preferences))
 
     assertEquals(AnalysisIntegration.NONE, repository.analysisIntegration.first())
@@ -121,9 +119,7 @@ class DataStoreAnalysisIntegrationRepositoryTest {
   }
 
   private fun preferencesWith(integration: AnalysisIntegration): Preferences =
-    emptyPreferences().toMutablePreferences().apply {
-      this[stringPreferencesKey("analysis_integration")] = integration.name
-    }
+    preferencesOf(stringPreferencesKey("analysis_integration") to integration.name)
 
   private class StaticDataStore(initial: Preferences) : DataStore<Preferences> {
     private val state = MutableStateFlow(initial)

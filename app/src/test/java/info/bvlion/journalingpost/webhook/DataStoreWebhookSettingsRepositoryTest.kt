@@ -4,8 +4,8 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.preferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.toMutablePreferences
 import java.io.File
 import java.io.IOException
 import java.security.GeneralSecurityException
@@ -104,9 +104,8 @@ class DataStoreWebhookSettingsRepositoryTest {
 
   @Test
   fun `読み込みIOExceptionから復旧すると保存済み設定を取得できる`() = runTest {
-    val preferences = configuredPreferences(sampleSettings)
     val repository = DataStoreWebhookSettingsRepository(
-      RecoveringDataStore(preferences),
+      RecoveringDataStore(configuredPreferences(sampleSettings)),
       FakeWebhookSettingsCipher(),
     )
 
@@ -137,10 +136,10 @@ class DataStoreWebhookSettingsRepositoryTest {
 
   private fun configuredPreferences(settings: WebhookSettings): Preferences {
     val plaintext = Json.encodeToString(settings).encodeToByteArray()
-    return emptyPreferences().toMutablePreferences().apply {
-      this[stringPreferencesKey("ciphertext")] = Base64.getEncoder().encodeToString(plaintext)
-      this[stringPreferencesKey("iv")] = Base64.getEncoder().encodeToString(byteArrayOf(1, 2, 3))
-    }
+    return preferencesOf(
+      stringPreferencesKey("ciphertext") to Base64.getEncoder().encodeToString(plaintext),
+      stringPreferencesKey("iv") to Base64.getEncoder().encodeToString(byteArrayOf(1, 2, 3)),
+    )
   }
 
   private class FakeWebhookSettingsCipher : WebhookSettingsCipher {

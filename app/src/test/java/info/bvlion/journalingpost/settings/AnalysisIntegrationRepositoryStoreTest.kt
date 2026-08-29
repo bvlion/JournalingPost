@@ -2,9 +2,8 @@ package info.bvlion.journalingpost.settings
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.preferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.toMutablePreferences
 import info.bvlion.journalingpost.journal.DeliveryStatus
 import info.bvlion.journalingpost.journal.IntegrationRoutingJournalRecorder
 import info.bvlion.journalingpost.journal.JournalEntry
@@ -69,9 +68,8 @@ class AnalysisIntegrationRepositoryStoreTest {
     assertFalse(postCalled)
   }
 
-  private fun customWebhookPreferences(): Preferences = emptyPreferences().toMutablePreferences().apply {
-    this[stringPreferencesKey("analysis_integration")] = AnalysisIntegration.CUSTOM_WEBHOOK.name
-  }
+  private fun customWebhookPreferences(): Preferences =
+    preferencesOf(stringPreferencesKey("analysis_integration") to AnalysisIntegration.CUSTOM_WEBHOOK.name)
 
   private class ConfiguredWebhookSettingsRepository : WebhookSettingsRepository {
     override val settings: Flow<WebhookSettingsState> = MutableStateFlow(
