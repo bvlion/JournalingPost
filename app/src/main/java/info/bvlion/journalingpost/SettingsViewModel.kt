@@ -31,8 +31,7 @@ class SettingsViewModel(
   val analysisIntegration: StateFlow<AnalysisIntegration> = analysisIntegrationRepository.analysisIntegration
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AnalysisIntegration.NONE)
 
-  // Webhookが未設定のままCustom Webhookを選んだ状態。まだ有効化はせず、Webhook設定画面へ進むための
-  // 画面上の選択としてのみ扱う(設定を保存しないまま画面を離れれば「使用しない」のまま)。
+  // 設定を保存しないまま画面を離れれば「使用しない」のまま(有効化はsaveWebhookSettings成功時のみ)。
   private val _pendingCustomWebhookSelection = MutableStateFlow(false)
 
   private val selectedIntegrationFlow: Flow<AnalysisIntegration> = combine(
@@ -61,7 +60,7 @@ class SettingsViewModel(
     (state as? WebhookSettingsState.Configured)?.settings?.destinationLabel()
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-  /** Webhook設定画面へ、未設定のセットアップとして進むべきタイミングで一度だけtrueになる。 */
+  /** 消費側(MainActivity)がconsumeWebhookSetupRequest()で戻すまでの一度きりのnavigation要求。 */
   private val _webhookSetupRequested = MutableStateFlow(false)
   val webhookSetupRequested: StateFlow<Boolean> = _webhookSetupRequested.asStateFlow()
 
@@ -69,7 +68,6 @@ class SettingsViewModel(
     _webhookSetupRequested.value = false
   }
 
-  // 呼び出し完了時に、より新しい選択が既に行われていないかを確認するための世代番号。
   private val integrationRequestGeneration = AtomicInteger(0)
 
   /**
@@ -138,11 +136,8 @@ class SettingsViewModel(
   private val webhookRequestGeneration = AtomicInteger(0)
 
   /**
-   * 設定画面へ入り直したときは、前回の未確定なCustom Webhook選択を持ち越さない(保存済みWebhook設定が
-   * ないままWebhook設定画面から戻っていた場合、選択は「使用しない」へ戻る)。
-   *
    * 世代を進めるのは、前回のSettings表示中に開始された[setAnalysisIntegration]のCustom Webhook判定
-   * (webhookSettingsRepository.settings.first()待ち)がまだ終わっていない場合に、それを無効化するため。
+   * (webhookSettingsRepository.settings.first()待ち)がまだ終わっていない場合に無効化するため。
    * 世代を進めずにwebhookSetupRequestedだけを消しても、この後その判定が完了した時点で再びtrueへ
    * 書き換えられ、意図しないタイミングでWebhook設定画面へ遷移してしまう。
    */
@@ -190,8 +185,8 @@ class SettingsViewModel(
   }
 
   /**
-   * Webhook設定画面を閉じたとき(Back)に呼ぶ。保存しなかった編集内容は破棄する。未設定のまま
-   * セットアップ中だった場合、Custom Webhookの選択も未確定のままなので「使用しない」へ戻す。
+   * Webhook設定画面を閉じたとき(Back)に呼ぶ。未設定のままセットアップ中だった場合、Custom Webhookの
+   * 選択も未確定のままなので「使用しない」へ戻す。
    */
   fun onWebhookSettingsScreenClosed() {
     webhookSettingsScreenInitialized = false
@@ -253,8 +248,8 @@ class SettingsViewModel(
 
   /**
    * 保存に成功した時点で初めてCustom Webhookを有効にする(保存失敗時は途中でreturnするため、
-   * 「有効なのに設定がない」状態を作らない)。編集内容は保存後もフォームへ残したままにする
-   * (このPRでは確認/編集を分けないため、保存後も画面はそのまま表示・再編集できる)。
+   * 「有効なのに設定がない」状態を作らない)。確認/編集の画面を分けていないため、保存後も
+   * フォームは閉じずそのまま表示・再編集できる状態を保つ。
    *
    * 保存中に利用者がさらに編集した場合(generationが進んだ場合)も、この関数はwebhookFormStateを
    * 書き換えない。保存開始時点のスナップショットで永続化する一方、フォームに残っているのは常に

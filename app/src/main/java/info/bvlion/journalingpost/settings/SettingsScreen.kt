@@ -6,15 +6,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 
@@ -69,6 +72,10 @@ fun SettingsScreen(
       ListItem(
         headlineContent = { Text("Webhook設定") },
         supportingContent = { Text(webhookDestinationLabel) },
+        // headlineの文言だけではタップして詳細へ進める項目だと伝わりにくいため、chevronを添える。
+        trailingContent = {
+          Icon(painter = painterResource(R.drawable.ic_chevron_right), contentDescription = null)
+        },
         modifier = Modifier.clickable(onClick = onWebhookSettingsOpen),
       )
     }

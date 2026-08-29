@@ -8,6 +8,7 @@ import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.LocalOnlyJournalRecorder
 import info.bvlion.journalingpost.journal.LocalWebhookJournalRecorder
 import info.bvlion.journalingpost.poster.JournalPoster
+import info.bvlion.journalingpost.webhook.LegacyWebhookConfig
 import info.bvlion.journalingpost.webhook.WebhookSettings
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
 import info.bvlion.journalingpost.webhook.WebhookSettingsState
@@ -111,6 +112,46 @@ class WebhookAwareAnalysisIntegrationRepositoryTest {
     assertEquals("today was good", journalRepository.entries.values.single().note)
   }
 
+  @Test
+  fun `MainActivityの起動処理を経由せずanalysisIntegrationを読んだだけでも未完了のlegacy migrationが完了しCustom Webhookが有効になる`() = runTest {
+    val legacyConfig = LegacyWebhookConfig(
+      postUrl = "https://legacy.example.com/webhook",
+      teamId = "T000",
+      token = "token",
+      channel = "general",
+      user = "bvlion",
+    )
+    val webhookRepository = FakeWebhookSettingsRepository(
+      initial = WebhookSettingsState.NotConfigured,
+      legacyMigrationCompleted = false,
+    )
+    val repository = WebhookAwareAnalysisIntegrationRepository(
+      delegate = FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK),
+      webhookSettingsRepository = webhookRepository,
+      legacyConfigProvider = { legacyConfig },
+    )
+
+    // Widget(MoodEntryActivity)経由等、MainActivity.onCreate()のmigration起動を通らない入口を想定する。
+    val result = repository.analysisIntegration.first()
+
+    assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, result)
+    assertEquals(1, webhookRepository.saveCallCount)
+  }
+
+  @Test
+  fun `legacy migration完了済みで保存済み設定が無ければ通常どおりNONEになる`() = runTest {
+    val repository = WebhookAwareAnalysisIntegrationRepository(
+      delegate = FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK),
+      webhookSettingsRepository = FakeWebhookSettingsRepository(
+        initial = WebhookSettingsState.NotConfigured,
+        legacyMigrationCompleted = true,
+      ),
+      legacyConfigProvider = { null },
+    )
+
+    assertEquals(AnalysisIntegration.NONE, repository.analysisIntegration.first())
+  }
+
   private fun createRepository(
     integration: AnalysisIntegration,
     webhookState: WebhookSettingsState,
@@ -134,15 +175,21 @@ class WebhookAwareAnalysisIntegrationRepositoryTest {
     }
   }
 
-  private class FakeWebhookSettingsRepository(initial: WebhookSettingsState) : WebhookSettingsRepository {
+  private class FakeWebhookSettingsRepository(
+    initial: WebhookSettingsState,
+    private var legacyMigrationCompleted: Boolean = true,
+  ) : WebhookSettingsRepository {
     private val state = MutableStateFlow(initial)
     override val settings: Flow<WebhookSettingsState> = state
+    var saveCallCount = 0
+      private set
 
     fun emit(newState: WebhookSettingsState) {
       state.value = newState
     }
 
     override suspend fun save(settings: WebhookSettings) {
+      saveCallCount++
       state.value = WebhookSettingsState.Configured(settings)
     }
 
@@ -150,9 +197,11 @@ class WebhookAwareAnalysisIntegrationRepositoryTest {
       state.value = WebhookSettingsState.NotConfigured
     }
 
-    override suspend fun isLegacyMigrationCompleted(): Boolean = true
+    override suspend fun isLegacyMigrationCompleted(): Boolean = legacyMigrationCompleted
 
-    override suspend fun markLegacyMigrationCompleted() = Unit
+    override suspend fun markLegacyMigrationCompleted() {
+      legacyMigrationCompleted = true
+    }
   }
 
   private class FakeJournalEntryRepository : JournalEntryRepository {

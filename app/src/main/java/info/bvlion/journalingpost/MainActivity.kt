@@ -107,8 +107,6 @@ class MainActivity : ComponentActivity() {
                 ) {
                   TextButton(
                     onClick = {
-                      // 画面へ入り直すタイミングでのみ、前回の操作結果と編集フォームの展開状態を捨てる
-                      // (画面内の再生成では呼ばれないため、回転で入力途中の値は失われない)。
                       settingsViewModel.onSettingsOpened()
                       screen = Screen.SETTINGS
                     },
@@ -151,8 +149,6 @@ class MainActivity : ComponentActivity() {
                 val webhookDestinationLabel by settingsViewModel.webhookDestinationLabel.collectAsState()
                 val webhookSetupRequested by settingsViewModel.webhookSetupRequested.collectAsState()
 
-                // 保存済みWebhook設定がないままCustom Webhookを選んだ場合、ViewModel側の判定結果を
-                // 一度だけ受け取ってセットアップ用にWebhook設定画面へ進む。
                 LaunchedEffect(webhookSetupRequested) {
                   if (webhookSetupRequested) {
                     settingsViewModel.consumeWebhookSetupRequest()
@@ -175,10 +171,7 @@ class MainActivity : ComponentActivity() {
               }
 
               Screen.WEBHOOK_SETTINGS -> {
-                // process recreationでこの画面がそのまま復元された場合、新しいSettingsViewModelでは
-                // まだ初期化されていないため、その場合だけフォームを読み込む。ViewModelが生き残る
-                // rotation等ではensureWebhookSettingsScreenOpened自体が何もしないため、入力中の
-                // フォームを不用意に巻き戻さない。
+                // process recreationでこの画面がそのまま復元された場合に備えたフォールバック。
                 LaunchedEffect(Unit) {
                   settingsViewModel.ensureWebhookSettingsScreenOpened()
                 }
