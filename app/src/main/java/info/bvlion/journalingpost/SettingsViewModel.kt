@@ -167,6 +167,12 @@ class SettingsViewModel(
       if (generation != webhookRequestGeneration.get()) return@launch
       if (settled is WebhookSettingsState.Configured) {
         _webhookFormState.value = settled.settings.toFormState()
+        // Webhook設定を一時的に読めずセットアップへ進んだ後、実際には既存の保存済み設定があると
+        // 分かった場合はここで有効化する(利用者に意味のない再保存を要求しない)。
+        if (_pendingCustomWebhookSelection.value) {
+          persistAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK, integrationRequestGeneration.incrementAndGet())
+          _pendingCustomWebhookSelection.value = false
+        }
       }
       _webhookFormLoaded.value = true
     }
@@ -225,6 +231,11 @@ class SettingsViewModel(
    * 保存中に利用者がさらに編集した場合(generationが進んだ場合)も、この関数はwebhookFormStateを
    * 書き換えない。保存開始時点のスナップショットで永続化する一方、フォームに残っているのは常に
    * 利用者の最新の入力なので、上書きすると保存中に行った編集が失われてしまう。
+   *
+   * 有効化(persistAnalysisIntegration)自体はgenerationが一致する場合のみ行う。保存が完了するより前に
+   * この画面を離れ、戻ったSettingsで「使用しない」を選んだ場合、離脱時にwebhookRequestGenerationが
+   * 進むためこのチェックで弾かれる。ここを無条件にすると、後から完了したこの保存がCUSTOM_WEBHOOKを
+   * 永続化してしまい、利用者の直後の「使用しない」という選択より優先されてしまう。
    */
   fun saveWebhookSettings() {
     val generation = webhookRequestGeneration.incrementAndGet()
@@ -245,8 +256,10 @@ class SettingsViewModel(
         if (generation == webhookRequestGeneration.get()) _webhookSaveFailed.value = true
         return@launch
       }
-      persistAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK, integrationRequestGeneration.incrementAndGet())
-      _pendingCustomWebhookSelection.value = false
+      if (generation == webhookRequestGeneration.get()) {
+        persistAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK, integrationRequestGeneration.incrementAndGet())
+        _pendingCustomWebhookSelection.value = false
+      }
     }
   }
 }

@@ -436,6 +436,59 @@ class SettingsViewModelTest {
     collectJob.cancel()
   }
 
+  @Test
+  fun `Webhookを一時的に読めずセットアップへ進んだ後に既存設定があると分かれば保存操作なしで有効になる`() = runTest(testDispatcher) {
+    val existing = configuredSettings()
+    val webhookRepository = ControllableWebhookSettingsRepository(initial = WebhookSettingsState.Unavailable)
+    val viewModel = SettingsViewModel(FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE), webhookRepository)
+    val collectJob = launchCollection(viewModel)
+    val screenCollectJob = launchWebhookScreenCollection(viewModel)
+    viewModel.setAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK)
+    testDispatcher.scheduler.advanceUntilIdle()
+    assertTrue(viewModel.webhookSetupRequested.value)
+    viewModel.consumeWebhookSetupRequest()
+    viewModel.onWebhookSettingsScreenOpened()
+    testDispatcher.scheduler.advanceUntilIdle()
+    assertEquals(AnalysisIntegration.NONE, viewModel.analysisIntegration.value)
+
+    // Webhook設定画面を表示したまま、DataStoreの読み込みが既存設定として復旧した場合。
+    webhookRepository.emit(WebhookSettingsState.Configured(existing))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, viewModel.analysisIntegration.value)
+    assertEquals(existing.url, viewModel.webhookFormState.value.url)
+    screenCollectJob.cancel()
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `保存中に画面を離れその後使用しないを選ぶと後から完了した保存が有効化を上書きしない`() = runTest(testDispatcher) {
+    val webhookRepository = GatedSaveWebhookSettingsRepository()
+    val viewModel = SettingsViewModel(FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE), webhookRepository)
+    val collectJob = launchCollection(viewModel)
+    val screenCollectJob = launchWebhookScreenCollection(viewModel)
+    viewModel.onWebhookSettingsScreenOpened()
+    testDispatcher.scheduler.advanceUntilIdle()
+    viewModel.updateWebhookUrl("https://example.com/webhook")
+    viewModel.updateWebhookBodyTemplate("""{"text": "{{message}}"}""")
+    viewModel.saveWebhookSettings()
+    testDispatcher.scheduler.runCurrent() // saveはgateで止まるため、write進行中の状態まで進む
+
+    // 保存の完了を待たずに画面を離れ、Settingsで「使用しない」を選ぶ。
+    viewModel.onWebhookSettingsScreenClosed()
+    viewModel.setAnalysisIntegration(AnalysisIntegration.NONE)
+    testDispatcher.scheduler.advanceUntilIdle()
+    assertEquals(AnalysisIntegration.NONE, viewModel.analysisIntegration.value)
+
+    // 離脱後に保存が完了しても、直後に選んだ「使用しない」を上書きしない。
+    webhookRepository.completeSave()
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(AnalysisIntegration.NONE, viewModel.analysisIntegration.value)
+    screenCollectJob.cancel()
+    collectJob.cancel()
+  }
+
   // ---- Webhook設定画面: 保存 ----
 
   @Test
