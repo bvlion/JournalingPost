@@ -175,6 +175,13 @@ class MainActivity : ComponentActivity() {
               }
 
               Screen.WEBHOOK_SETTINGS -> {
+                // process recreationでこの画面がそのまま復元された場合、新しいSettingsViewModelでは
+                // まだ初期化されていないため、その場合だけフォームを読み込む。ViewModelが生き残る
+                // rotation等ではensureWebhookSettingsScreenOpened自体が何もしないため、入力中の
+                // フォームを不用意に巻き戻さない。
+                LaunchedEffect(Unit) {
+                  settingsViewModel.ensureWebhookSettingsScreenOpened()
+                }
                 val webhookSettingsLoadState by settingsViewModel.webhookSettingsLoadState.collectAsState()
                 val webhookFormState by settingsViewModel.webhookFormState.collectAsState()
                 val webhookValidationErrors by settingsViewModel.webhookValidationErrors.collectAsState()

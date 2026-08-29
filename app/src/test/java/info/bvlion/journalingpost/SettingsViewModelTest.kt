@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -243,6 +244,27 @@ class SettingsViewModelTest {
     collectJob.cancel()
   }
 
+  @Test
+  fun `Settingsを離れて再入場すると未完了だったCustom Webhook判定は後から完了してもセットアップ要求を出さない`() = runTest(testDispatcher) {
+    val webhookRepository = GatedReadWebhookSettingsRepository(resolveTo = WebhookSettingsState.NotConfigured)
+    val viewModel = SettingsViewModel(FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE), webhookRepository)
+    val collectJob = launchCollection(viewModel)
+    viewModel.setAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK)
+    testDispatcher.scheduler.runCurrent() // 判定はgateで止まっているため、in-flightのまま進む
+
+    // 判定が終わる前にSettingsを離れて再入場する(この間に他の操作をしたかどうかは問わない)。
+    viewModel.onSettingsOpened()
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    // 離脱前に開始した古い判定が、離脱後にようやく完了した場合。
+    webhookRepository.release()
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertFalse(viewModel.webhookSetupRequested.value)
+    assertEquals(AnalysisIntegration.NONE, viewModel.selectedAnalysisIntegration.value)
+    collectJob.cancel()
+  }
+
   // ---- 親Settingsの「Webhook設定」項目に出す送信先label ----
 
   @Test
@@ -398,6 +420,59 @@ class SettingsViewModelTest {
     testDispatcher.scheduler.advanceUntilIdle()
 
     assertEquals(WebhookFormState(), viewModel.webhookFormState.value)
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `process recreation直後のensureWebhookSettingsScreenOpenedは未初期化のフォームへ既存設定を読み込む`() = runTest(testDispatcher) {
+    val existing = configuredSettings()
+    val webhookRepository = FakeWebhookSettingsRepository(initial = WebhookSettingsState.Configured(existing))
+    // onWebhookSettingsScreenOpened()を明示的に呼ばず、process recreationでWEBHOOK_SETTINGSが
+    // そのまま復元され新しいViewModelが作られた状況を再現する。
+    val viewModel = SettingsViewModel(FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK), webhookRepository)
+    val collectJob = launchWebhookScreenCollection(viewModel)
+
+    viewModel.ensureWebhookSettingsScreenOpened()
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(WebhookSettingsLoadState.READY, viewModel.webhookSettingsLoadState.value)
+    assertEquals(existing.url, viewModel.webhookFormState.value.url)
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `既に初期化済みのensureWebhookSettingsScreenOpenedは入力中のフォームを巻き戻さない`() = runTest(testDispatcher) {
+    val webhookRepository = FakeWebhookSettingsRepository(initial = WebhookSettingsState.Configured(configuredSettings()))
+    val viewModel = SettingsViewModel(FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK), webhookRepository)
+    val collectJob = launchWebhookScreenCollection(viewModel)
+    viewModel.onWebhookSettingsScreenOpened()
+    testDispatcher.scheduler.advanceUntilIdle()
+    viewModel.updateWebhookUrl("https://editing.example.com/webhook")
+
+    // rotation等、ViewModelが生き残ったまま画面が再コンポーズされた場合を再現する。
+    viewModel.ensureWebhookSettingsScreenOpened()
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals("https://editing.example.com/webhook", viewModel.webhookFormState.value.url)
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `Webhook設定画面を閉じるとensureWebhookSettingsScreenOpenedは次回また読み込みを行う`() = runTest(testDispatcher) {
+    val existing = configuredSettings()
+    val webhookRepository = FakeWebhookSettingsRepository(initial = WebhookSettingsState.Configured(existing))
+    val viewModel = SettingsViewModel(FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK), webhookRepository)
+    val collectJob = launchWebhookScreenCollection(viewModel)
+    viewModel.onWebhookSettingsScreenOpened()
+    testDispatcher.scheduler.advanceUntilIdle()
+    viewModel.updateWebhookUrl("https://unsaved.example.com/webhook")
+    viewModel.onWebhookSettingsScreenClosed()
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    viewModel.ensureWebhookSettingsScreenOpened()
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(existing.url, viewModel.webhookFormState.value.url)
     collectJob.cancel()
   }
 
@@ -796,6 +871,31 @@ class SettingsViewModelTest {
     override suspend fun clear() {
       state.value = WebhookSettingsState.NotConfigured
     }
+
+    override suspend fun isLegacyMigrationCompleted(): Boolean = true
+
+    override suspend fun markLegacyMigrationCompleted() = Unit
+  }
+
+  /**
+   * settings(Flow)の最初の発行タイミングをテストから制御するFake。setAnalysisIntegration()内の
+   * webhookSettingsRepository.settings.first()呼び出しをin-flightのまま止め、離脱→再入場で
+   * 無効化されるべき古い判定を再現する。
+   */
+  private class GatedReadWebhookSettingsRepository(private val resolveTo: WebhookSettingsState) : WebhookSettingsRepository {
+    private val gate = CompletableDeferred<Unit>()
+    override val settings: Flow<WebhookSettingsState> = flow {
+      gate.await()
+      emit(resolveTo)
+    }
+
+    fun release() {
+      gate.complete(Unit)
+    }
+
+    override suspend fun save(settings: WebhookSettings) = error("not used in this test")
+
+    override suspend fun clear() = error("not used in this test")
 
     override suspend fun isLegacyMigrationCompleted(): Boolean = true
 

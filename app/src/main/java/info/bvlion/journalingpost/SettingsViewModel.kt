@@ -140,18 +140,29 @@ class SettingsViewModel(
   /**
    * 設定画面へ入り直したときは、前回の未確定なCustom Webhook選択を持ち越さない(保存済みWebhook設定が
    * ないままWebhook設定画面から戻っていた場合、選択は「使用しない」へ戻る)。
+   *
+   * 世代を進めるのは、前回のSettings表示中に開始された[setAnalysisIntegration]のCustom Webhook判定
+   * (webhookSettingsRepository.settings.first()待ち)がまだ終わっていない場合に、それを無効化するため。
+   * 世代を進めずにwebhookSetupRequestedだけを消しても、この後その判定が完了した時点で再びtrueへ
+   * 書き換えられ、意図しないタイミングでWebhook設定画面へ遷移してしまう。
    */
   fun onSettingsOpened() {
+    integrationRequestGeneration.incrementAndGet()
     _integrationSaveFailed.value = false
     _pendingCustomWebhookSelection.value = false
+    _webhookSetupRequested.value = false
   }
 
   /**
    * Webhook設定画面を開いたときに呼ぶ。authoritativeな状態(NotConfigured/Configured)が分かった
    * 最初の1回だけフォームへ値を読み込み、以降はこの画面を表示している間ずっとその値を保持する。
    * 前回の保存結果(validation error / 保存失敗)もここでクリアする。
+   *
+   * process recreation等でWEBHOOK_SETTINGS画面がそのまま復元された場合に、新しいViewModelでもこれが
+   * 確実に呼ばれるよう[ensureWebhookSettingsScreenOpened]から呼ばれることがある。
    */
   fun onWebhookSettingsScreenOpened() {
+    webhookSettingsScreenInitialized = true
     val generation = webhookRequestGeneration.incrementAndGet()
     _webhookValidationErrors.value = emptyList()
     _webhookSaveFailed.value = false
@@ -183,12 +194,29 @@ class SettingsViewModel(
    * セットアップ中だった場合、Custom Webhookの選択も未確定のままなので「使用しない」へ戻す。
    */
   fun onWebhookSettingsScreenClosed() {
+    webhookSettingsScreenInitialized = false
     webhookRequestGeneration.incrementAndGet()
     _webhookValidationErrors.value = emptyList()
     _webhookSaveFailed.value = false
     _webhookFormLoaded.value = false
     _webhookFormState.value = WebhookFormState()
     _pendingCustomWebhookSelection.value = false
+  }
+
+  // このViewModelインスタンスに対してWebhook設定画面の初期化(onWebhookSettingsScreenOpened)が
+  // 済んでいるか。rotation等でViewModelが生き残る間はtrueを維持し、process recreationで
+  // ViewModelが作り直された場合は必ずfalseから始まる。単一のMain dispatcher上でのみ読み書きする。
+  private var webhookSettingsScreenInitialized = false
+
+  /**
+   * process recreationでWEBHOOK_SETTINGS画面がそのまま復元された場合(このViewModelではまだ
+   * onWebhookSettingsScreenOpened()が呼ばれていない)にのみ、それを呼んでフォームを初期化する。
+   * 通常のrecompositionや、ViewModelが生き残るrotation等、既に初期化済みの場合は何もしない
+   * (入力中のフォームを不用意に巻き戻さないため)。
+   */
+  fun ensureWebhookSettingsScreenOpened() {
+    if (webhookSettingsScreenInitialized) return
+    onWebhookSettingsScreenOpened()
   }
 
   fun updateWebhookUrl(url: String) {
