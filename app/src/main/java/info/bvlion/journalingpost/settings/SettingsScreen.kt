@@ -8,6 +8,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -15,6 +16,10 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -22,6 +27,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.WebhookFormState
+import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettingsState
@@ -38,6 +44,7 @@ fun SettingsScreen(
   webhookValidationErrors: List<WebhookSettingsValidator.ValidationError>,
   webhookSaveFailed: Boolean,
   onWebhookReveal: () -> Unit,
+  onWebhookHide: () -> Unit,
   onWebhookUrlChange: (String) -> Unit,
   onWebhookHeaderAdd: () -> Unit,
   onWebhookHeaderRemove: (Int) -> Unit,
@@ -49,19 +56,12 @@ fun SettingsScreen(
   onBack: () -> Unit,
 ) {
   val isWebhookConfigured = webhookSettingsState is WebhookSettingsState.Configured
+  // 未設定 + LOCAL_AND_WEBHOOKのフォームは常時表示のため、閉じる操作は出さない。
+  val canHideWebhookForm = isWebhookConfigured || recordMode == RecordMode.LOCAL_ONLY
+  var showWebhookDeleteConfirm by rememberSaveable { mutableStateOf(false) }
+
   Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-    Row(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      TextButton(onClick = onBack) {
-        Text("戻る")
-      }
-      Text(
-        text = "設定",
-        style = MaterialTheme.typography.titleMedium,
-      )
-    }
+    ScreenTopAppBar(title = "設定", onBack = onBack)
 
     Column(modifier = Modifier.padding(16.dp).selectableGroup()) {
       Text(
@@ -187,13 +187,19 @@ fun SettingsScreen(
           TextButton(onClick = onWebhookSave) {
             Text("Webhook設定を保存")
           }
-          if (isWebhookConfigured) {
-            TextButton(onClick = onWebhookDelete) {
-              Text("Webhook設定を削除")
+          if (canHideWebhookForm) {
+            TextButton(onClick = onWebhookHide) {
+              Text("編集を閉じる")
             }
           }
         }
-      } else {
+        // 削除は設定内容を表示している状態からのみ行い、確認Dialogを挟む。
+        if (isWebhookConfigured) {
+          TextButton(onClick = { showWebhookDeleteConfirm = true }) {
+            Text(text = "Webhook設定を削除", color = MaterialTheme.colorScheme.error)
+          }
+        }
+      } else if (isWebhookConfigured) {
         // 保存済み設定にはHeader value・Body template等のsecretが含まれ得るため、画面を開いただけでは
         // 表示せず、ユーザーが明示的に選んだ場合だけ展開する。
         Text(
@@ -201,16 +207,46 @@ fun SettingsScreen(
           style = MaterialTheme.typography.bodyMedium,
           modifier = Modifier.padding(top = 12.dp),
         )
-        Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-          TextButton(onClick = onWebhookReveal) {
-            Text("設定内容を表示して編集")
-          }
-          TextButton(onClick = onWebhookDelete) {
-            Text("Webhook設定を削除")
-          }
+        TextButton(onClick = onWebhookReveal, modifier = Modifier.padding(top = 4.dp)) {
+          Text("設定内容を表示して編集")
+        }
+      } else {
+        // LOCAL_ONLYの未設定時。Webhookを使わない設定なので入力欄は前面へ出さないが、
+        // 切り替え前に用意しておけるよう明示操作からは開けるようにする。
+        Text(
+          text = "未設定（ローカル保存のみのため送信しません）",
+          style = MaterialTheme.typography.bodyMedium,
+          modifier = Modifier.padding(top = 12.dp),
+        )
+        TextButton(onClick = onWebhookReveal, modifier = Modifier.padding(top = 4.dp)) {
+          Text("Custom Webhookを設定")
         }
       }
     }
+  }
+
+  if (showWebhookDeleteConfirm) {
+    AlertDialog(
+      onDismissRequest = { showWebhookDeleteConfirm = false },
+      title = { Text("Custom Webhook設定を削除しますか？") },
+      // URL・Header値・Body templateはsecretを含み得るため、確認Dialogには値そのものを出さない。
+      text = { Text("保存済みのURL・HTTP Header・JSON Body templateを削除し、未設定の状態へ戻します。") },
+      confirmButton = {
+        TextButton(
+          onClick = {
+            showWebhookDeleteConfirm = false
+            onWebhookDelete()
+          },
+        ) {
+          Text(text = "削除", color = MaterialTheme.colorScheme.error)
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showWebhookDeleteConfirm = false }) {
+          Text("キャンセル")
+        }
+      },
+    )
   }
 }
 
@@ -292,6 +328,7 @@ fun SettingsScreenPreview() {
       webhookValidationErrors = emptyList(),
       webhookSaveFailed = false,
       onWebhookReveal = {},
+      onWebhookHide = {},
       onWebhookUrlChange = {},
       onWebhookHeaderAdd = {},
       onWebhookHeaderRemove = {},

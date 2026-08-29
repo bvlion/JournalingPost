@@ -97,7 +97,14 @@ class MainActivity : ComponentActivity() {
                   modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                   horizontalArrangement = Arrangement.End,
                 ) {
-                  TextButton(onClick = { screen = Screen.SETTINGS }) {
+                  TextButton(
+                    onClick = {
+                      // 画面へ入り直すタイミングでのみ、前回の操作結果と編集フォームの展開状態を捨てる
+                      // (画面内の再生成では呼ばれないため、回転で入力途中の値は失われない)。
+                      settingsViewModel.onSettingsOpened()
+                      screen = Screen.SETTINGS
+                    },
+                  ) {
                     Text("設定")
                   }
                   TextButton(onClick = { screen = Screen.HISTORY }) {
@@ -115,9 +122,12 @@ class MainActivity : ComponentActivity() {
               }
 
               Screen.HISTORY -> {
-                val historyGroups by historyViewModel.historyGroups.collectAsState()
+                val historyUiState by historyViewModel.uiState.collectAsState()
+                val deleteFailed by historyViewModel.deleteFailed.collectAsState()
                 JournalHistoryScreen(
-                  groups = historyGroups,
+                  uiState = historyUiState,
+                  deleteFailed = deleteFailed,
+                  onDelete = historyViewModel::deleteEntry,
                   onBack = { screen = Screen.INPUT },
                 )
               }
@@ -140,6 +150,7 @@ class MainActivity : ComponentActivity() {
                   webhookValidationErrors = webhookValidationErrors,
                   webhookSaveFailed = webhookSaveFailed,
                   onWebhookReveal = settingsViewModel::revealWebhookForm,
+                  onWebhookHide = settingsViewModel::hideWebhookForm,
                   onWebhookUrlChange = settingsViewModel::updateWebhookUrl,
                   onWebhookHeaderAdd = settingsViewModel::addWebhookHeader,
                   onWebhookHeaderRemove = settingsViewModel::removeWebhookHeader,
