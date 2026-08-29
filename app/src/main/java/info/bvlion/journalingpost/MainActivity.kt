@@ -67,8 +67,9 @@ class MainActivity : ComponentActivity() {
     lifecycleScope.launch { registerMoodWidgetPreviewOnce(applicationContext) }
 
     // debug buildの自分用Webhook設定を初回起動時のみCustom Webhookへ移行する。移行の完了自体は
-    // WebhookJournalPoster側でも保証されるため、ここはWidget等より先にMainActivityが開かれた場合の
-    // 早期実行(体感速度の改善)に過ぎない。両者は同じcoordinatorを通るため競合しても二重importしない。
+    // WebhookSettingsMigrationCoordinatorを経由する他の参照点(routing判定・Webhook設定画面・実際の
+    // 送信)でも保証されるため、ここはWidget等より先にMainActivityが開かれた場合の早期実行
+    // (体感速度の改善)に過ぎない。同じcoordinatorを通るため競合しても二重importしない。
     lifecycleScope.launch {
       WebhookSettingsMigrationCoordinator.ensureMigrated(
         repository = WebhookSettingsRepositoryStore.getInstance(applicationContext),

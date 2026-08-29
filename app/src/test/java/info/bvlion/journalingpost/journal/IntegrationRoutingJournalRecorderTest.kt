@@ -89,7 +89,6 @@ class IntegrationRoutingJournalRecorderTest {
 
     recorder.record("none", mood = null, source = JournalSource.APP)
     integrationRepository.setAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK)
-    // 送信に失敗するCustom Webhookでも、ローカル保存は行われる。
     recorder.record("webhook", mood = null, source = JournalSource.APP)
 
     assertEquals(listOf("none", "webhook"), repository.entries.values.map { it.note })

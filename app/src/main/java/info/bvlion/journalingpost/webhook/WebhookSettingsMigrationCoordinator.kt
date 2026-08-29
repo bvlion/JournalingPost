@@ -5,10 +5,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * legacy migrationの呼び出し元(MainActivity、Widget経由のMoodEntryActivity、WebhookJournalPoster等)に
- * 依存させず、Webhook送信が設定snapshotを取得する前に必ず完了させるためのcoordinator。
- * MainActivityとWidgetそれぞれにmigration呼び出しを複製せず、WebhookJournalPoster.post()から
- * ここを経由することで、どちらの入口から記録してもmigration完了を保証する。
+ * legacy migrationを、呼び出し元ごとに個別実装させず、この1箇所だけに集約するためのcoordinator。
+ * MainActivityの起動時処理、`WebhookAwareAnalysisIntegrationRepository`(routingの有効/無効判定前)、
+ * `SettingsViewModel`(Webhook設定画面がauthoritativeな状態を確定させる前)、`WebhookJournalPoster`
+ * (実際の送信直前)がそれぞれここを経由する。どれか1箇所だけがmigrationを保証している構成ではなく、
+ * migration未完了のままlegacy設定を見落とし得る参照点すべてがここを通る必要がある。新しい参照点を
+ * 追加する場合も、そこで初めてWebhook設定を読む前にここを経由すること。
+ *
  * completedフラグをprocess内キャッシュとして持たず、毎回repository.isLegacyMigrationCompleted()
  * (DataStoreのin-memory stateを読むだけで軽量)を確認することで、migration失敗時に誤って
  * 「完了扱い」のまま次の呼び出しを早期returnさせず、再試行の余地を残す。

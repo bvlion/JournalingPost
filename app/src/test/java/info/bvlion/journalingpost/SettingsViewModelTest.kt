@@ -896,7 +896,6 @@ class SettingsViewModelTest {
     }
   }
 
-  /** analysisIntegrationの最初の発行タイミングをテストから制御するFake。 */
   private class GatedAnalysisIntegrationRepository(private val resolveTo: AnalysisIntegration) : AnalysisIntegrationRepository {
     private val gate = CompletableDeferred<Unit>()
     override val analysisIntegration: Flow<AnalysisIntegration> = flow {
@@ -1003,7 +1002,6 @@ class SettingsViewModelTest {
     override suspend fun markLegacyMigrationCompleted() = Unit
   }
 
-  /** テストからstate遷移(Loading→Unavailable/NotConfigured/Configured)を直接制御するFake。 */
   private class ControllableWebhookSettingsRepository(
     initial: WebhookSettingsState,
   ) : WebhookSettingsRepository {
