@@ -3,14 +3,16 @@ package info.bvlion.journalingpost.settings
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.stringPreferencesKey
 import info.bvlion.journalingpost.journal.DeliveryStatus
+import info.bvlion.journalingpost.journal.IntegrationRoutingJournalRecorder
 import info.bvlion.journalingpost.journal.JournalEntry
 import info.bvlion.journalingpost.journal.JournalEntryRepository
 import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.LocalOnlyJournalRecorder
 import info.bvlion.journalingpost.journal.LocalWebhookJournalRecorder
-import info.bvlion.journalingpost.journal.ModeRoutingJournalRecorder
 import info.bvlion.journalingpost.poster.JournalPoster
 import java.io.File
 import java.io.IOException
@@ -36,61 +38,84 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class DataStoreRecordModeRepositoryTest {
+class DataStoreAnalysisIntegrationRepositoryTest {
   @get:Rule
   val tempFolder = TemporaryFolder()
 
-  private fun createRepository(): DataStoreRecordModeRepository {
+  private fun createRepository(): DataStoreAnalysisIntegrationRepository {
     val dataStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
       produceFile = { File(tempFolder.root, "record_mode_settings.preferences_pb") },
     )
-    return DataStoreRecordModeRepository(dataStore)
+    return DataStoreAnalysisIntegrationRepository(dataStore)
   }
 
   @Test
-  fun `初期モードはLOCAL_AND_WEBHOOKになる`() = runTest {
+  fun `未保存の初期状態ではCUSTOM_WEBHOOKになる`() = runTest {
     val repository = createRepository()
 
-    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+    assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, repository.analysisIntegration.first())
   }
 
   @Test
-  fun `setRecordModeで保存したモードを再取得できる`() = runTest {
+  fun `setAnalysisIntegrationで保存した選択を再取得できる`() = runTest {
     val repository = createRepository()
 
-    repository.setRecordMode(RecordMode.LOCAL_ONLY)
+    repository.setAnalysisIntegration(AnalysisIntegration.NONE)
 
-    assertEquals(RecordMode.LOCAL_ONLY, repository.recordMode.first())
+    assertEquals(AnalysisIntegration.NONE, repository.analysisIntegration.first())
   }
 
   @Test
-  fun `保存したモードは同じファイルを指す別のrepositoryインスタンスからも読める`() = runTest {
+  fun `名称変更前に保存されたLOCAL_ONLYはNONEとして読める`() = runTest {
+    val dataStore = PreferenceDataStoreFactory.create(
+      produceFile = { File(tempFolder.root, "record_mode_settings.preferences_pb") },
+    )
+    dataStore.edit { it[stringPreferencesKey("record_mode")] = "LOCAL_ONLY" }
+
+    assertEquals(AnalysisIntegration.NONE, DataStoreAnalysisIntegrationRepository(dataStore).analysisIntegration.first())
+  }
+
+  @Test
+  fun `名称変更前に保存されたLOCAL_AND_WEBHOOKはCUSTOM_WEBHOOKとして読める`() = runTest {
+    val dataStore = PreferenceDataStoreFactory.create(
+      produceFile = { File(tempFolder.root, "record_mode_settings.preferences_pb") },
+    )
+    dataStore.edit { it[stringPreferencesKey("record_mode")] = "LOCAL_AND_WEBHOOK" }
+
+    assertEquals(
+      AnalysisIntegration.CUSTOM_WEBHOOK,
+      DataStoreAnalysisIntegrationRepository(dataStore).analysisIntegration.first(),
+    )
+  }
+
+  @Test
+  fun `保存した選択は同じファイルを指す別のrepositoryインスタンスからも読める`() = runTest {
     val file = File(tempFolder.root, "record_mode_settings.preferences_pb")
     val dataStore = PreferenceDataStoreFactory.create(produceFile = { file })
-    DataStoreRecordModeRepository(dataStore).setRecordMode(RecordMode.LOCAL_ONLY)
+    DataStoreAnalysisIntegrationRepository(dataStore).setAnalysisIntegration(AnalysisIntegration.NONE)
 
-    val reloaded = DataStoreRecordModeRepository(dataStore)
+    val reloaded = DataStoreAnalysisIntegrationRepository(dataStore)
 
-    assertEquals(RecordMode.LOCAL_ONLY, reloaded.recordMode.first())
+    assertEquals(AnalysisIntegration.NONE, reloaded.analysisIntegration.first())
   }
 
   @Test
-  fun `DataStoreへのwrite完了前でもsetRecordMode呼び出し直後にrecordModeへ反映される`() = runTest {
-    val repository = DataStoreRecordModeRepository(BlockingWriteDataStore())
+  fun `DataStoreへのwrite完了前でもsetAnalysisIntegration呼び出し直後にanalysisIntegrationへ反映される`() = runTest {
+    val repository = DataStoreAnalysisIntegrationRepository(BlockingWriteDataStore())
 
-    backgroundScope.launch { repository.setRecordMode(RecordMode.LOCAL_ONLY) }
-    runCurrent() // BlockingWriteDataStoreのwriteは完了しないため、pendingMode反映直後まで進む
+    backgroundScope.launch { repository.setAnalysisIntegration(AnalysisIntegration.NONE) }
+    runCurrent() // BlockingWriteDataStoreのwriteは完了しないため、pendingIntegration反映直後まで進む
 
-    assertEquals(RecordMode.LOCAL_ONLY, repository.recordMode.first())
+    assertEquals(AnalysisIntegration.NONE, repository.analysisIntegration.first())
   }
 
   @Test
-  fun `write未完了のままLOCAL_ONLY選択直後に開始した記録はWebhookへルーティングされない`() = runTest {
+  fun `write未完了のまま使用しない選択直後に開始した記録はWebhookへルーティングされない`() = runTest {
     val journalRepository = FakeJournalEntryRepository()
-    val repository = DataStoreRecordModeRepository(BlockingWriteDataStore())
+    val repository = DataStoreAnalysisIntegrationRepository(BlockingWriteDataStore())
     var postCalled = false
-    val recorder = ModeRoutingJournalRecorder(
-      recordModeRepository = repository,
+    val recorder = IntegrationRoutingJournalRecorder(
+      analysisIntegrationRepository = repository,
       localOnlyRecorder = LocalOnlyJournalRecorder(journalRepository),
       localWebhookRecorder = LocalWebhookJournalRecorder(
         journalRepository,
@@ -98,7 +123,7 @@ class DataStoreRecordModeRepositoryTest {
       ),
     )
 
-    backgroundScope.launch { repository.setRecordMode(RecordMode.LOCAL_ONLY) }
+    backgroundScope.launch { repository.setAnalysisIntegration(AnalysisIntegration.NONE) }
     runCurrent()
     val result = recorder.record("today was good", mood = null, source = JournalSource.APP)
 
@@ -107,19 +132,19 @@ class DataStoreRecordModeRepositoryTest {
   }
 
   @Test
-  fun `DataStore読み込みがIOExceptionを投げた場合はLOCAL_ONLYへ倒す`() = runTest {
-    val repository = DataStoreRecordModeRepository(ThrowingDataStore(IOException("disk error")))
+  fun `DataStore読み込みがIOExceptionを投げた場合はNONEへ倒す`() = runTest {
+    val repository = DataStoreAnalysisIntegrationRepository(ThrowingDataStore(IOException("disk error")))
 
-    assertEquals(RecordMode.LOCAL_ONLY, repository.recordMode.first())
+    assertEquals(AnalysisIntegration.NONE, repository.analysisIntegration.first())
   }
 
   @Test
   fun `DataStore読み込みがIOException以外を投げた場合は再送出される`() = runTest {
-    val repository = DataStoreRecordModeRepository(ThrowingDataStore(IllegalStateException("boom")))
+    val repository = DataStoreAnalysisIntegrationRepository(ThrowingDataStore(IllegalStateException("boom")))
 
     var thrown: Throwable? = null
     try {
-      repository.recordMode.first()
+      repository.analysisIntegration.first()
     } catch (e: IllegalStateException) {
       thrown = e
     }
@@ -128,71 +153,71 @@ class DataStoreRecordModeRepositoryTest {
   }
 
   @Test
-  fun `read IOExceptionから復旧すると同じ購読が新しい永続モードを取得できる`() = runTest {
-    val repository = DataStoreRecordModeRepository(RecoveringDataStore())
+  fun `read IOExceptionから復旧すると同じ購読が新しい永続値を取得できる`() = runTest {
+    val repository = DataStoreAnalysisIntegrationRepository(RecoveringDataStore())
 
-    val collected = mutableListOf<RecordMode>()
-    val job = launch { repository.recordMode.collect { collected += it } }
+    val collected = mutableListOf<AnalysisIntegration>()
+    val job = launch { repository.analysisIntegration.collect { collected += it } }
     advanceUntilIdle()
 
-    assertEquals(listOf(RecordMode.LOCAL_ONLY, RecordMode.LOCAL_AND_WEBHOOK), collected)
+    assertEquals(listOf(AnalysisIntegration.NONE, AnalysisIntegration.CUSTOM_WEBHOOK), collected)
     job.cancel()
   }
 
   @Test
-  fun `read error後にwriteが成功するとpending解消後も新しいモードを維持する`() = runTest {
-    val repository = DataStoreRecordModeRepository(RecoveringDataStore())
-    assertEquals(RecordMode.LOCAL_ONLY, repository.recordMode.first())
+  fun `read error後にwriteが成功するとpending解消後も新しい選択を維持する`() = runTest {
+    val repository = DataStoreAnalysisIntegrationRepository(RecoveringDataStore())
+    assertEquals(AnalysisIntegration.NONE, repository.analysisIntegration.first())
 
-    repository.setRecordMode(RecordMode.LOCAL_AND_WEBHOOK)
+    repository.setAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK)
 
-    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+    assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, repository.analysisIntegration.first())
   }
 
   @Test
   fun `write中にキャンセルされてもCancellationExceptionが伝播しそのpendingは片付く`() = runTest {
-    val repository = DataStoreRecordModeRepository(BlockingWriteDataStore())
+    val repository = DataStoreAnalysisIntegrationRepository(BlockingWriteDataStore())
     var thrown: Throwable? = null
 
     val job = launch {
       try {
-        repository.setRecordMode(RecordMode.LOCAL_ONLY)
+        repository.setAnalysisIntegration(AnalysisIntegration.NONE)
       } catch (e: CancellationException) {
         thrown = e
         throw e
       }
     }
     runCurrent()
-    assertEquals(RecordMode.LOCAL_ONLY, repository.recordMode.first())
+    assertEquals(AnalysisIntegration.NONE, repository.analysisIntegration.first())
 
     job.cancelAndJoin()
 
     assertTrue(thrown is CancellationException)
-    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+    assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, repository.analysisIntegration.first())
   }
 
   @Test
   fun `キャンセルされた古いwriteは新しい選択のpendingを消さない`() = runTest {
-    val repository = DataStoreRecordModeRepository(ControllableWriteDataStore())
+    val repository = DataStoreAnalysisIntegrationRepository(ControllableWriteDataStore())
 
-    val job = launch { repository.setRecordMode(RecordMode.LOCAL_ONLY) }
+    val job = launch { repository.setAnalysisIntegration(AnalysisIntegration.NONE) }
     runCurrent()
-    backgroundScope.launch { repository.setRecordMode(RecordMode.LOCAL_AND_WEBHOOK) }
+    backgroundScope.launch { repository.setAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK) }
     runCurrent()
-    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+    assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, repository.analysisIntegration.first())
 
     job.cancelAndJoin()
 
-    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+    assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, repository.analysisIntegration.first())
   }
 
   @Test
-  fun `write失敗時はsetRecordModeが例外を投げる`() = runTest {
-    val repository = DataStoreRecordModeRepository(FailingWriteDataStore(IOException("disk error")))
+  fun `write失敗時はsetAnalysisIntegrationが例外を投げる`() = runTest {
+    val repository = DataStoreAnalysisIntegrationRepository(FailingWriteDataStore(IOException("disk error")))
 
     var thrown: Throwable? = null
     try {
-      repository.setRecordMode(RecordMode.LOCAL_ONLY)
+      repository.setAnalysisIntegration(AnalysisIntegration.NONE)
     } catch (e: IOException) {
       thrown = e
     }
@@ -201,73 +226,73 @@ class DataStoreRecordModeRepositoryTest {
   }
 
   @Test
-  fun `write失敗後はrecordModeが永続化前の有効なモードへ戻り楽観的なpendingが残り続けない`() = runTest {
-    val repository = DataStoreRecordModeRepository(FailingWriteDataStore(IOException("disk error")))
-    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+  fun `write失敗後はanalysisIntegrationが永続化前の有効な選択へ戻り楽観的なpendingが残り続けない`() = runTest {
+    val repository = DataStoreAnalysisIntegrationRepository(FailingWriteDataStore(IOException("disk error")))
+    assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, repository.analysisIntegration.first())
 
     try {
-      repository.setRecordMode(RecordMode.LOCAL_ONLY)
+      repository.setAnalysisIntegration(AnalysisIntegration.NONE)
     } catch (e: IOException) {
     }
 
-    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+    assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, repository.analysisIntegration.first())
   }
 
   @Test
-  fun `複数のモード変更が重なった場合、古いwriteの完了は新しい選択のpendingを巻き戻さない`() = runTest {
+  fun `複数の選択変更が重なった場合、古いwriteの完了は新しい選択のpendingを巻き戻さない`() = runTest {
     val dataStore = ControllableWriteDataStore()
-    val repository = DataStoreRecordModeRepository(dataStore)
+    val repository = DataStoreAnalysisIntegrationRepository(dataStore)
 
-    backgroundScope.launch { repository.setRecordMode(RecordMode.LOCAL_ONLY) }
+    backgroundScope.launch { repository.setAnalysisIntegration(AnalysisIntegration.NONE) }
     runCurrent()
-    backgroundScope.launch { repository.setRecordMode(RecordMode.LOCAL_AND_WEBHOOK) }
+    backgroundScope.launch { repository.setAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK) }
     runCurrent()
 
-    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+    assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, repository.analysisIntegration.first())
 
     dataStore.completeWrite(0)
     runCurrent()
-    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+    assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, repository.analysisIntegration.first())
 
     dataStore.completeWrite(1)
     runCurrent()
-    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+    assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, repository.analysisIntegration.first())
   }
 
   @Test
-  fun `複数のモード変更が重なった場合、古いwriteの失敗は新しい選択のpendingへ影響しない`() = runTest {
+  fun `複数の選択変更が重なった場合、古いwriteの失敗は新しい選択のpendingへ影響しない`() = runTest {
     val dataStore = ControllableWriteDataStore()
-    val repository = DataStoreRecordModeRepository(dataStore)
+    val repository = DataStoreAnalysisIntegrationRepository(dataStore)
 
     backgroundScope.launch {
       try {
-        repository.setRecordMode(RecordMode.LOCAL_ONLY)
+        repository.setAnalysisIntegration(AnalysisIntegration.NONE)
       } catch (e: IOException) {
         // backgroundScopeのjobを失敗させないためここでcatchする。
       }
     }
     runCurrent()
-    backgroundScope.launch { repository.setRecordMode(RecordMode.LOCAL_AND_WEBHOOK) }
+    backgroundScope.launch { repository.setAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK) }
     runCurrent()
 
-    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+    assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, repository.analysisIntegration.first())
 
     dataStore.failWrite(0, IOException("disk error"))
     runCurrent()
-    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+    assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, repository.analysisIntegration.first())
 
     dataStore.completeWrite(1)
     runCurrent()
-    assertEquals(RecordMode.LOCAL_AND_WEBHOOK, repository.recordMode.first())
+    assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, repository.analysisIntegration.first())
   }
 
   @Test
   fun `DataStore読み込みIOException時は記録がWebhookへルーティングされずlocal記録は継続できる`() = runTest {
     val journalRepository = FakeJournalEntryRepository()
-    val repository = DataStoreRecordModeRepository(ThrowingDataStore(IOException("disk error")))
+    val repository = DataStoreAnalysisIntegrationRepository(ThrowingDataStore(IOException("disk error")))
     var postCalled = false
-    val recorder = ModeRoutingJournalRecorder(
-      recordModeRepository = repository,
+    val recorder = IntegrationRoutingJournalRecorder(
+      analysisIntegrationRepository = repository,
       localOnlyRecorder = LocalOnlyJournalRecorder(journalRepository),
       localWebhookRecorder = LocalWebhookJournalRecorder(
         journalRepository,

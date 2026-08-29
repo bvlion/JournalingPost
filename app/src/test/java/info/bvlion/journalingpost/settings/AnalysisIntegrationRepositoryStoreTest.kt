@@ -4,12 +4,12 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import info.bvlion.journalingpost.journal.DeliveryStatus
+import info.bvlion.journalingpost.journal.IntegrationRoutingJournalRecorder
 import info.bvlion.journalingpost.journal.JournalEntry
 import info.bvlion.journalingpost.journal.JournalEntryRepository
 import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.LocalOnlyJournalRecorder
 import info.bvlion.journalingpost.journal.LocalWebhookJournalRecorder
-import info.bvlion.journalingpost.journal.ModeRoutingJournalRecorder
 import info.bvlion.journalingpost.poster.JournalPoster
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -25,34 +25,34 @@ import org.junit.Before
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class RecordModeRepositoryStoreTest {
+class AnalysisIntegrationRepositoryStoreTest {
 
   @Before
   fun setUp() {
-    RecordModeRepositoryStore.resetForTesting()
+    AnalysisIntegrationRepositoryStore.resetForTesting()
   }
 
   @Test
   fun `getInstanceは同一DataStoreに対して常に同じrepositoryインスタンスを返す`() {
     val dataStore = BlockingWriteDataStore()
 
-    val first = RecordModeRepositoryStore.getInstance(dataStore)
-    val second = RecordModeRepositoryStore.getInstance(dataStore)
+    val first = AnalysisIntegrationRepositoryStore.getInstance(dataStore)
+    val second = AnalysisIntegrationRepositoryStore.getInstance(dataStore)
 
     assertSame(first, second)
   }
 
   @Test
-  fun `Settings側とMain側が別々にgetInstanceしてもwrite未完了のLOCAL_ONLYがMain側の記録へ反映される`() =
+  fun `Settings側とMain側が別々にgetInstanceしてもwrite未完了のNONEがMain側の記録へ反映される`() =
     runTest {
       val dataStore = BlockingWriteDataStore()
-      val settingsSideRepository = RecordModeRepositoryStore.getInstance(dataStore)
-      val mainSideRepository = RecordModeRepositoryStore.getInstance(dataStore)
+      val settingsSideRepository = AnalysisIntegrationRepositoryStore.getInstance(dataStore)
+      val mainSideRepository = AnalysisIntegrationRepositoryStore.getInstance(dataStore)
 
       val journalRepository = FakeJournalEntryRepository()
       var postCalled = false
-      val recorder = ModeRoutingJournalRecorder(
-        recordModeRepository = mainSideRepository,
+      val recorder = IntegrationRoutingJournalRecorder(
+        analysisIntegrationRepository = mainSideRepository,
         localOnlyRecorder = LocalOnlyJournalRecorder(journalRepository),
         localWebhookRecorder = LocalWebhookJournalRecorder(
           journalRepository,
@@ -60,7 +60,7 @@ class RecordModeRepositoryStoreTest {
         ),
       )
 
-      backgroundScope.launch { settingsSideRepository.setRecordMode(RecordMode.LOCAL_ONLY) }
+      backgroundScope.launch { settingsSideRepository.setAnalysisIntegration(AnalysisIntegration.NONE) }
       runCurrent()
       val result = recorder.record("today was good", mood = null, source = JournalSource.APP)
 

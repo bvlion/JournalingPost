@@ -133,24 +133,24 @@ class MainActivity : ComponentActivity() {
               }
 
               Screen.SETTINGS -> {
-                val recordMode by settingsViewModel.recordMode.collectAsState()
-                val saveFailed by settingsViewModel.saveFailed.collectAsState()
-                val webhookSettingsState by settingsViewModel.webhookSettingsState.collectAsState()
-                val isWebhookFormVisible by settingsViewModel.isWebhookFormVisible.collectAsState()
+                val analysisIntegration by settingsViewModel.analysisIntegration.collectAsState()
+                val integrationSaveFailed by settingsViewModel.integrationSaveFailed.collectAsState()
+                val webhookOverview by settingsViewModel.webhookOverview.collectAsState()
+                val isWebhookEditing by settingsViewModel.isWebhookEditing.collectAsState()
                 val webhookFormState by settingsViewModel.webhookFormState.collectAsState()
                 val webhookValidationErrors by settingsViewModel.webhookValidationErrors.collectAsState()
-                val webhookSaveFailed by settingsViewModel.webhookSaveFailed.collectAsState()
+                val webhookOperationFailure by settingsViewModel.webhookOperationFailure.collectAsState()
                 SettingsScreen(
-                  recordMode = recordMode,
-                  saveFailed = saveFailed,
-                  onRecordModeChange = settingsViewModel::setRecordMode,
-                  webhookSettingsState = webhookSettingsState,
-                  isWebhookFormVisible = isWebhookFormVisible,
+                  analysisIntegration = analysisIntegration,
+                  integrationSaveFailed = integrationSaveFailed,
+                  onAnalysisIntegrationChange = settingsViewModel::setAnalysisIntegration,
+                  webhookOverview = webhookOverview,
+                  isWebhookEditing = isWebhookEditing,
                   webhookFormState = webhookFormState,
                   webhookValidationErrors = webhookValidationErrors,
-                  webhookSaveFailed = webhookSaveFailed,
-                  onWebhookReveal = settingsViewModel::revealWebhookForm,
-                  onWebhookHide = settingsViewModel::hideWebhookForm,
+                  webhookOperationFailure = webhookOperationFailure,
+                  onWebhookEditStart = settingsViewModel::startWebhookEdit,
+                  onWebhookEditCancel = settingsViewModel::cancelWebhookEdit,
                   onWebhookUrlChange = settingsViewModel::updateWebhookUrl,
                   onWebhookHeaderAdd = settingsViewModel::addWebhookHeader,
                   onWebhookHeaderRemove = settingsViewModel::removeWebhookHeader,

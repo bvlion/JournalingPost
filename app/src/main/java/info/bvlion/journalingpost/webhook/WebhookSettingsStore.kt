@@ -7,7 +7,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 
 /**
- * #5のRecordMode設定用DataStoreとはファイルを分離する(責務が異なるうえ、Webhook設定ファイルは
+ * #5のAnalysisIntegration設定用DataStoreとはファイルを分離する(責務が異なるうえ、Webhook設定ファイルは
  * backupから除外する必要があり、他設定と混在させられない)。FILE_NAMEを変更する場合は
  * AndroidManifestのdataExtractionRules側のファイルパスも合わせて更新すること。
  */

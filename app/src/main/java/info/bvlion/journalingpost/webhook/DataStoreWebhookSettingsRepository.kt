@@ -25,7 +25,7 @@ internal class DataStoreWebhookSettingsRepository(
   private val cipher: WebhookSettingsCipher,
 ) : WebhookSettingsRepository {
   /**
-   * write完了前でも編集直後の設定をrepositoryへ即時反映するための値。#5のDataStoreRecordModeRepositoryと
+   * write完了前でも編集直後の設定をrepositoryへ即時反映するための値。#5のDataStoreAnalysisIntegrationRepositoryと
    * 同様、generationは複数回のsave/clearが重なった際、古い呼び出しのwrite完了/失敗/キャンセルが
    * より新しい変更を誤って上書き・巻き戻ししないよう、pendingSettingsをクリアする際に確認する世代番号。
    */
