@@ -2,6 +2,7 @@ package info.bvlion.journalingpost
 
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
+import info.bvlion.journalingpost.webhook.LegacyWebhookConfig
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettings
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
@@ -424,6 +425,34 @@ class SettingsViewModelTest {
     testDispatcher.scheduler.advanceUntilIdle()
 
     assertEquals("https://typing.example.com/webhook", viewModel.webhookFormState.value.url)
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `Webhook設定画面を開いたときに未完了のlegacy migrationを待ってから既存設定を読み込む`() = runTest(testDispatcher) {
+    val legacyConfig = LegacyWebhookConfig(
+      postUrl = "https://legacy.example.com/webhook",
+      teamId = "T000",
+      token = "token",
+      channel = "general",
+      user = "bvlion",
+    )
+    val webhookRepository = FakeWebhookSettingsRepository(
+      initial = WebhookSettingsState.NotConfigured,
+      legacyMigrationCompleted = false,
+    )
+    val viewModel = SettingsViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      webhookRepository,
+      legacyConfigProvider = { legacyConfig },
+    )
+    val collectJob = launchWebhookScreenCollection(viewModel)
+
+    viewModel.onWebhookSettingsScreenOpened()
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(WebhookSettingsLoadState.READY, viewModel.webhookSettingsLoadState.value)
+    assertEquals("https://legacy.example.com/webhook", viewModel.webhookFormState.value.url)
     collectJob.cancel()
   }
 
@@ -885,6 +914,7 @@ class SettingsViewModelTest {
   private class FakeWebhookSettingsRepository(
     initial: WebhookSettingsState = WebhookSettingsState.NotConfigured,
     private var failNextSaves: Int = 0,
+    private var legacyMigrationCompleted: Boolean = true,
   ) : WebhookSettingsRepository {
     private val state = MutableStateFlow(initial)
     override val settings: Flow<WebhookSettingsState> = state
@@ -909,9 +939,11 @@ class SettingsViewModelTest {
       state.value = WebhookSettingsState.NotConfigured
     }
 
-    override suspend fun isLegacyMigrationCompleted(): Boolean = true
+    override suspend fun isLegacyMigrationCompleted(): Boolean = legacyMigrationCompleted
 
-    override suspend fun markLegacyMigrationCompleted() = Unit
+    override suspend fun markLegacyMigrationCompleted() {
+      legacyMigrationCompleted = true
+    }
   }
 
   /**

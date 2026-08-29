@@ -4,8 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
+import info.bvlion.journalingpost.webhook.LegacyWebhookConfig
+import info.bvlion.journalingpost.webhook.LegacyWebhookConfigProvider
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettings
+import info.bvlion.journalingpost.webhook.WebhookSettingsMigrationCoordinator
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
 import info.bvlion.journalingpost.webhook.WebhookSettingsState
 import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
@@ -19,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -26,6 +30,7 @@ import kotlinx.coroutines.launch
 class SettingsViewModel(
   private val analysisIntegrationRepository: AnalysisIntegrationRepository,
   private val webhookSettingsRepository: WebhookSettingsRepository,
+  private val legacyConfigProvider: () -> LegacyWebhookConfig? = LegacyWebhookConfigProvider::get,
 ) : ViewModel() {
   /**
    * 実際に有効になっている解析・連携。読み込みが確定するまではnull(JournalHistoryUiState.Loadingと
@@ -52,7 +57,11 @@ class SettingsViewModel(
   private val _integrationSaveFailed = MutableStateFlow(false)
   val integrationSaveFailed: StateFlow<Boolean> = _integrationSaveFailed.asStateFlow()
 
+  // 未完了のlegacy migration中はNotConfiguredを暫定値として返し得る(WebhookAwareAnalysisIntegrationRepository
+  // と同じ理由でここでも待つ)。待たずにNotConfiguredをauthoritativeとして扱うと、Webhook設定画面が
+  // migration完了前の空フォームで確定してしまい、後から届くConfiguredへの更新を拾えなくなる。
   private val webhookSettingsState: StateFlow<WebhookSettingsState> = webhookSettingsRepository.settings
+    .onStart { WebhookSettingsMigrationCoordinator.ensureMigrated(webhookSettingsRepository, legacyConfigProvider) }
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WebhookSettingsState.Loading)
 
   /**
