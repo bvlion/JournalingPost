@@ -11,6 +11,9 @@ import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.LocalOnlyJournalRecorder
 import info.bvlion.journalingpost.journal.LocalWebhookJournalRecorder
 import info.bvlion.journalingpost.poster.JournalPoster
+import info.bvlion.journalingpost.webhook.WebhookSettings
+import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
+import info.bvlion.journalingpost.webhook.WebhookSettingsState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -36,8 +39,8 @@ class AnalysisIntegrationRepositoryStoreTest {
   fun `getInstanceは同一DataStoreに対して常に同じrepositoryインスタンスを返す`() {
     val dataStore = BlockingWriteDataStore()
 
-    val first = AnalysisIntegrationRepositoryStore.getInstance(dataStore)
-    val second = AnalysisIntegrationRepositoryStore.getInstance(dataStore)
+    val first = AnalysisIntegrationRepositoryStore.getInstance(dataStore, ConfiguredWebhookSettingsRepository())
+    val second = AnalysisIntegrationRepositoryStore.getInstance(dataStore, ConfiguredWebhookSettingsRepository())
 
     assertSame(first, second)
   }
@@ -46,8 +49,10 @@ class AnalysisIntegrationRepositoryStoreTest {
   fun `Settings側とMain側が別々にgetInstanceしてもwrite未完了のNONEがMain側の記録へ反映される`() =
     runTest {
       val dataStore = BlockingWriteDataStore()
-      val settingsSideRepository = AnalysisIntegrationRepositoryStore.getInstance(dataStore)
-      val mainSideRepository = AnalysisIntegrationRepositoryStore.getInstance(dataStore)
+      // Custom Webhookが有効になり得るよう、Webhook設定は保存済みの前提にする。
+      val webhookSettingsRepository = ConfiguredWebhookSettingsRepository()
+      val settingsSideRepository = AnalysisIntegrationRepositoryStore.getInstance(dataStore, webhookSettingsRepository)
+      val mainSideRepository = AnalysisIntegrationRepositoryStore.getInstance(dataStore, webhookSettingsRepository)
 
       val journalRepository = FakeJournalEntryRepository()
       var postCalled = false
@@ -67,6 +72,27 @@ class AnalysisIntegrationRepositoryStoreTest {
       assertEquals(DeliveryStatus.NOT_REQUIRED, result)
       assertFalse(postCalled)
     }
+
+  private class ConfiguredWebhookSettingsRepository : WebhookSettingsRepository {
+    private val settingsState = MutableStateFlow<WebhookSettingsState>(
+      WebhookSettingsState.Configured(
+        WebhookSettings(
+          url = "https://example.com/webhook",
+          headers = emptyList(),
+          bodyTemplate = """{"text": "{{message}}"}""",
+        ),
+      ),
+    )
+    override val settings: Flow<WebhookSettingsState> = settingsState
+
+    override suspend fun save(settings: WebhookSettings) = error("not used in this test")
+
+    override suspend fun clear() = error("not used in this test")
+
+    override suspend fun isLegacyMigrationCompleted(): Boolean = true
+
+    override suspend fun markLegacyMigrationCompleted() = Unit
+  }
 
   private class BlockingWriteDataStore : DataStore<Preferences> {
     override val data: Flow<Preferences> = MutableStateFlow(emptyPreferences())

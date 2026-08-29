@@ -32,7 +32,8 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private val historyDateFormatter = DateTimeFormatter.ofPattern("M/d", Locale.JAPAN)
+// 履歴が蓄積すると何年の記録か分からなくなるため、日付見出しには年も含める。
+private val historyDateFormatter = DateTimeFormatter.ofPattern("yyyy/M/d", Locale.JAPAN)
 private val historyTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.JAPAN)
 
 @Composable

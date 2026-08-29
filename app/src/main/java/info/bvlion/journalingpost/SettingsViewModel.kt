@@ -13,6 +13,7 @@ import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
 import info.bvlion.journalingpost.webhook.toOverview
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -28,7 +29,23 @@ class SettingsViewModel(
   private val analysisIntegrationRepository: AnalysisIntegrationRepository,
   private val webhookSettingsRepository: WebhookSettingsRepository,
 ) : ViewModel() {
+  /** 実際に有効になっている解析・連携。CUSTOM_WEBHOOKなら保存済みWebhook設定が存在する。 */
   val analysisIntegration: StateFlow<AnalysisIntegration> = analysisIntegrationRepository.analysisIntegration
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AnalysisIntegration.NONE)
+
+  // Webhookが未設定のままCustom Webhookを選んだ状態。まだ有効化はせず、設定フォームへ進むための
+  // 画面上の選択としてのみ扱う(設定を保存しないまま画面を離れれば「使用しない」のまま)。
+  private val _pendingCustomWebhookSelection = MutableStateFlow(false)
+
+  private val selectedIntegrationFlow: Flow<AnalysisIntegration> = combine(
+    analysisIntegrationRepository.analysisIntegration,
+    _pendingCustomWebhookSelection,
+  ) { integration, pendingCustomWebhook ->
+    if (pendingCustomWebhook) AnalysisIntegration.CUSTOM_WEBHOOK else integration
+  }
+
+  /** 画面のradioが示す選択。未確定のCustom Webhook選択を含むため、[analysisIntegration]とは一致しないことがある。 */
+  val selectedAnalysisIntegration: StateFlow<AnalysisIntegration> = selectedIntegrationFlow
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AnalysisIntegration.NONE)
 
   private val _integrationSaveFailed = MutableStateFlow(false)
@@ -37,20 +54,39 @@ class SettingsViewModel(
   // 呼び出し完了時に、より新しい選択が既に行われていないかを確認するための世代番号。
   private val integrationRequestGeneration = AtomicInteger(0)
 
-  /** 選択はこの時点で永続化する(Custom Webhook設定のような明示保存は挟まない)。 */
+  /**
+   * 使用しないを選んだ場合はその時点で永続化する。Custom Webhookは、保存済み設定がある場合だけ
+   * この時点で有効化し、未設定なら有効化せずに設定フォームへ進む(有効なのに送信先が無い状態を
+   * 通常操作で作らないため)。未設定から選んだ場合は、設定の保存に成功した時点で有効になる。
+   */
   fun setAnalysisIntegration(integration: AnalysisIntegration) {
     val generation = integrationRequestGeneration.incrementAndGet()
     _integrationSaveFailed.value = false
-    // Custom Webhookを使わない選択にした時点で編集を終了し、画面に出ていない編集状態を残さない。
-    if (integration != AnalysisIntegration.CUSTOM_WEBHOOK) cancelWebhookEdit()
+    if (integration != AnalysisIntegration.CUSTOM_WEBHOOK) {
+      _pendingCustomWebhookSelection.value = false
+      // Custom Webhookを使わない選択にした時点で編集を終了し、画面に出ていない編集状態を残さない。
+      cancelWebhookEdit()
+      viewModelScope.launch { persistAnalysisIntegration(integration, generation) }
+      return
+    }
+    _pendingCustomWebhookSelection.value = true
     viewModelScope.launch {
-      try {
-        analysisIntegrationRepository.setAnalysisIntegration(integration)
-      } catch (e: CancellationException) {
-        throw e
-      } catch (e: Exception) {
-        if (generation == integrationRequestGeneration.get()) _integrationSaveFailed.value = true
-      }
+      val configured = webhookSettingsRepository.settings.first() is WebhookSettingsState.Configured
+      if (generation != integrationRequestGeneration.get()) return@launch
+      if (!configured) return@launch
+      persistAnalysisIntegration(integration, generation)
+      // 永続化できたなら選択はそちらで表される。失敗した場合も、暫定の選択を残さず永続値へ戻す。
+      if (generation == integrationRequestGeneration.get()) _pendingCustomWebhookSelection.value = false
+    }
+  }
+
+  private suspend fun persistAnalysisIntegration(integration: AnalysisIntegration, generation: Int) {
+    try {
+      analysisIntegrationRepository.setAnalysisIntegration(integration)
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      if (generation == integrationRequestGeneration.get()) _integrationSaveFailed.value = true
     }
   }
 
@@ -91,10 +127,10 @@ class SettingsViewModel(
   val isWebhookEditing: StateFlow<Boolean> = combine(
     webhookSettingsState,
     _webhookFormOrigin,
-    analysisIntegrationRepository.analysisIntegration,
-  ) { state, origin, integration ->
+    selectedIntegrationFlow,
+  ) { state, origin, selected ->
     when {
-      integration != AnalysisIntegration.CUSTOM_WEBHOOK -> false
+      selected != AnalysisIntegration.CUSTOM_WEBHOOK -> false
       state is WebhookSettingsState.Configured -> origin == WebhookFormOrigin.EDITING
       state is WebhookSettingsState.NotConfigured -> true
       else -> false
@@ -116,6 +152,8 @@ class SettingsViewModel(
    */
   fun onSettingsOpened() {
     _integrationSaveFailed.value = false
+    // 設定を保存しないまま前回離脱していた場合、Custom Webhookの選択は確定していないため引き継がない。
+    _pendingCustomWebhookSelection.value = false
     cancelWebhookEdit()
   }
 
@@ -200,20 +238,29 @@ class SettingsViewModel(
     _webhookValidationErrors.value = emptyList()
     _webhookOperationFailure.value = null
     viewModelScope.launch {
-      try {
+      val saved = try {
         webhookSettingsRepository.save(WebhookSettings(form.url, validation.normalizedHeaders, form.bodyTemplate))
-        if (generation == webhookRequestGeneration.get()) {
-          _webhookFormOrigin.value = WebhookFormOrigin.CLOSED
-          _webhookFormState.value = WebhookFormState()
-        } else {
-          // 保存中にユーザーが編集を続けていた場合、永続状態は今保存した自分の設定なので、
-          // 続きの編集はその設定に対するEDITINGとして扱う(フォームを閉じて入力を捨てない)。
-          _webhookFormOrigin.compareAndSet(WebhookFormOrigin.NEW, WebhookFormOrigin.EDITING)
-        }
+        true
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {
         if (generation == webhookRequestGeneration.get()) _webhookOperationFailure.value = WebhookOperationFailure.SAVE
+        false
+      }
+      if (!saved) return@launch
+
+      // 送信先が保存できた時点で初めてCustom Webhookを有効にする。順序を逆にすると、保存に失敗した
+      // 場合に「Custom Webhookが有効なのに設定がない」状態を作ってしまう。
+      persistAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK, integrationRequestGeneration.incrementAndGet())
+      _pendingCustomWebhookSelection.value = false
+
+      if (generation == webhookRequestGeneration.get()) {
+        _webhookFormOrigin.value = WebhookFormOrigin.CLOSED
+        _webhookFormState.value = WebhookFormState()
+      } else {
+        // 保存中にユーザーが編集を続けていた場合、永続状態は今保存した自分の設定なので、
+        // 続きの編集はその設定に対するEDITINGとして扱う(フォームを閉じて入力を捨てない)。
+        _webhookFormOrigin.compareAndSet(WebhookFormOrigin.NEW, WebhookFormOrigin.EDITING)
       }
     }
   }
@@ -230,6 +277,7 @@ class SettingsViewModel(
     _webhookValidationErrors.value = emptyList()
     _webhookOperationFailure.value = null
     _integrationSaveFailed.value = false
+    _pendingCustomWebhookSelection.value = false
     viewModelScope.launch {
       try {
         analysisIntegrationRepository.setAnalysisIntegration(AnalysisIntegration.NONE)

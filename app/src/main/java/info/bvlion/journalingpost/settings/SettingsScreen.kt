@@ -43,7 +43,7 @@ import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
 
 @Composable
 fun SettingsScreen(
-  analysisIntegration: AnalysisIntegration,
+  selectedIntegration: AnalysisIntegration,
   integrationSaveFailed: Boolean,
   onAnalysisIntegrationChange: (AnalysisIntegration) -> Unit,
   webhookOverview: WebhookSettingsOverview,
@@ -63,7 +63,7 @@ fun SettingsScreen(
   onWebhookDelete: () -> Unit,
   onBack: () -> Unit,
 ) {
-  val usesCustomWebhook = analysisIntegration == AnalysisIntegration.CUSTOM_WEBHOOK
+  val usesCustomWebhook = selectedIntegration == AnalysisIntegration.CUSTOM_WEBHOOK
   var showWebhookDeleteConfirm by rememberSaveable { mutableStateOf(false) }
 
   Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
@@ -89,7 +89,8 @@ fun SettingsScreen(
         style = MaterialTheme.typography.titleSmall,
       )
       Text(
-        text = "保存した記録を外部でどう扱うかを選びます。選んだ内容はすぐに反映されます。",
+        text = "保存した記録を外部でどう扱うかを選びます。選んだ内容はすぐに反映されます。" +
+          "（Custom Webhookは送信先を保存した時点で有効になります）",
         style = MaterialTheme.typography.bodySmall,
         modifier = Modifier.padding(top = 4.dp),
       )
@@ -107,12 +108,12 @@ fun SettingsScreen(
         AnalysisIntegrationOption(
           title = "使用しない",
           description = "記録は端末内にとどまります。外部へは送信しません。",
-          selected = analysisIntegration == AnalysisIntegration.NONE,
+          selected = selectedIntegration == AnalysisIntegration.NONE,
           onClick = { onAnalysisIntegrationChange(AnalysisIntegration.NONE) },
         )
         AnalysisIntegrationOption(
           title = "Custom Webhook",
-          description = "記録したときに、設定したWebhookへ送信します。",
+          description = "記録したときに、設定したWebhookへ送信します。送信先の設定が必要です。",
           selected = usesCustomWebhook,
           onClick = { onAnalysisIntegrationChange(AnalysisIntegration.CUSTOM_WEBHOOK) },
         )
@@ -383,7 +384,12 @@ private fun WebhookEditForm(
     )
 
     Text(
-      text = "編集した内容は「保存する」を押すまで反映されません。",
+      text = if (canCancel) {
+        "編集した内容は「保存する」を押すまで反映されません。"
+      } else {
+        // まだ有効化していない選択なので、保存しなければ「使用しない」のままであることを明示する。
+        "「保存する」を押すとCustom Webhookが有効になります。保存せずに戻ると「使用しない」のままです。"
+      },
       style = MaterialTheme.typography.bodySmall,
       modifier = Modifier.padding(top = 12.dp),
     )
@@ -476,7 +482,7 @@ private fun AnalysisIntegrationOption(
 fun SettingsScreenPreview() {
   JournalingPostTheme {
     SettingsScreen(
-      analysisIntegration = AnalysisIntegration.CUSTOM_WEBHOOK,
+      selectedIntegration = AnalysisIntegration.CUSTOM_WEBHOOK,
       integrationSaveFailed = false,
       onAnalysisIntegrationChange = {},
       webhookOverview = WebhookSettingsOverview.Configured(

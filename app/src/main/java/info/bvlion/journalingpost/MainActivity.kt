@@ -138,7 +138,7 @@ class MainActivity : ComponentActivity() {
               }
 
               Screen.SETTINGS -> {
-                val analysisIntegration by settingsViewModel.analysisIntegration.collectAsState()
+                val selectedIntegration by settingsViewModel.selectedAnalysisIntegration.collectAsState()
                 val integrationSaveFailed by settingsViewModel.integrationSaveFailed.collectAsState()
                 val webhookOverview by settingsViewModel.webhookOverview.collectAsState()
                 val isWebhookEditing by settingsViewModel.isWebhookEditing.collectAsState()
@@ -146,7 +146,7 @@ class MainActivity : ComponentActivity() {
                 val webhookValidationErrors by settingsViewModel.webhookValidationErrors.collectAsState()
                 val webhookOperationFailure by settingsViewModel.webhookOperationFailure.collectAsState()
                 SettingsScreen(
-                  analysisIntegration = analysisIntegration,
+                  selectedIntegration = selectedIntegration,
                   integrationSaveFailed = integrationSaveFailed,
                   onAnalysisIntegrationChange = settingsViewModel::setAnalysisIntegration,
                   webhookOverview = webhookOverview,
