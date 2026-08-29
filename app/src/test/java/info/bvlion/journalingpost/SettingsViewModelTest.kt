@@ -42,6 +42,26 @@ class SettingsViewModelTest {
     Dispatchers.resetMain()
   }
 
+  // ---- 解析・連携の初期表示 ----
+
+  @Test
+  fun `解析・連携は確定するまでnullで確定済みの値として見せない`() = runTest(testDispatcher) {
+    val repository = GatedAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK)
+    val viewModel = SettingsViewModel(repository, FakeWebhookSettingsRepository())
+    val collectJob = launchCollection(viewModel)
+    testDispatcher.scheduler.runCurrent()
+
+    assertNull(viewModel.analysisIntegration.value)
+    assertNull(viewModel.selectedAnalysisIntegration.value)
+
+    repository.release()
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, viewModel.analysisIntegration.value)
+    assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, viewModel.selectedAnalysisIntegration.value)
+    collectJob.cancel()
+  }
+
   // ---- 解析・連携の選択(使用しない) ----
 
   @Test
@@ -570,7 +590,8 @@ class SettingsViewModelTest {
   fun `validation失敗時にはrepositoryへ保存されず解析・連携も変わらない`() = runTest(testDispatcher) {
     val webhookRepository = FakeWebhookSettingsRepository(initial = WebhookSettingsState.NotConfigured)
     val viewModel = SettingsViewModel(FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE), webhookRepository)
-    val collectJob = launchWebhookScreenCollection(viewModel)
+    val collectJob = launchCollection(viewModel)
+    val screenCollectJob = launchWebhookScreenCollection(viewModel)
     viewModel.onWebhookSettingsScreenOpened()
     testDispatcher.scheduler.advanceUntilIdle()
 
@@ -582,6 +603,7 @@ class SettingsViewModelTest {
     assertEquals(0, webhookRepository.saveCallCount)
     assertEquals(listOf(WebhookSettingsValidator.ValidationError.INVALID_URL), viewModel.webhookValidationErrors.value)
     assertEquals(AnalysisIntegration.NONE, viewModel.analysisIntegration.value)
+    screenCollectJob.cancel()
     collectJob.cancel()
   }
 
@@ -843,6 +865,21 @@ class SettingsViewModelTest {
       }
       state.value = integration
     }
+  }
+
+  /** analysisIntegrationの最初の発行タイミングをテストから制御するFake。 */
+  private class GatedAnalysisIntegrationRepository(private val resolveTo: AnalysisIntegration) : AnalysisIntegrationRepository {
+    private val gate = CompletableDeferred<Unit>()
+    override val analysisIntegration: Flow<AnalysisIntegration> = flow {
+      gate.await()
+      emit(resolveTo)
+    }
+
+    fun release() {
+      gate.complete(Unit)
+    }
+
+    override suspend fun setAnalysisIntegration(integration: AnalysisIntegration) = error("not used in this test")
   }
 
   private class FakeWebhookSettingsRepository(

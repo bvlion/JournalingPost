@@ -27,23 +27,27 @@ class SettingsViewModel(
   private val analysisIntegrationRepository: AnalysisIntegrationRepository,
   private val webhookSettingsRepository: WebhookSettingsRepository,
 ) : ViewModel() {
-  /** 実際に有効になっている解析・連携。CUSTOM_WEBHOOKなら保存済みWebhook設定が存在する。 */
-  val analysisIntegration: StateFlow<AnalysisIntegration> = analysisIntegrationRepository.analysisIntegration
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AnalysisIntegration.NONE)
+  /**
+   * 実際に有効になっている解析・連携。読み込みが確定するまではnull(JournalHistoryUiState.Loadingと
+   * 同様、未確定の状態を確定済みの値として表示しないための区別)。CUSTOM_WEBHOOKなら保存済みWebhook
+   * 設定が存在する。
+   */
+  val analysisIntegration: StateFlow<AnalysisIntegration?> = analysisIntegrationRepository.analysisIntegration
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
   // 設定を保存しないまま画面を離れれば「使用しない」のまま(有効化はsaveWebhookSettings成功時のみ)。
   private val _pendingCustomWebhookSelection = MutableStateFlow(false)
 
-  private val selectedIntegrationFlow: Flow<AnalysisIntegration> = combine(
-    analysisIntegrationRepository.analysisIntegration,
+  private val selectedIntegrationFlow: Flow<AnalysisIntegration?> = combine(
+    analysisIntegration,
     _pendingCustomWebhookSelection,
   ) { integration, pendingCustomWebhook ->
     if (pendingCustomWebhook) AnalysisIntegration.CUSTOM_WEBHOOK else integration
   }
 
   /** 親Settingsのradioが示す選択。未確定のCustom Webhook選択を含むため、[analysisIntegration]とは一致しないことがある。 */
-  val selectedAnalysisIntegration: StateFlow<AnalysisIntegration> = selectedIntegrationFlow
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AnalysisIntegration.NONE)
+  val selectedAnalysisIntegration: StateFlow<AnalysisIntegration?> = selectedIntegrationFlow
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
   private val _integrationSaveFailed = MutableStateFlow(false)
   val integrationSaveFailed: StateFlow<Boolean> = _integrationSaveFailed.asStateFlow()

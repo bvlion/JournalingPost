@@ -28,7 +28,7 @@ import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
  */
 @Composable
 fun SettingsScreen(
-  selectedIntegration: AnalysisIntegration,
+  selectedIntegration: AnalysisIntegration?,
   integrationSaveFailed: Boolean,
   onAnalysisIntegrationChange: (AnalysisIntegration) -> Unit,
   webhookDestinationLabel: String?,
@@ -72,7 +72,6 @@ fun SettingsScreen(
       ListItem(
         headlineContent = { Text("Webhook設定") },
         supportingContent = { Text(webhookDestinationLabel) },
-        // headlineの文言だけではタップして詳細へ進める項目だと伝わりにくいため、chevronを添える。
         trailingContent = {
           Icon(painter = painterResource(R.drawable.ic_chevron_right), contentDescription = null)
         },

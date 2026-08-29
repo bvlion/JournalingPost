@@ -131,7 +131,6 @@ class WebhookAwareAnalysisIntegrationRepositoryTest {
       legacyConfigProvider = { legacyConfig },
     )
 
-    // Widget(MoodEntryActivity)経由等、MainActivity.onCreate()のmigration起動を通らない入口を想定する。
     val result = repository.analysisIntegration.first()
 
     assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, result)
