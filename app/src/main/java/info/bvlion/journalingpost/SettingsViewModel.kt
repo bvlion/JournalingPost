@@ -72,27 +72,30 @@ class SettingsViewModel(
   private val _webhookFormState = MutableStateFlow(WebhookFormState())
   val webhookFormState: StateFlow<WebhookFormState> = _webhookFormState.asStateFlow()
 
-  // ユーザーが保存済み設定の編集を選んだ状態。保存済みsecret(Header value/Body template等)は、
-  // これがtrueになるまでフォームへ展開しない。
-  private val _webhookEditRequested = MutableStateFlow(false)
+  // 保存済みsecret(Header value/Body template等)は、EDITINGになるまでフォームへ展開しない。
+  private val _webhookFormOrigin = MutableStateFlow(WebhookFormOrigin.CLOSED)
 
   /**
    * Custom Webhookを選んでいないときは編集UI自体を出さない。選んでいてまだ未設定なら、
-   * 新規入力のためのフォームを最初から表示する。保存済み(Configured)の場合は、ユーザーが明示的に
-   * 編集を選ぶまでフォームを表示しない(通常状態は要約の確認だけ)。Loading/Unavailableの間は
-   * 要求の有無に関わらずフォームを出さない。
+   * 新規入力のためのフォームを最初から表示する。保存済み(Configured)の場合は、フォームの内容が
+   * その保存済み設定に対応している(EDITING)ときだけ表示する。Loading/Unavailableの間は
+   * originに関わらずフォームを出さない。
+   *
+   * NEWをConfiguredの表示条件に含めないのは、未設定のつもりで入力している最中にlegacy migration等で
+   * 保存済み設定が現れた場合に、部分的な入力内容を「その設定の編集フォーム」として扱わないため。
+   * そのまま保存すると、見えていない既存のURL/Header/Body template/secretを上書きしてしまう。
    *
    * 解析・連携の選択はstateIn済みのStateFlowではなくrepositoryのflowを使う。初期値を持つStateFlowだと、
    * 実際に保存された選択が届く前の既定値で一瞬フォームを表示してしまう。
    */
   val isWebhookEditing: StateFlow<Boolean> = combine(
     webhookSettingsState,
-    _webhookEditRequested,
+    _webhookFormOrigin,
     analysisIntegrationRepository.analysisIntegration,
-  ) { state, editRequested, integration ->
+  ) { state, origin, integration ->
     when {
       integration != AnalysisIntegration.CUSTOM_WEBHOOK -> false
-      state is WebhookSettingsState.Configured -> editRequested
+      state is WebhookSettingsState.Configured -> origin == WebhookFormOrigin.EDITING
       state is WebhookSettingsState.NotConfigured -> true
       else -> false
     }
@@ -124,7 +127,7 @@ class SettingsViewModel(
     webhookRequestGeneration.incrementAndGet()
     _webhookValidationErrors.value = emptyList()
     _webhookOperationFailure.value = null
-    _webhookEditRequested.value = false
+    _webhookFormOrigin.value = WebhookFormOrigin.CLOSED
     _webhookFormState.value = WebhookFormState()
   }
 
@@ -142,7 +145,7 @@ class SettingsViewModel(
       if (generation != webhookRequestGeneration.get()) return@launch
       if (current is WebhookSettingsState.Configured) {
         _webhookFormState.value = current.settings.toFormState()
-        _webhookEditRequested.value = true
+        _webhookFormOrigin.value = WebhookFormOrigin.EDITING
       }
     }
   }
@@ -177,13 +180,12 @@ class SettingsViewModel(
 
   /**
    * 編集でも世代を進めることで、保存開始後・DataStore write完了前に行われた編集内容を、古いsave/deleteの
-   * 完了処理がクリアしてしまわないようにする。あわせて編集要求を立てるのは、保存完了やlegacy migrationで
-   * 永続状態がConfiguredへ変わった際に、未保存の編集内容が入ったフォームが閉じてしまうのを防ぐため
-   * (編集できている時点でフォームは表示済みのため、これで新たにsecretが露出することはない)。
+   * 完了処理がクリアしてしまわないようにする。originはCLOSEDからのみNEWへ進め、EDITINGは維持する
+   * (保存済み設定を開いて編集している状態を、未設定からの新規入力へ降格させない)。
    */
   private fun updateWebhookForm(transform: (WebhookFormState) -> WebhookFormState) {
     webhookRequestGeneration.incrementAndGet()
-    _webhookEditRequested.value = true
+    _webhookFormOrigin.compareAndSet(WebhookFormOrigin.CLOSED, WebhookFormOrigin.NEW)
     _webhookFormState.update(transform)
   }
 
@@ -201,8 +203,12 @@ class SettingsViewModel(
       try {
         webhookSettingsRepository.save(WebhookSettings(form.url, validation.normalizedHeaders, form.bodyTemplate))
         if (generation == webhookRequestGeneration.get()) {
-          _webhookEditRequested.value = false
+          _webhookFormOrigin.value = WebhookFormOrigin.CLOSED
           _webhookFormState.value = WebhookFormState()
+        } else {
+          // 保存中にユーザーが編集を続けていた場合、永続状態は今保存した自分の設定なので、
+          // 続きの編集はその設定に対するEDITINGとして扱う(フォームを閉じて入力を捨てない)。
+          _webhookFormOrigin.compareAndSet(WebhookFormOrigin.NEW, WebhookFormOrigin.EDITING)
         }
       } catch (e: CancellationException) {
         throw e
@@ -229,7 +235,7 @@ class SettingsViewModel(
         analysisIntegrationRepository.setAnalysisIntegration(AnalysisIntegration.NONE)
         webhookSettingsRepository.clear()
         if (generation == webhookRequestGeneration.get()) {
-          _webhookEditRequested.value = false
+          _webhookFormOrigin.value = WebhookFormOrigin.CLOSED
           _webhookFormState.value = WebhookFormState()
         }
       } catch (e: CancellationException) {
@@ -239,6 +245,17 @@ class SettingsViewModel(
       }
     }
   }
+}
+
+/**
+ * フォームの内容が何に対応しているか。CLOSEDは編集していない状態、NEWは未設定からの新規入力、
+ * EDITINGは保存済み設定に対応した編集。NEWとEDITINGを区別するのは、入力中に保存済み設定が
+ * 現れた場合(legacy migration等)に、部分入力を既存設定の編集として扱わないため。
+ */
+private enum class WebhookFormOrigin {
+  CLOSED,
+  NEW,
+  EDITING,
 }
 
 /** 失敗した操作によって表示すべき文言が変わるため、boolean 2つではなくどちらの操作かを持つ。 */

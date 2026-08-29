@@ -107,7 +107,12 @@ class MainActivity : ComponentActivity() {
                   ) {
                     Text("設定")
                   }
-                  TextButton(onClick = { screen = Screen.HISTORY }) {
+                  TextButton(
+                    onClick = {
+                      historyViewModel.onHistoryOpened()
+                      screen = Screen.HISTORY
+                    },
+                  ) {
                     Text("履歴を見る")
                   }
                 }

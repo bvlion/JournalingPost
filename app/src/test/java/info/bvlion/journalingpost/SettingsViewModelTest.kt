@@ -460,6 +460,28 @@ class SettingsViewModelTest {
   }
 
   @Test
+  fun `未設定として入力中に保存済み設定が現れてもその入力を既存設定の編集として扱わない`() = runTest(testDispatcher) {
+    val migrated = WebhookSettings(
+      url = "https://legacy.example.com/webhook",
+      headers = listOf(WebhookHeader("Authorization", "Bearer legacy")),
+      bodyTemplate = """{"text": "{{message}}"}""",
+    )
+    val webhookRepository = ControllableWebhookSettingsRepository(initial = WebhookSettingsState.NotConfigured)
+    val viewModel = createViewModel(AnalysisIntegration.CUSTOM_WEBHOOK, webhookRepository)
+    val collectJob = launchWebhookCollection(viewModel)
+    viewModel.updateWebhookUrl("https://typing.example.com")
+    testDispatcher.scheduler.advanceUntilIdle()
+    assertTrue(viewModel.isWebhookEditing.value)
+
+    // legacy migration等で、入力中に保存済み設定が現れた場合。
+    webhookRepository.emit(WebhookSettingsState.Configured(migrated))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertFalse(viewModel.isWebhookEditing.value)
+    collectJob.cancel()
+  }
+
+  @Test
   fun `validation error表示中はその場の編集では消えず修正しながら確認できる`() = runTest(testDispatcher) {
     val viewModel = createViewModel(AnalysisIntegration.CUSTOM_WEBHOOK, FakeWebhookSettingsRepository())
     val collectJob = launchWebhookCollection(viewModel)

@@ -167,6 +167,19 @@ class JournalHistoryViewModelTest {
   }
 
   @Test
+  fun `履歴画面へ入り直すと前回の削除失敗表示は残らない`() = runTest(testDispatcher) {
+    val deleter = FakeJournalEntryDeleter(failNextDeletes = 1)
+    val viewModel = JournalHistoryViewModel(FakeJournalEntryReader(), deleter, ZoneOffset.UTC)
+    viewModel.deleteEntry(1)
+    testDispatcher.scheduler.advanceUntilIdle()
+    assertTrue(viewModel.deleteFailed.value)
+
+    viewModel.onHistoryOpened()
+
+    assertFalse(viewModel.deleteFailed.value)
+  }
+
+  @Test
   fun `削除に失敗した後に成功するとdeleteFailedがfalseへ戻る`() = runTest(testDispatcher) {
     val deleter = FakeJournalEntryDeleter(failNextDeletes = 1)
     val viewModel = JournalHistoryViewModel(FakeJournalEntryReader(), deleter, ZoneOffset.UTC)
