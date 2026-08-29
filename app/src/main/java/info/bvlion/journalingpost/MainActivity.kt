@@ -43,10 +43,8 @@ import androidx.lifecycle.lifecycleScope
 import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.history.JournalHistoryScreen
 import info.bvlion.journalingpost.settings.SettingsScreen
+import info.bvlion.journalingpost.settings.WebhookSettingsScreen
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
-import info.bvlion.journalingpost.webhook.LegacyWebhookConfigProvider
-import info.bvlion.journalingpost.webhook.WebhookSettingsMigrationCoordinator
-import info.bvlion.journalingpost.webhook.WebhookSettingsRepositoryStore
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
 import kotlinx.coroutines.launch
 
@@ -65,16 +63,6 @@ class MainActivity : ComponentActivity() {
     // Widget pickerのgenerated preview(Android 15+)登録。通常UI/入力フローには影響しない。
     lifecycleScope.launch { registerMoodWidgetPreviewOnce(applicationContext) }
 
-    // debug buildの自分用Webhook設定を初回起動時のみCustom Webhookへ移行する。移行の完了自体は
-    // WebhookJournalPoster側でも保証されるため、ここはWidget等より先にMainActivityが開かれた場合の
-    // 早期実行(体感速度の改善)に過ぎない。両者は同じcoordinatorを通るため競合しても二重importしない。
-    lifecycleScope.launch {
-      WebhookSettingsMigrationCoordinator.ensureMigrated(
-        repository = WebhookSettingsRepositoryStore.getInstance(applicationContext),
-        legacyConfigProvider = LegacyWebhookConfigProvider::get,
-      )
-    }
-
     setContent {
       JournalingPostTheme {
         val snackbarHostState = remember { SnackbarHostState() }
@@ -82,8 +70,15 @@ class MainActivity : ComponentActivity() {
         var screen by rememberSaveable { mutableStateOf(Screen.INPUT) }
 
         // INPUT表示中はActivityの標準Back動作(終了)を保つため、他画面表示中のみ有効化する。
+        // WEBHOOK_SETTINGSはSETTINGSの下位画面のため、Backは1段階だけ戻す。
         BackHandler(enabled = screen != Screen.INPUT) {
-          screen = Screen.INPUT
+          when (screen) {
+            Screen.WEBHOOK_SETTINGS -> {
+              settingsViewModel.onWebhookSettingsScreenClosed()
+              screen = Screen.SETTINGS
+            }
+            else -> screen = Screen.INPUT
+          }
         }
 
         Scaffold(
@@ -97,10 +92,20 @@ class MainActivity : ComponentActivity() {
                   modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                   horizontalArrangement = Arrangement.End,
                 ) {
-                  TextButton(onClick = { screen = Screen.SETTINGS }) {
+                  TextButton(
+                    onClick = {
+                      settingsViewModel.onSettingsOpened()
+                      screen = Screen.SETTINGS
+                    },
+                  ) {
                     Text("設定")
                   }
-                  TextButton(onClick = { screen = Screen.HISTORY }) {
+                  TextButton(
+                    onClick = {
+                      historyViewModel.onHistoryOpened()
+                      screen = Screen.HISTORY
+                    },
+                  ) {
                     Text("履歴を見る")
                   }
                 }
@@ -115,40 +120,68 @@ class MainActivity : ComponentActivity() {
               }
 
               Screen.HISTORY -> {
-                val historyGroups by historyViewModel.historyGroups.collectAsState()
+                val historyUiState by historyViewModel.uiState.collectAsState()
+                val deleteFailed by historyViewModel.deleteFailed.collectAsState()
                 JournalHistoryScreen(
-                  groups = historyGroups,
+                  uiState = historyUiState,
+                  deleteFailed = deleteFailed,
+                  onDelete = historyViewModel::deleteEntry,
                   onBack = { screen = Screen.INPUT },
                 )
               }
 
               Screen.SETTINGS -> {
-                val recordMode by settingsViewModel.recordMode.collectAsState()
-                val saveFailed by settingsViewModel.saveFailed.collectAsState()
-                val webhookSettingsState by settingsViewModel.webhookSettingsState.collectAsState()
-                val isWebhookFormVisible by settingsViewModel.isWebhookFormVisible.collectAsState()
+                val selectedIntegration by settingsViewModel.selectedAnalysisIntegration.collectAsState()
+                val integrationSaveFailed by settingsViewModel.integrationSaveFailed.collectAsState()
+                val webhookDestinationLabel by settingsViewModel.webhookDestinationLabel.collectAsState()
+                val webhookSetupRequested by settingsViewModel.webhookSetupRequested.collectAsState()
+
+                LaunchedEffect(webhookSetupRequested) {
+                  if (webhookSetupRequested) {
+                    settingsViewModel.consumeWebhookSetupRequest()
+                    settingsViewModel.onWebhookSettingsScreenOpened()
+                    screen = Screen.WEBHOOK_SETTINGS
+                  }
+                }
+
+                SettingsScreen(
+                  selectedIntegration = selectedIntegration,
+                  integrationSaveFailed = integrationSaveFailed,
+                  onAnalysisIntegrationChange = settingsViewModel::setAnalysisIntegration,
+                  webhookDestinationLabel = webhookDestinationLabel,
+                  onWebhookSettingsOpen = {
+                    settingsViewModel.onWebhookSettingsScreenOpened()
+                    screen = Screen.WEBHOOK_SETTINGS
+                  },
+                  onBack = { screen = Screen.INPUT },
+                )
+              }
+
+              Screen.WEBHOOK_SETTINGS -> {
+                // process recreationでこの画面がそのまま復元された場合に備えたフォールバック。
+                LaunchedEffect(Unit) {
+                  settingsViewModel.ensureWebhookSettingsScreenOpened()
+                }
+                val webhookSettingsLoadState by settingsViewModel.webhookSettingsLoadState.collectAsState()
                 val webhookFormState by settingsViewModel.webhookFormState.collectAsState()
                 val webhookValidationErrors by settingsViewModel.webhookValidationErrors.collectAsState()
                 val webhookSaveFailed by settingsViewModel.webhookSaveFailed.collectAsState()
-                SettingsScreen(
-                  recordMode = recordMode,
-                  saveFailed = saveFailed,
-                  onRecordModeChange = settingsViewModel::setRecordMode,
-                  webhookSettingsState = webhookSettingsState,
-                  isWebhookFormVisible = isWebhookFormVisible,
-                  webhookFormState = webhookFormState,
-                  webhookValidationErrors = webhookValidationErrors,
-                  webhookSaveFailed = webhookSaveFailed,
-                  onWebhookReveal = settingsViewModel::revealWebhookForm,
-                  onWebhookUrlChange = settingsViewModel::updateWebhookUrl,
-                  onWebhookHeaderAdd = settingsViewModel::addWebhookHeader,
-                  onWebhookHeaderRemove = settingsViewModel::removeWebhookHeader,
-                  onWebhookHeaderNameChange = settingsViewModel::updateWebhookHeaderName,
-                  onWebhookHeaderValueChange = settingsViewModel::updateWebhookHeaderValue,
-                  onWebhookBodyTemplateChange = settingsViewModel::updateWebhookBodyTemplate,
-                  onWebhookSave = settingsViewModel::saveWebhookSettings,
-                  onWebhookDelete = settingsViewModel::deleteWebhookSettings,
-                  onBack = { screen = Screen.INPUT },
+                WebhookSettingsScreen(
+                  loadState = webhookSettingsLoadState,
+                  formState = webhookFormState,
+                  validationErrors = webhookValidationErrors,
+                  saveFailed = webhookSaveFailed,
+                  onUrlChange = settingsViewModel::updateWebhookUrl,
+                  onHeaderAdd = settingsViewModel::addWebhookHeader,
+                  onHeaderRemove = settingsViewModel::removeWebhookHeader,
+                  onHeaderNameChange = settingsViewModel::updateWebhookHeaderName,
+                  onHeaderValueChange = settingsViewModel::updateWebhookHeaderValue,
+                  onBodyTemplateChange = settingsViewModel::updateWebhookBodyTemplate,
+                  onSave = settingsViewModel::saveWebhookSettings,
+                  onBack = {
+                    settingsViewModel.onWebhookSettingsScreenClosed()
+                    screen = Screen.SETTINGS
+                  },
                 )
               }
             }
@@ -198,6 +231,7 @@ class MainActivity : ComponentActivity() {
     INPUT,
     HISTORY,
     SETTINGS,
+    WEBHOOK_SETTINGS,
   }
 }
 
@@ -230,12 +264,12 @@ fun InputView(
     )
     Row(
       modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.End
+      horizontalArrangement = Arrangement.End,
     ) {
       Button(
         onClick = {
           postMessage(text.value)
-        }
+        },
       ) {
         Text("登録")
       }
@@ -249,7 +283,7 @@ fun LoadingOverlay(isLoading: Boolean) {
     Box(
       modifier = Modifier.fillMaxSize()
         .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)),
-      contentAlignment = Alignment.Center
+      contentAlignment = Alignment.Center,
     ) {
       CircularProgressIndicator()
     }

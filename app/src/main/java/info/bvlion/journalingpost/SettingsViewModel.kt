@@ -2,82 +2,121 @@ package info.bvlion.journalingpost
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import info.bvlion.journalingpost.settings.RecordMode
-import info.bvlion.journalingpost.settings.RecordModeRepository
+import info.bvlion.journalingpost.settings.AnalysisIntegration
+import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettings
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
 import info.bvlion.journalingpost.webhook.WebhookSettingsState
 import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
+import info.bvlion.journalingpost.webhook.destinationLabel
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class SettingsViewModel(
-  private val recordModeRepository: RecordModeRepository,
+  private val analysisIntegrationRepository: AnalysisIntegrationRepository,
   private val webhookSettingsRepository: WebhookSettingsRepository,
 ) : ViewModel() {
-  val recordMode: StateFlow<RecordMode> = recordModeRepository.recordMode
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RecordMode.LOCAL_AND_WEBHOOK)
+  /** 読み込み確定前の値を「使用しない」と誤表示しないため、初期値はnullにする。 */
+  val analysisIntegration: StateFlow<AnalysisIntegration?> = analysisIntegrationRepository.analysisIntegration
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-  private val _saveFailed = MutableStateFlow(false)
-  val saveFailed: StateFlow<Boolean> = _saveFailed.asStateFlow()
+  private val _pendingCustomWebhookSelection = MutableStateFlow(false)
 
-  // 呼び出し完了時に、より新しい選択が既に行われていないかを確認するための世代番号。
-  private val requestGeneration = AtomicInteger(0)
+  private val selectedIntegrationFlow: Flow<AnalysisIntegration?> = combine(
+    analysisIntegration,
+    _pendingCustomWebhookSelection,
+  ) { integration, pendingCustomWebhook ->
+    if (pendingCustomWebhook) AnalysisIntegration.CUSTOM_WEBHOOK else integration
+  }
 
-  fun setRecordMode(mode: RecordMode) {
-    val generation = requestGeneration.incrementAndGet()
-    _saveFailed.value = false
+  /** 未設定からCustom Webhookを選んだ直後は、保存完了前でもradioだけは利用者の選択を示す。 */
+  val selectedAnalysisIntegration: StateFlow<AnalysisIntegration?> = selectedIntegrationFlow
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+  private val _integrationSaveFailed = MutableStateFlow(false)
+  val integrationSaveFailed: StateFlow<Boolean> = _integrationSaveFailed.asStateFlow()
+
+  private val webhookSettingsState: StateFlow<WebhookSettingsState> = webhookSettingsRepository.settings
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WebhookSettingsState.Loading)
+
+  val webhookDestinationLabel: StateFlow<String?> = combine(analysisIntegration, webhookSettingsState) { integration, state ->
+    if (integration != AnalysisIntegration.CUSTOM_WEBHOOK) return@combine null
+    (state as? WebhookSettingsState.Configured)?.settings?.destinationLabel()
+  }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+  private val _webhookSetupRequested = MutableStateFlow(false)
+  val webhookSetupRequested: StateFlow<Boolean> = _webhookSetupRequested.asStateFlow()
+
+  fun consumeWebhookSetupRequest() {
+    _webhookSetupRequested.value = false
+  }
+
+  private val integrationRequestGeneration = AtomicInteger(0)
+
+  /**
+   * Custom Webhookは保存済み設定がある場合だけ有効化する。未設定または一時的に読み込めない場合は、
+   * 選択を保留してWebhook設定画面へ進める。
+   */
+  fun setAnalysisIntegration(integration: AnalysisIntegration) {
+    val generation = integrationRequestGeneration.incrementAndGet()
+    _integrationSaveFailed.value = false
+    if (integration != AnalysisIntegration.CUSTOM_WEBHOOK) {
+      _pendingCustomWebhookSelection.value = false
+      viewModelScope.launch { persistAnalysisIntegration(integration, generation) }
+      return
+    }
+
+    _pendingCustomWebhookSelection.value = true
     viewModelScope.launch {
-      try {
-        recordModeRepository.setRecordMode(mode)
-      } catch (e: CancellationException) {
-        throw e
-      } catch (e: Exception) {
-        if (generation == requestGeneration.get()) _saveFailed.value = true
+      val current = webhookSettingsRepository.settings.first()
+      if (generation != integrationRequestGeneration.get()) return@launch
+      if (current is WebhookSettingsState.Configured) {
+        persistAnalysisIntegration(integration, generation)
+        if (generation == integrationRequestGeneration.get()) _pendingCustomWebhookSelection.value = false
+      } else {
+        _webhookSetupRequested.value = true
       }
     }
   }
 
-  // Loading/Unavailableと「本当に未設定」(NotConfigured)を区別する。読み込み中・読み込み不能の間は
-  // 新規設定フォームを確定表示しない(authoritativeな状態が分かる前に、既存設定を誤って
-  // 上書きしかねない編集画面を開かせないため)。
-  val webhookSettingsState: StateFlow<WebhookSettingsState> = webhookSettingsRepository.settings
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WebhookSettingsState.Loading)
-
-  val isWebhookConfigured: StateFlow<Boolean> = webhookSettingsState
-    .map { it is WebhookSettingsState.Configured }
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+  private suspend fun persistAnalysisIntegration(integration: AnalysisIntegration, generation: Int) {
+    try {
+      analysisIntegrationRepository.setAnalysisIntegration(integration)
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      if (generation == integrationRequestGeneration.get()) _integrationSaveFailed.value = true
+    }
+  }
 
   private val _webhookFormState = MutableStateFlow(WebhookFormState())
   val webhookFormState: StateFlow<WebhookFormState> = _webhookFormState.asStateFlow()
 
-  // ユーザーが「表示して編集」を選んだ状態。保存済みsecret(Header value/Body template等)は、
-  // これがtrueになるまでフォームへ展開しない。
-  private val _webhookFormRevealed = MutableStateFlow(false)
+  // 画面を開いた時点のsnapshotを編集中に上流の更新で巻き戻さない。
+  private val _webhookFormLoaded = MutableStateFlow(false)
 
-  /**
-   * NotConfiguredなら新規入力のため常にフォームを表示し、Configuredならユーザーが明示的に
-   * 表示・編集を選ぶまで(_webhookFormRevealed)フォームを表示しない。Loading/Unavailableの間は
-   * revealedの値に関わらずフォームを出さない。
-   */
-  val isWebhookFormVisible: StateFlow<Boolean> = combine(webhookSettingsState, _webhookFormRevealed) { state, revealed ->
-    when (state) {
-      WebhookSettingsState.Loading, WebhookSettingsState.Unavailable -> false
-      WebhookSettingsState.NotConfigured -> true
-      is WebhookSettingsState.Configured -> revealed
+  val webhookSettingsLoadState: StateFlow<WebhookSettingsLoadState> = combine(
+    webhookSettingsState,
+    _webhookFormLoaded,
+  ) { state, loaded ->
+    when {
+      loaded -> WebhookSettingsLoadState.READY
+      state is WebhookSettingsState.NotConfigured || state is WebhookSettingsState.Configured -> WebhookSettingsLoadState.READY
+      state is WebhookSettingsState.Unavailable -> WebhookSettingsLoadState.UNAVAILABLE
+      else -> WebhookSettingsLoadState.LOADING
     }
-  }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+  }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WebhookSettingsLoadState.LOADING)
 
   private val _webhookValidationErrors = MutableStateFlow<List<WebhookSettingsValidator.ValidationError>>(emptyList())
   val webhookValidationErrors: StateFlow<List<WebhookSettingsValidator.ValidationError>> = _webhookValidationErrors.asStateFlow()
@@ -87,18 +126,57 @@ class SettingsViewModel(
 
   private val webhookRequestGeneration = AtomicInteger(0)
 
-  fun revealWebhookForm() {
+  /**
+   * 前回のSettings表示中に開始したCustom Webhook判定が後から完了して、次回表示を勝手に遷移させないよう
+   * 世代を進めて無効化する。
+   */
+  fun onSettingsOpened() {
+    integrationRequestGeneration.incrementAndGet()
+    _integrationSaveFailed.value = false
+    _pendingCustomWebhookSelection.value = false
+    _webhookSetupRequested.value = false
+  }
+
+  fun onWebhookSettingsScreenOpened() {
+    webhookSettingsScreenInitialized = true
+    val generation = webhookRequestGeneration.incrementAndGet()
+    _webhookValidationErrors.value = emptyList()
+    _webhookSaveFailed.value = false
+    _webhookFormLoaded.value = false
+    _webhookFormState.value = WebhookFormState()
     viewModelScope.launch {
-      // Loading/Unavailable/NotConfiguredの間にreveal要求が来た場合は何もしない。ここでrevealedを
-      // 立てると、実際にはsettingsを読めていないのにisWebhookFormVisibleが空フォームを「既存設定の
-      // 編集フォーム」として表示してしまい、保存時に既存URL/Header/Body template/secretを
-      // 空の値で上書きし得る。
-      val current = webhookSettingsRepository.settings.first()
-      if (current is WebhookSettingsState.Configured) {
-        _webhookFormState.value = current.settings.toFormState()
-        _webhookFormRevealed.value = true
+      val settled = webhookSettingsState.first {
+        it is WebhookSettingsState.NotConfigured || it is WebhookSettingsState.Configured
       }
+      if (generation != webhookRequestGeneration.get()) return@launch
+      if (settled is WebhookSettingsState.Configured) {
+        _webhookFormState.value = settled.settings.toFormState()
+        // 一時的な読み取り失敗から復旧して既存設定が見つかった場合、意味のない再保存を要求しない。
+        if (_pendingCustomWebhookSelection.value) {
+          persistAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK, integrationRequestGeneration.incrementAndGet())
+          _pendingCustomWebhookSelection.value = false
+        }
+      }
+      _webhookFormLoaded.value = true
     }
+  }
+
+  fun onWebhookSettingsScreenClosed() {
+    webhookSettingsScreenInitialized = false
+    webhookRequestGeneration.incrementAndGet()
+    _webhookValidationErrors.value = emptyList()
+    _webhookSaveFailed.value = false
+    _webhookFormLoaded.value = false
+    _webhookFormState.value = WebhookFormState()
+    _pendingCustomWebhookSelection.value = false
+  }
+
+  // ViewModelが生き残るrotationでは入力中フォームを再初期化せず、process recreation時だけ初期化し直す。
+  private var webhookSettingsScreenInitialized = false
+
+  fun ensureWebhookSettingsScreenOpened() {
+    if (webhookSettingsScreenInitialized) return
+    onWebhookSettingsScreenOpened()
   }
 
   fun updateWebhookUrl(url: String) {
@@ -129,18 +207,14 @@ class SettingsViewModel(
     updateWebhookForm { it.copy(bodyTemplate = bodyTemplate) }
   }
 
-  /**
-   * 編集でも世代を進めることで、保存開始後・DataStore write完了前に行われた編集内容を、古いsave/deleteの
-   * 完了処理がクリアしてしまわないようにする。あわせてrevealedを立てるのは、保存完了で永続状態が
-   * Configuredへ変わった際に、未保存の編集内容が入ったフォームが閉じてしまうのを防ぐため
-   * (編集できている時点でフォームは表示済みのため、これで新たにsecretが露出することはない)。
-   */
   private fun updateWebhookForm(transform: (WebhookFormState) -> WebhookFormState) {
-    webhookRequestGeneration.incrementAndGet()
-    _webhookFormRevealed.value = true
     _webhookFormState.update(transform)
   }
 
+  /**
+   * Webhook設定の永続化に成功した後だけCustom Webhookを有効化する。保存開始後に画面を離れた場合は、
+   * 古い保存完了で後続の「使用しない」選択を上書きしない。
+   */
   fun saveWebhookSettings() {
     val generation = webhookRequestGeneration.incrementAndGet()
     val form = _webhookFormState.value
@@ -154,36 +228,24 @@ class SettingsViewModel(
     viewModelScope.launch {
       try {
         webhookSettingsRepository.save(WebhookSettings(form.url, validation.normalizedHeaders, form.bodyTemplate))
-        if (generation == webhookRequestGeneration.get()) {
-          _webhookFormRevealed.value = false
-          _webhookFormState.value = WebhookFormState()
-        }
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {
         if (generation == webhookRequestGeneration.get()) _webhookSaveFailed.value = true
+        return@launch
+      }
+      if (generation == webhookRequestGeneration.get()) {
+        persistAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK, integrationRequestGeneration.incrementAndGet())
+        _pendingCustomWebhookSelection.value = false
       }
     }
   }
+}
 
-  fun deleteWebhookSettings() {
-    val generation = webhookRequestGeneration.incrementAndGet()
-    _webhookValidationErrors.value = emptyList()
-    _webhookSaveFailed.value = false
-    viewModelScope.launch {
-      try {
-        webhookSettingsRepository.clear()
-        if (generation == webhookRequestGeneration.get()) {
-          _webhookFormRevealed.value = false
-          _webhookFormState.value = WebhookFormState()
-        }
-      } catch (e: CancellationException) {
-        throw e
-      } catch (e: Exception) {
-        if (generation == webhookRequestGeneration.get()) _webhookSaveFailed.value = true
-      }
-    }
-  }
+enum class WebhookSettingsLoadState {
+  LOADING,
+  UNAVAILABLE,
+  READY,
 }
 
 data class WebhookFormState(

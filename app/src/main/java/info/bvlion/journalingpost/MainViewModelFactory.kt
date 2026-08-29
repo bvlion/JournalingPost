@@ -3,14 +3,14 @@ package info.bvlion.journalingpost
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import info.bvlion.journalingpost.journal.IntegrationRoutingJournalRecorder
 import info.bvlion.journalingpost.journal.JournalRecorder
 import info.bvlion.journalingpost.journal.LocalOnlyJournalRecorder
 import info.bvlion.journalingpost.journal.LocalWebhookJournalRecorder
-import info.bvlion.journalingpost.journal.ModeRoutingJournalRecorder
 import info.bvlion.journalingpost.journal.db.JournalDatabase
 import info.bvlion.journalingpost.journal.db.RoomJournalEntryRepository
 import info.bvlion.journalingpost.poster.WebhookJournalPoster
-import info.bvlion.journalingpost.settings.RecordModeRepositoryStore
+import info.bvlion.journalingpost.settings.AnalysisIntegrationRepositoryStore
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepositoryStore
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -31,11 +31,11 @@ object MainViewModelFactory : ViewModelProvider.Factory {
     if (::journalRecorder.isInitialized) return
     val database = JournalDatabase.getInstance(context)
     val repository = RoomJournalEntryRepository(database.journalEntryDao())
-    val recordModeRepository = RecordModeRepositoryStore.getInstance(context)
+    val analysisIntegrationRepository = AnalysisIntegrationRepositoryStore.getInstance(context)
     val webhookSettingsRepository = WebhookSettingsRepositoryStore.getInstance(context)
     val journalPoster = WebhookJournalPoster(httpClient, webhookSettingsRepository)
-    journalRecorder = ModeRoutingJournalRecorder(
-      recordModeRepository = recordModeRepository,
+    journalRecorder = IntegrationRoutingJournalRecorder(
+      analysisIntegrationRepository = analysisIntegrationRepository,
       localOnlyRecorder = LocalOnlyJournalRecorder(repository),
       localWebhookRecorder = LocalWebhookJournalRecorder(repository, journalPoster),
     )

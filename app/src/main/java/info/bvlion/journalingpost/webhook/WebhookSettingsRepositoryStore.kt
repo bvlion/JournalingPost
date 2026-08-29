@@ -5,7 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 
 /**
- * #5のRecordModeRepositoryStoreと同様、pendingSettings(即時反映用のin-memory状態)を
+ * #5のAnalysisIntegrationRepositoryStoreと同様、pendingSettings(即時反映用のin-memory状態)を
  * MainViewModelFactory/SettingsViewModelFactoryが同じインスタンスとして共有できるようにする。
  */
 object WebhookSettingsRepositoryStore {

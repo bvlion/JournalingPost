@@ -7,10 +7,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 
 /**
- * DataStoreは同一ファイルに対して複数instanceを生成すると例外になるため、
- * JournalDatabase.getInstanceと同様にprocess内で1つだけ生成し再利用する。
+ * DataStoreは同一ファイルに対して複数instanceを生成すると例外になるため、process内で1つだけ生成し再利用する。
  */
-internal object RecordModeSettingsStore {
+internal object AnalysisIntegrationSettingsStore {
   @Volatile
   private var instance: DataStore<Preferences>? = null
 
@@ -21,5 +20,5 @@ internal object RecordModeSettingsStore {
       ).also { instance = it }
     }
 
-  private const val FILE_NAME = "record_mode_settings"
+  private const val FILE_NAME = "analysis_integration_settings"
 }
