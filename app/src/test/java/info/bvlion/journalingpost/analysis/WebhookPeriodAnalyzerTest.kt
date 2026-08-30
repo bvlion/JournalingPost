@@ -14,6 +14,7 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
+import io.ktor.client.plugins.HttpRedirect
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.HttpRequestData
 import io.ktor.client.request.HttpResponseData
@@ -133,22 +134,45 @@ class WebhookPeriodAnalyzerTest {
   }
 
   @Test
-  fun `3xxリダイレクトは追わず成功扱いにもせずSERVER_ERROR`() = runTest {
-    // httpClientはfollowRedirects=falseのため、302のLocation(転送先の200)を見に行かず302が届く。
+  fun `POSTへの302リダイレクトを追い最終responseが2xxならSuccess`() = runTest {
+    // GAS Content Serviceのように、POSTに302を返し本文はリダイレクト先で返すendpointを再現する。
     var requestCount = 0
     val analyzer = analyzer(
-      handler = {
+      handler = { request ->
         requestCount++
-        respond(
-          content = "",
-          status = HttpStatusCode.Found,
-          headers = headersOf(HttpHeaders.Location, "https://example.com/moved"),
-        )
+        if (request.url.encodedPath == "/analyze") {
+          respond(
+            content = "",
+            status = HttpStatusCode.Found,
+            headers = headersOf(HttpHeaders.Location, "https://example.com/final"),
+          )
+        } else {
+          respondJson("""{"body":"転送先で解析成功"}""")
+        }
+      },
+    )
+
+    assertEquals(PeriodAnalysisOutcome.Success("転送先で解析成功"), analyzer.analyze(periodStart, periodEnd))
+    assertEquals(2, requestCount)
+  }
+
+  @Test
+  fun `リダイレクト解決後の最終responseが2xx以外ならSERVER_ERROR`() = runTest {
+    val analyzer = analyzer(
+      handler = { request ->
+        if (request.url.encodedPath == "/analyze") {
+          respond(
+            content = "",
+            status = HttpStatusCode.Found,
+            headers = headersOf(HttpHeaders.Location, "https://example.com/final"),
+          )
+        } else {
+          respondJson("""{"body":"ignored"}""", HttpStatusCode.InternalServerError)
+        }
       },
     )
 
     assertEquals(PeriodAnalysisOutcome.Failure.SERVER_ERROR, analyzer.analyze(periodStart, periodEnd))
-    assertEquals(1, requestCount)
   }
 
   @Test
@@ -214,8 +238,8 @@ class WebhookPeriodAnalyzerTest {
   ): WebhookPeriodAnalyzer {
     val client = HttpClient(MockEngine { request -> handler(request) }) {
       install(ContentNegotiation) { json() }
-      // productionのAnalysisHistoryViewModelFactoryと同じく、リダイレクトは追わない。
-      followRedirects = false
+      // productionのAnalysisHistoryViewModelFactoryと同じく、methodを問わずリダイレクトを追う。
+      install(HttpRedirect) { checkHttpMethod = false }
     }
     val reader = PeriodJournalEntryReader { start, end ->
       entriesReader?.invoke(start, end) ?: entries

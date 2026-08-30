@@ -15,6 +15,7 @@ import info.bvlion.journalingpost.settings.AnalysisIntegrationRepositoryStore
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepositoryStore
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpRedirect
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 
@@ -27,9 +28,12 @@ object AnalysisHistoryViewModelFactory : ViewModelProvider.Factory {
     install(ContentNegotiation) {
       json()
     }
-    // 利用者が設定したendpoint自身のresponseで2xx判定するため、リダイレクトは追わない
-    // (追うと、301/302の転送先が200を返した場合に成功として保存されてしまう)。
-    followRedirects = false
+    // Custom Webhookは利用者が任意の解析endpointを設定できる。Google Apps ScriptのContent Serviceの
+    // ように、POSTへ302を返し本文はリダイレクト先で返すendpointもあるため、methodを問わずリダイレクトを
+    // 追う。成功判定(2xx)はリダイレクト解決後の最終responseに対して行う。
+    install(HttpRedirect) {
+      checkHttpMethod = false
+    }
   }
 
   @Volatile
