@@ -1,6 +1,8 @@
 package info.bvlion.journalingpost.analysis
 
 import info.bvlion.journalingpost.journal.PeriodJournalEntryReader
+import info.bvlion.journalingpost.settings.AnalysisIntegration
+import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
 import info.bvlion.journalingpost.webhook.WebhookSettingsState
 import io.ktor.client.HttpClient
@@ -10,6 +12,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
@@ -17,12 +20,17 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
- * HTTP status >= 400 はSERVER_ERRORとして扱う(WebhookJournalPoster時代の `< 400` 成功判定を踏襲)。
- * 設定snapshotの取得・対象期間の取得・送受信・response解析のどこで失敗しても、JournalEntryへは
- * 一切触れず[PeriodAnalysisOutcome.Failure]を返す。1回のanalyze()では同じsettings snapshotだけを使う。
+ * 送信の可否はここで判断する。開始時点で実効[AnalysisIntegration]がCUSTOM_WEBHOOKであり、かつ保存済み
+ * Webhook設定が存在する場合だけrequestを送る。UI側の`canRunAnalysis`は表示制御にすぎず、それを安全境界に
+ * しない(「使用しない」へ変更した直後などUI状態が古くても、JournalEntryを外部へ送らない)。
+ *
+ * 成功はHTTP 2xx かつ responseがPeriodAnalysisResponseとしてparseでき body が非空文字の場合のみ。
+ * 設定取得・対象期間の取得・送受信・response解析のどこで失敗しても、JournalEntryへは一切触れず
+ * [PeriodAnalysisOutcome.Failure]を返す。1回のanalyze()では同じsettings snapshotだけを使う。
  */
 internal class WebhookPeriodAnalyzer(
   private val httpClient: HttpClient,
+  private val analysisIntegrationRepository: AnalysisIntegrationRepository,
   private val webhookSettingsRepository: WebhookSettingsRepository,
   private val periodJournalEntryReader: PeriodJournalEntryReader,
 ) : PeriodAnalyzer {
@@ -33,6 +41,10 @@ internal class WebhookPeriodAnalyzer(
   private val responseJson = Json { ignoreUnknownKeys = true }
 
   override suspend fun analyze(periodStart: Instant, periodEnd: Instant): PeriodAnalysisOutcome {
+    if (analysisIntegrationRepository.analysisIntegration.first() != AnalysisIntegration.CUSTOM_WEBHOOK) {
+      return PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE
+    }
+
     val state = webhookSettingsRepository.settings.first()
     val settings = (state as? WebhookSettingsState.Configured)?.settings
       ?: return PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE
@@ -67,7 +79,8 @@ internal class WebhookPeriodAnalyzer(
       return PeriodAnalysisOutcome.Failure.NETWORK
     }
 
-    if (response.status.value >= 400) return PeriodAnalysisOutcome.Failure.SERVER_ERROR
+    // 2xx以外(3xxリダイレクト含む)は成功として扱わない。
+    if (!response.status.isSuccess()) return PeriodAnalysisOutcome.Failure.SERVER_ERROR
 
     val body = try {
       responseJson.decodeFromString<PeriodAnalysisResponse>(response.bodyAsText()).body

@@ -28,12 +28,14 @@ class AnalysisHistoryViewModel(
   analysisIntegrationRepository: AnalysisIntegrationRepository,
   private val periodAnalyzer: PeriodAnalyzer,
   private val analysisResultWriter: AnalysisResultWriter,
-  private val zoneId: ZoneId = ZoneId.systemDefault(),
+  // 端末timezoneは解析開始・一覧生成のたびに解決する。ViewModel生成時に固定すると、移動などで
+  // timezoneが変わったあと選択日の境界が古いオフセットで計算されてしまうため。
+  private val currentZoneId: () -> ZoneId = { ZoneId.systemDefault() },
   private val now: () -> Instant = Instant::now,
 ) : ViewModel() {
   val uiState: StateFlow<AnalysisHistoryUiState> = reader.observeAll()
     .map { results ->
-      val items = results.toAnalysisHistoryItems(zoneId)
+      val items = results.toAnalysisHistoryItems(currentZoneId())
       if (items.isEmpty()) AnalysisHistoryUiState.Empty else AnalysisHistoryUiState.Content(items)
     }
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AnalysisHistoryUiState.Loading)
@@ -57,12 +59,14 @@ class AnalysisHistoryViewModel(
   }
 
   /**
-   * [day]を端末timezoneの1日として `[00:00, 翌日00:00)` のInstant区間へ変換して解析する。
-   * 実行中の再呼び出しは無視する。失敗してもJournalEntryは変更しないため、同じ日を再実行できる。
+   * [day]を、解析開始時点の現在の端末timezoneでの1日として `[00:00, 翌日00:00)` のInstant区間へ
+   * 変換して解析する。実行中の再呼び出しは無視する。失敗してもJournalEntryは変更しないため、
+   * 同じ日を再実行できる。
    */
   fun analyze(day: LocalDate) {
     if (_analysisRunState.value == AnalysisRunState.Running) return
     _analysisRunState.value = AnalysisRunState.Running
+    val zoneId = currentZoneId()
     val periodStart = day.atStartOfDay(zoneId).toInstant()
     val periodEnd = day.plusDays(1).atStartOfDay(zoneId).toInstant()
     viewModelScope.launch {

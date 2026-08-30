@@ -38,15 +38,17 @@ object AnalysisHistoryViewModelFactory : ViewModelProvider.Factory {
     val database = JournalDatabase.getInstance(context)
     val analysisRepository = RoomAnalysisResultRepository(database.analysisResultDao())
     val journalRepository = RoomJournalEntryRepository(database.journalEntryDao())
+    val analysisIntegrationRepository = AnalysisIntegrationRepositoryStore.getInstance(context)
     val analyzer = WebhookPeriodAnalyzer(
       httpClient = httpClient,
+      analysisIntegrationRepository = analysisIntegrationRepository,
       webhookSettingsRepository = WebhookSettingsRepositoryStore.getInstance(context),
       periodJournalEntryReader = journalRepository,
     )
     dependencies = Dependencies(
       reader = analysisRepository,
       writer = analysisRepository,
-      analysisIntegrationRepository = AnalysisIntegrationRepositoryStore.getInstance(context),
+      analysisIntegrationRepository = analysisIntegrationRepository,
       analyzer = analyzer,
     )
   }

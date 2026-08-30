@@ -11,6 +11,7 @@ import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -107,7 +108,7 @@ class AnalysisHistoryViewModelTest {
   @Test
   fun `analyzeは選択日を端末timezoneの半開区間へ変換してanalyzerへ渡す`() = runTest(testDispatcher) {
     val analyzer = FakePeriodAnalyzer { _, _ -> PeriodAnalysisOutcome.Success("結果") }
-    val viewModel = createViewModel(analyzer = analyzer, zoneId = ZoneOffset.UTC)
+    val viewModel = createViewModel(analyzer = analyzer, currentZoneId = { ZoneOffset.UTC })
 
     viewModel.analyze(LocalDate.of(2026, 8, 30))
     testDispatcher.scheduler.advanceUntilIdle()
@@ -117,10 +118,25 @@ class AnalysisHistoryViewModelTest {
   }
 
   @Test
+  fun `analyzeは解析開始時点の現在timezoneで期間境界を計算する`() = runTest(testDispatcher) {
+    val analyzer = FakePeriodAnalyzer { _, _ -> PeriodAnalysisOutcome.Success("結果") }
+    var zone: ZoneId = ZoneOffset.UTC
+    val viewModel = createViewModel(analyzer = analyzer, currentZoneId = { zone })
+
+    // ViewModel生成後にtimezoneが変わる状況(移動など)を再現する。
+    zone = ZoneId.of("Asia/Tokyo")
+    viewModel.analyze(LocalDate.of(2026, 8, 30))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(Instant.parse("2026-08-29T15:00:00Z"), analyzer.lastPeriodStart)
+    assertEquals(Instant.parse("2026-08-30T15:00:00Z"), analyzer.lastPeriodEnd)
+  }
+
+  @Test
   fun `analyze成功時は同じ期間と解析日時でAnalysisResultを保存しSucceededになる`() = runTest(testDispatcher) {
     val analyzer = FakePeriodAnalyzer { _, _ -> PeriodAnalysisOutcome.Success("今日は穏やかでした") }
     val writer = FakeAnalysisResultWriter()
-    val viewModel = createViewModel(analyzer = analyzer, writer = writer, zoneId = ZoneOffset.UTC)
+    val viewModel = createViewModel(analyzer = analyzer, writer = writer, currentZoneId = { ZoneOffset.UTC })
 
     viewModel.analyze(LocalDate.of(2026, 8, 30))
     testDispatcher.scheduler.advanceUntilIdle()
@@ -192,13 +208,13 @@ class AnalysisHistoryViewModelTest {
       FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK),
     analyzer: PeriodAnalyzer = FakePeriodAnalyzer { _, _ -> PeriodAnalysisOutcome.Success("結果") },
     writer: AnalysisResultWriter = FakeAnalysisResultWriter(),
-    zoneId: ZoneOffset = ZoneOffset.UTC,
+    currentZoneId: () -> ZoneId = { ZoneOffset.UTC },
   ) = AnalysisHistoryViewModel(
     reader = reader,
     analysisIntegrationRepository = integrationRepository,
     periodAnalyzer = analyzer,
     analysisResultWriter = writer,
-    zoneId = zoneId,
+    currentZoneId = currentZoneId,
     now = { fixedNow },
   )
 

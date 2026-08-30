@@ -3,6 +3,8 @@ package info.bvlion.journalingpost.analysis
 import info.bvlion.journalingpost.journal.JournalEntry
 import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.PeriodJournalEntryReader
+import info.bvlion.journalingpost.settings.AnalysisIntegration
+import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettings
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
@@ -43,6 +45,20 @@ class WebhookPeriodAnalyzerTest {
     var requested = false
     val analyzer = analyzer(
       webhookState = WebhookSettingsState.NotConfigured,
+      handler = { requested = true; respondJson("""{"body":"x"}""") },
+    )
+
+    val outcome = analyzer.analyze(periodStart, periodEnd)
+
+    assertEquals(PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE, outcome)
+    assertEquals(false, requested)
+  }
+
+  @Test
+  fun `実効AnalysisIntegrationがCUSTOM_WEBHOOK以外なら設定が残っていても送信しない`() = runTest {
+    var requested = false
+    val analyzer = analyzer(
+      integration = AnalysisIntegration.NONE,
       handler = { requested = true; respondJson("""{"body":"x"}""") },
     )
 
@@ -117,6 +133,22 @@ class WebhookPeriodAnalyzerTest {
   }
 
   @Test
+  fun `2xx以外の3xxは成功扱いにせずSERVER_ERROR`() = runTest {
+    // 300はktorのredirect追従対象(301-308)外のため、そのままresponseとして返る。
+    val analyzer = analyzer(handler = { respondJson("""{"body":"ignored"}""", HttpStatusCode.MultipleChoices) })
+
+    assertEquals(PeriodAnalysisOutcome.Failure.SERVER_ERROR, analyzer.analyze(periodStart, periodEnd))
+  }
+
+  @Test
+  fun `2xx境界の299は成功として扱う`() = runTest {
+    val status299 = HttpStatusCode(299, "Almost OK")
+    val analyzer = analyzer(handler = { respondJson("""{"body":"ok"}""", status299) })
+
+    assertEquals(PeriodAnalysisOutcome.Success("ok"), analyzer.analyze(periodStart, periodEnd))
+  }
+
+  @Test
   fun `送信時の例外はNETWORK`() = runTest {
     val analyzer = analyzer(handler = { throw IOException("boom") })
 
@@ -164,6 +196,7 @@ class WebhookPeriodAnalyzerTest {
   private fun analyzer(
     settings: WebhookSettings = WebhookSettings(url = "https://example.com/analyze", headers = emptyList()),
     webhookState: WebhookSettingsState = WebhookSettingsState.Configured(settings),
+    integration: AnalysisIntegration = AnalysisIntegration.CUSTOM_WEBHOOK,
     entries: List<JournalEntry> = emptyList(),
     entriesReader: (suspend (Instant, Instant) -> List<JournalEntry>)? = null,
     handler: suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData,
@@ -176,6 +209,7 @@ class WebhookPeriodAnalyzerTest {
     }
     return WebhookPeriodAnalyzer(
       httpClient = client,
+      analysisIntegrationRepository = FakeAnalysisIntegrationRepository(integration),
       webhookSettingsRepository = FakeWebhookSettingsRepository(webhookState),
       periodJournalEntryReader = reader,
     )
@@ -200,5 +234,11 @@ class WebhookPeriodAnalyzerTest {
     override val settings: Flow<WebhookSettingsState> = MutableStateFlow(state)
 
     override suspend fun save(settings: WebhookSettings) = error("not used in this test")
+  }
+
+  private class FakeAnalysisIntegrationRepository(integration: AnalysisIntegration) : AnalysisIntegrationRepository {
+    override val analysisIntegration: Flow<AnalysisIntegration> = MutableStateFlow(integration)
+
+    override suspend fun setAnalysisIntegration(integration: AnalysisIntegration) = error("not used in this test")
   }
 }
