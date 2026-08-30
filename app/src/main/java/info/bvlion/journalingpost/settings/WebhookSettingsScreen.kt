@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -36,7 +37,8 @@ import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
 
 /**
  * Custom Webhookを設定する画面。この画面だけで、送信先・ヘッダー・リクエスト本文・期待する成功
- * レスポンスが分かるようにする。保存操作の結果はSnackbarで伝える。
+ * レスポンスが分かるようにする。入力ごとのvalidationは該当欄の下に出し、保存操作そのものの結果
+ * (成功・失敗・有効化失敗)はSnackbarで伝える。
  */
 @Composable
 fun WebhookSettingsScreen(
@@ -111,14 +113,20 @@ private fun WebhookSettingsForm(
   onBodyTemplateReset: () -> Unit,
   onSave: () -> Unit,
 ) {
+  val urlErrors = validationErrors.filter { it == WebhookSettingsValidator.ValidationError.INVALID_URL }
+  val headerErrors = validationErrors.filter { it in HEADER_VALIDATION_ERRORS }
+  val bodyErrors = validationErrors.filter { it == WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE }
+
   Column {
     OutlinedTextField(
       value = formState.url,
       onValueChange = onUrlChange,
       label = { Text(stringResource(R.string.webhook_settings_url_label)) },
+      isError = urlErrors.isNotEmpty(),
       modifier = Modifier.fillMaxWidth(),
       singleLine = true,
     )
+    FieldErrors(urlErrors)
 
     SectionHeading(stringResource(R.string.webhook_settings_headers_heading))
     formState.headers.forEachIndexed { index, header ->
@@ -132,68 +140,66 @@ private fun WebhookSettingsForm(
     TextButton(onClick = onHeaderAdd, modifier = Modifier.padding(top = 4.dp)) {
       Text(stringResource(R.string.webhook_settings_header_add))
     }
+    FieldErrors(headerErrors)
 
     WebhookBodyTemplateField(
       bodyTemplate = formState.bodyTemplate,
+      bodyErrors = bodyErrors,
       onBodyTemplateChange = onBodyTemplateChange,
       onBodyTemplateReset = onBodyTemplateReset,
     )
 
-    SectionHeading(stringResource(R.string.webhook_settings_response_heading))
-    MonospaceBlock(stringResource(R.string.webhook_settings_success_response_example))
-
-    validationErrors.forEach { error ->
-      Text(
-        text = stringResource(error.messageRes()),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.error,
-        modifier = Modifier.padding(top = 8.dp),
-      )
-    }
-
-    TextButton(onClick = onSave, modifier = Modifier.padding(top = 16.dp)) {
+    // 入力欄と保存を1つのまとまりとして扱い、保存は画面の主操作として明示する。
+    Button(onClick = onSave, modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
       Text(stringResource(R.string.action_save))
     }
+
+    // 保存後の入力とは別の参照情報として、期待する成功レスポンスを常時表示する。
+    SectionHeading(stringResource(R.string.webhook_settings_response_heading))
+    MonospaceBlock(stringResource(R.string.webhook_settings_success_response_example))
   }
 }
 
 @Composable
 private fun WebhookBodyTemplateField(
   bodyTemplate: String,
+  bodyErrors: List<WebhookSettingsValidator.ValidationError>,
   onBodyTemplateChange: (String) -> Unit,
   onBodyTemplateReset: () -> Unit,
 ) {
   var showResetConfirm by remember { mutableStateOf(false) }
 
   SectionHeading(stringResource(R.string.webhook_settings_body_heading))
-  Text(
-    text = stringResource(R.string.webhook_settings_body_hint),
-    style = MaterialTheme.typography.bodySmall,
-    color = MaterialTheme.colorScheme.onSurfaceVariant,
-  )
+  // placeholderの意味とentriesの展開例を、本文を編集する前に読めるひとまとまりの参照情報にする。
   Column(modifier = Modifier.padding(top = 4.dp)) {
+    Text(
+      text = stringResource(R.string.webhook_settings_body_hint),
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
     PlaceholderLine(
       stringResource(R.string.webhook_settings_placeholder_period_start, WebhookBodyTemplateRenderer.PERIOD_EXAMPLE),
     )
     PlaceholderLine(stringResource(R.string.webhook_settings_placeholder_period_end))
     PlaceholderLine(stringResource(R.string.webhook_settings_placeholder_entries))
+    Text(
+      text = stringResource(R.string.webhook_settings_entries_example_heading),
+      style = MaterialTheme.typography.labelMedium,
+      modifier = Modifier.padding(top = 8.dp),
+    )
+    MonospaceBlock(stringResource(R.string.webhook_settings_entries_example))
   }
   OutlinedTextField(
     value = bodyTemplate,
     onValueChange = onBodyTemplateChange,
     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+    isError = bodyErrors.isNotEmpty(),
     minLines = 6,
   )
+  FieldErrors(bodyErrors)
   TextButton(onClick = { showResetConfirm = true }, modifier = Modifier.padding(top = 4.dp)) {
     Text(stringResource(R.string.webhook_settings_body_reset))
   }
-
-  Text(
-    text = stringResource(R.string.webhook_settings_entries_example_heading),
-    style = MaterialTheme.typography.labelMedium,
-    modifier = Modifier.padding(top = 8.dp),
-  )
-  MonospaceBlock(stringResource(R.string.webhook_settings_entries_example))
 
   if (showResetConfirm) {
     AlertDialog(
@@ -226,6 +232,18 @@ private fun SectionHeading(text: String) {
     style = MaterialTheme.typography.titleSmall,
     modifier = Modifier.padding(top = 16.dp),
   )
+}
+
+@Composable
+private fun FieldErrors(errors: List<WebhookSettingsValidator.ValidationError>) {
+  errors.forEach { error ->
+    Text(
+      text = stringResource(error.messageRes()),
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.error,
+      modifier = Modifier.padding(top = 4.dp),
+    )
+  }
 }
 
 @Composable
@@ -281,6 +299,14 @@ private fun WebhookHeaderRow(
     }
   }
 }
+
+// URLでも本文でもない、ヘッダー欄に紐づくvalidation。ヘッダーセクションの下へまとめて出す。
+private val HEADER_VALIDATION_ERRORS = setOf(
+  WebhookSettingsValidator.ValidationError.BLANK_HEADER_NAME,
+  WebhookSettingsValidator.ValidationError.DUPLICATE_HEADER_NAME,
+  WebhookSettingsValidator.ValidationError.RESERVED_CONTENT_TYPE_HEADER,
+  WebhookSettingsValidator.ValidationError.INVALID_HEADER_SYNTAX,
+)
 
 private fun WebhookSaveResult.messageRes(): Int = when (this) {
   WebhookSaveResult.SUCCEEDED -> R.string.webhook_settings_save_succeeded

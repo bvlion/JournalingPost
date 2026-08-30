@@ -15,8 +15,11 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import java.time.Instant
-import java.time.OffsetDateTime
+import java.time.LocalDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
+import java.time.format.ResolverStyle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
@@ -29,7 +32,7 @@ import kotlinx.serialization.json.Json
  *
  * request bodyは利用者のBody templateを[WebhookBodyTemplateRenderer]で展開したもの。成功はHTTP 2xx
  * かつ responseがHosted契約(`analysis` の必須field一式)としてparseでき、`text` が非空文字で、
- * `period` / `analyzedAt` がRFC 3339として解釈できる場合のみ。保存する対象期間・解析日時・本文は
+ * `period` / `analyzedAt` がHosted契約どおりUTC・秒精度(`2026-08-29T09:00:05Z`)の表記の場合のみ。保存する対象期間・解析日時・本文は
  * すべてresponseの値から作る。どの失敗でもJournalEntryへは一切触れず[PeriodAnalysisOutcome.Failure]を
  * 返す。1回のanalyze()では同じsettings snapshotだけを使う。
  */
@@ -97,11 +100,11 @@ internal class WebhookPeriodAnalyzer(
     }
     if (analysis.text.isBlank()) return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
 
-    val responsePeriodStart = analysis.period.start.toRfc3339InstantOrNull()
+    val responsePeriodStart = analysis.period.start.toHostedResponseInstantOrNull()
       ?: return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
-    val responsePeriodEnd = analysis.period.end.toRfc3339InstantOrNull()
+    val responsePeriodEnd = analysis.period.end.toHostedResponseInstantOrNull()
       ?: return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
-    val responseAnalyzedAt = analysis.analyzedAt.toRfc3339InstantOrNull()
+    val responseAnalyzedAt = analysis.analyzedAt.toHostedResponseInstantOrNull()
       ?: return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
 
     return PeriodAnalysisOutcome.Success(
@@ -113,9 +116,13 @@ internal class WebhookPeriodAnalyzer(
   }
 }
 
-// RFC 3339は `Z` と `+09:00` の両方のoffset表記を許すため、OffsetDateTimeでparseしてInstantへ落とす。
-private fun String.toRfc3339InstantOrNull(): Instant? = try {
-  OffsetDateTime.parse(this).toInstant()
+// Hosted契約のresponse timestampはUTC・秒精度の `2026-08-29T09:00:05Z` 表記に固定されている。
+// offset付き(`+09:00`)や小数秒など他の表記は受け付けず、INVALID_RESPONSEとして扱う。
+private val hostedResponseInstantFormatter: DateTimeFormatter =
+  DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss'Z'").withResolverStyle(ResolverStyle.STRICT)
+
+private fun String.toHostedResponseInstantOrNull(): Instant? = try {
+  LocalDateTime.parse(this, hostedResponseInstantFormatter).toInstant(ZoneOffset.UTC)
 } catch (e: DateTimeParseException) {
   null
 }

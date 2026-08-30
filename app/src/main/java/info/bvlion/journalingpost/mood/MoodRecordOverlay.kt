@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -35,9 +36,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.R
@@ -136,13 +136,11 @@ private fun MoodRecordCard(
           maxLines = 4,
           trailingIcon = if (note.isNotEmpty()) {
             {
-              val clearNoteDescription = stringResource(R.string.record_note_clear)
-              IconButton(
-                onClick = { note = "" },
-                enabled = !isInteractionLocked,
-                modifier = Modifier.semantics { contentDescription = clearNoteDescription },
-              ) {
-                Text("✕")
+              IconButton(onClick = { note = "" }, enabled = !isInteractionLocked) {
+                Icon(
+                  painter = painterResource(R.drawable.ic_close),
+                  contentDescription = stringResource(R.string.record_note_clear),
+                )
               }
             }
           } else {

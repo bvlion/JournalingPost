@@ -193,13 +193,17 @@ private fun AnalysisTrigger(
       },
     ) {
       DatePicker(state = datePickerState)
-      // エラーではなく「実行条件を満たしていない」ことの事前提示なので、通常のsupporting text色にする。
+      // 「解析する」が押せない理由を、確定ボタンのすぐ上・同じ端側に supporting text として出す。
+      // エラーではなく実行条件を満たしていないことの事前提示なので、色は通常のsupporting text色にする。
       if (checked != null && checked.day == pickedDay && !checked.hasEntries) {
         Text(
           text = stringResource(R.string.analysis_pick_day_no_entries),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
-          modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 12.dp),
+          modifier = Modifier
+            .align(Alignment.End)
+            .padding(horizontal = 24.dp)
+            .padding(top = 8.dp),
         )
       }
     }

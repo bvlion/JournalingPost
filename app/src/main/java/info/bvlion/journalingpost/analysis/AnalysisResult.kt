@@ -9,9 +9,9 @@ import java.time.Instant
  * 持たない。解析に使ったJournalEntryが後から削除・変更されても、生成済みの解析結果はそのまま
  * 残す。同じ対象期間に対する複数回の解析結果も、それぞれ独立した行として保持する。
  *
- * periodStart/periodEndは解析対象とした期間そのもの(UTC基準のInstant)を保存し、表示時に
- * 端末のタイムゾーンへ変換する。手動解析では利用者が選んだ1日を端末timezoneの `[00:00, 翌日00:00)`
- * へ変換して渡す。
+ * periodStart/periodEnd/analyzedAtはUTC基準のInstantで保存し、表示時に端末のタイムゾーンへ変換する。
+ * Custom Webhookの手動解析では、これらと本文はいずれも解析先responseの `analysis`(Hosted契約)から
+ * 作る。利用者が選んだ日は解析先へ渡す対象期間の算出にだけ使い、保存値はresponseを正とする。
  */
 @Entity(tableName = "analysis_results")
 data class AnalysisResult(

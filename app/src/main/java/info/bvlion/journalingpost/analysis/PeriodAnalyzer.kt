@@ -12,7 +12,10 @@ fun interface PeriodAnalyzer {
   suspend fun analyze(periodStart: Instant, periodEnd: Instant, entries: List<JournalEntry>): PeriodAnalysisOutcome
 }
 
-/** 手動期間解析の結果。失敗してもJournalEntryは変更しないため、成否と表示用の理由のみ持つ。 */
+/**
+ * 手動期間解析の結果。どの経路でもJournalEntryは変更しない。成功時はAnalysisResultへ保存する値
+ * (対象期間・解析日時・本文)を、失敗時は表示用の理由([Failure])を持つ。
+ */
 sealed interface PeriodAnalysisOutcome {
   /**
    * Custom Webhookでは、[AnalysisResult]の対象期間・解析日時・本文はいずれもresponse

@@ -30,6 +30,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -47,9 +49,6 @@ import info.bvlion.journalingpost.settings.WebhookSettingsScreen
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
 import kotlinx.coroutines.launch
-
-// Material3 NavigationBar の既定の高さ。Snackbarを下部ナビの上へ浮かせるためのオフセットに使う。
-private val NavigationBarHeight = 80.dp
 
 class MainActivity : ComponentActivity() {
   private val viewModel: MainViewModel by viewModels { MainViewModelFactory }
@@ -78,6 +77,11 @@ class MainActivity : ComponentActivity() {
 
         val snackbarHostState = remember { SnackbarHostState() }
         val scope = rememberCoroutineScope()
+        val density = LocalDensity.current
+        // 下部ナビはScaffoldの外にあるSnackbarHostへpaddingを渡せないため、実測した高さ(システムの
+        // navigation bar inset込み)ぶんSnackbarを持ち上げる。Material3のNavigationBar高さ定数は
+        // 非公開なので値を複製しない。
+        var navigationBarHeight by remember { mutableStateOf(0.dp) }
         // アプリ内画面の一時feedbackはSnackbarへ集約する。連続で出す場合は前のものを引き継がない。
         val showMessage: (String) -> Unit = { message ->
           scope.launch {
@@ -117,7 +121,11 @@ class MainActivity : ComponentActivity() {
             modifier = Modifier.fillMaxSize().imePadding(),
             bottomBar = {
               if (!showWebhookSettings) {
-                NavigationBar {
+                NavigationBar(
+                  modifier = Modifier.onGloballyPositioned {
+                    navigationBarHeight = with(density) { it.size.height.toDp() }
+                  },
+                ) {
                   MainDestination.entries.forEach { item ->
                     NavigationBarItem(
                       selected = destination == item,
@@ -287,13 +295,12 @@ class MainActivity : ComponentActivity() {
             hostState = snackbarHostState,
             modifier = Modifier
               .align(Alignment.BottomCenter)
-              .navigationBarsPadding()
               .imePadding()
               .then(
                 if (showWebhookSettings || selectedMood != null) {
-                  Modifier
+                  Modifier.navigationBarsPadding()
                 } else {
-                  Modifier.padding(bottom = NavigationBarHeight)
+                  Modifier.padding(bottom = navigationBarHeight)
                 },
               ),
           )

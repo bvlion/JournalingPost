@@ -144,7 +144,7 @@ class SettingsViewModel(
   private val _webhookValidationErrors = MutableStateFlow<List<WebhookSettingsValidator.ValidationError>>(emptyList())
   val webhookValidationErrors: StateFlow<List<WebhookSettingsValidator.ValidationError>> = _webhookValidationErrors.asStateFlow()
 
-  // 「保存する」操作の結果を1度だけ画面へ伝える(画面はSnackbarで見せてから[consumeWebhookSaveResult])。
+  // Webhook設定の保存操作の結果を1度だけ画面へ伝える(画面はSnackbarで見せてから[consumeWebhookSaveResult])。
   private val _webhookSaveResult = MutableStateFlow<WebhookSaveResult?>(null)
   val webhookSaveResult: StateFlow<WebhookSaveResult?> = _webhookSaveResult.asStateFlow()
 
@@ -295,7 +295,7 @@ enum class WebhookSettingsLoadState {
   READY,
 }
 
-/** 「保存する」操作の結果。SUCCEEDEDはCustom Webhookの有効化まで成功した場合のみ。 */
+/** Webhook設定の保存操作の結果。SUCCEEDEDはCustom Webhookの有効化まで成功した場合のみ。 */
 enum class WebhookSaveResult {
   SUCCEEDED,
   FAILED,

@@ -109,13 +109,23 @@ class WebhookPeriodAnalyzerTest {
   }
 
   @Test
-  fun `period・analyzedAtがRFC3339でないとINVALID_RESPONSE`() = runTest {
-    val analyzer = analyzer(handler = { respondJson(hostedSuccessBody(analyzedAt = "not a timestamp")) })
+  fun `period・analyzedAtがUTC秒精度の表記でないとINVALID_RESPONSE`() = runTest {
+    // Hosted契約のresponse timestampは `2026-08-29T09:00:05Z` 固定。offset表記・小数秒・粒度不足は受け付けない。
+    listOf(
+      "not a timestamp",
+      "2026-08-29T09:00:05+00:00",
+      "2026-08-29T09:00:05.123Z",
+      "2026-08-29T09:00Z",
+      "2026-08-29",
+    ).forEach { badTimestamp ->
+      val analyzer = analyzer(handler = { respondJson(hostedSuccessBody(analyzedAt = badTimestamp)) })
 
-    assertEquals(
-      PeriodAnalysisOutcome.Failure.INVALID_RESPONSE,
-      analyzer.analyze(periodStart, periodEnd, oneEntry),
-    )
+      assertEquals(
+        "analyzedAt=$badTimestamp",
+        PeriodAnalysisOutcome.Failure.INVALID_RESPONSE,
+        analyzer.analyze(periodStart, periodEnd, oneEntry),
+      )
+    }
   }
 
   @Test
@@ -135,11 +145,9 @@ class WebhookPeriodAnalyzerTest {
     assertEquals("2026-08-31T00:00:00Z", period.getValue("end").jsonPrimitive.content)
     val jsonEntries = json.getValue("entries").jsonArray
     assertEquals(2, jsonEntries.size)
-    // moodなし・noteあり
     assertEquals("2026-08-30T01:00:00Z", jsonEntries[0].jsonObject.getValue("recordedAt").jsonPrimitive.content)
     assertTrue(jsonEntries[0].jsonObject["mood"].let { it == null || it is JsonNull })
     assertEquals("メモだけ", jsonEntries[0].jsonObject.getValue("note").jsonPrimitive.content)
-    // moodあり・noteなし。moodIdやAndroid内部IDは送らない
     val mood = jsonEntries[1].jsonObject.getValue("mood").jsonObject
     assertEquals("🙂", mood.getValue("emoji").jsonPrimitive.content)
     assertEquals("嬉しい", mood.getValue("label").jsonPrimitive.content)
@@ -161,6 +169,26 @@ class WebhookPeriodAnalyzerTest {
     assertEquals("2026-08-30T00:00:00Z", json.getValue("start").jsonPrimitive.content)
     assertEquals("x", json.getValue("tag").jsonPrimitive.content)
     assertEquals(1, json.getValue("items").jsonArray.size)
+  }
+
+  @Test
+  fun `entryのmoodはmoodIdではなくemoji_labelのsnapshotで決まる`() = runTest {
+    var body: String? = null
+    val entries = listOf(
+      // moodIdが無くてもemoji/labelが揃っていればmoodを載せる
+      entry(at = "2026-08-30T01:00:00Z", moodId = null, moodEmoji = "🙂", moodLabel = "嬉しい"),
+      // emoji/labelが欠けていればmoodIdの有無に関わらずmoodは載せない
+      entry(at = "2026-08-30T02:00:00Z", moodId = "HAPPY", moodEmoji = "🙂", moodLabel = null),
+    )
+    val analyzer = analyzer(handler = { request -> body = String(request.body.toByteArray()); respondText("ok") })
+
+    analyzer.analyze(periodStart, periodEnd, entries)
+
+    val jsonEntries = Json.parseToJsonElement(requireNotNull(body)).jsonObject.getValue("entries").jsonArray
+    val mood = jsonEntries[0].jsonObject.getValue("mood").jsonObject
+    assertEquals("🙂", mood.getValue("emoji").jsonPrimitive.content)
+    assertEquals("嬉しい", mood.getValue("label").jsonPrimitive.content)
+    assertTrue(jsonEntries[1].jsonObject["mood"].let { it == null || it is JsonNull })
   }
 
   @Test
