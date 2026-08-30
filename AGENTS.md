@@ -30,8 +30,27 @@ Java 17と、リポジトリ同梱のGradle Wrapperを使用します。
 - 変更に対応するテストを追加・更新する。
 - Issueやreviewの記述を実装前提として機械的に受け入れず、その機能・互換性自体が現在必要かを先に確認する。
 - 公開前の自分用開発環境だけを守るmigration・互換層は原則作らない。再インストール、データリセット、手動再設定で十分ならそちらを選ぶ。
-- 手動操作で価値を確認していない機能に、自動schedule・Push・background処理等の自動化基盤を先回りして追加しない。
+- 手動解析の成立確認前に、自動scheduler / Worker / background処理を同じ作業へ先回りして追加しない。ただし、実装順を後ろへ送ることと、決定済みの最終仕様を撤回することを混同しない。
+- 決定済みの仕様や外部契約を、実装量削減・単純化・「今は使わない」ことだけを理由に削除・変更しない。仕様自体を変える可能性がある場合は、Issueを書き換えたり実装を始めたりする前にユーザーへ確認する。
 - UIから撤回した操作や将来用capabilityを、利用中の呼び出し元がないままrepository等へ残さない。
+
+## Hosted解析の固定契約
+
+Hosted解析を扱う場合は、以下を現在の前提とする。実装詳細を簡略化するためにこの契約自体を変更しない。
+
+- JournalEntry / AnalysisResultの原本はAndroid端末に置き、Serverへ恒久保存しない。
+- 手動・自動とも解析開始の主体はAndroidとする。
+- timezone / recurrence / 次回実行判断はAndroid側で管理する。
+- 自動解析の指定時刻は厳密保証ではなく「その時刻ごろ」として扱う。
+- Hostedの自動解析は1日1回までとする。
+- Hosted ServerのAndroid向けAPIは原則 `POST /v1/installations` と `POST /v1/analyses` の2つとする。
+- `POST /v1/installations` で匿名installationをServer内部に作り、AndroidへBearer API keyを返す。AndroidはServer内部installation IDを保持せず、API keyだけを継続利用する。
+- `POST /v1/analyses` は同期HTTP request / responseを現在の完成形候補とし、成功時は `200` response bodyで解析結果を受け取ってAndroid側AnalysisResultへ保存する。
+- network timeout等による同一解析のretryでは同じidempotency keyを利用し、Server側の期限付きretry result bufferから同じ結果を返せる契約とする。
+- Hosted契約ではFCM token、`triggerAt`、ScheduledTrigger、Server側Push予約・schedulerを使用しない。
+- 自動解析後の通知が必要な場合はAndroid側のローカル通知を利用する。
+- 同期HTTPが実測上成立しない場合だけ非同期化を再検討し、その場合もFCM方式を自動的に復活させない。
+- まず手動Hosted解析を接続して実動確認してからAndroid側自動解析へ進むが、これは自動解析を仕様から外す意味ではない。
 
 ## コーディング規約
 
