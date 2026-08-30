@@ -36,7 +36,16 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class AnalysisHistoryViewModelTest {
   private val testDispatcher = StandardTestDispatcher()
-  private val fixedNow = Instant.parse("2026-08-30T22:00:00Z")
+  private val responsePeriodStart = Instant.parse("2026-08-30T00:05:00Z")
+  private val responsePeriodEnd = Instant.parse("2026-08-31T00:05:00Z")
+  private val responseAnalyzedAt = Instant.parse("2026-08-31T02:00:00Z")
+
+  private fun success(body: String = "結果") = PeriodAnalysisOutcome.Success(
+    periodStart = responsePeriodStart,
+    periodEnd = responsePeriodEnd,
+    analyzedAt = responseAnalyzedAt,
+    body = body,
+  )
 
   @Before
   fun setUp() {
@@ -110,7 +119,7 @@ class AnalysisHistoryViewModelTest {
 
   @Test
   fun `analyzeは選択日を端末timezoneの半開区間へ変換してentryを取得しanalyzerへ渡す`() = runTest(testDispatcher) {
-    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Success("結果") }
+    val analyzer = FakePeriodAnalyzer { success() }
     val reader = FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z")))
     val viewModel = createViewModel(analyzer = analyzer, entryReader = reader, currentZoneId = { ZoneOffset.UTC })
 
@@ -126,7 +135,7 @@ class AnalysisHistoryViewModelTest {
 
   @Test
   fun `対象期間にentryが無ければ送信せずNO_ENTRIESのFailedになる`() = runTest(testDispatcher) {
-    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Success("結果") }
+    val analyzer = FakePeriodAnalyzer { success() }
     val viewModel = createViewModel(analyzer = analyzer, entryReader = FakePeriodJournalEntryReader(emptyList()))
 
     viewModel.analyze(LocalDate.of(2026, 8, 30))
@@ -141,7 +150,7 @@ class AnalysisHistoryViewModelTest {
 
   @Test
   fun `entry取得が失敗するとLOCAL_READのFailedになる`() = runTest(testDispatcher) {
-    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Success("結果") }
+    val analyzer = FakePeriodAnalyzer { success() }
     val viewModel = createViewModel(
       analyzer = analyzer,
       entryReader = PeriodJournalEntryReader { _, _ -> throw RuntimeException("db boom") },
@@ -159,7 +168,7 @@ class AnalysisHistoryViewModelTest {
 
   @Test
   fun `analyzeは解析開始時点の現在timezoneで期間境界を計算する`() = runTest(testDispatcher) {
-    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Success("結果") }
+    val analyzer = FakePeriodAnalyzer { success() }
     var zone: ZoneId = ZoneOffset.UTC
     val viewModel = createViewModel(analyzer = analyzer, currentZoneId = { zone })
 
@@ -173,8 +182,8 @@ class AnalysisHistoryViewModelTest {
   }
 
   @Test
-  fun `analyze成功時は同じ期間と解析日時でAnalysisResultを保存しSucceededになる`() = runTest(testDispatcher) {
-    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Success("今日は穏やかでした") }
+  fun `analyze成功時はresponseのperiod・analyzedAt・textでAnalysisResultを保存する`() = runTest(testDispatcher) {
+    val analyzer = FakePeriodAnalyzer { success("今日は穏やかでした") }
     val writer = FakeAnalysisResultWriter()
     val viewModel = createViewModel(analyzer = analyzer, writer = writer, currentZoneId = { ZoneOffset.UTC })
 
@@ -182,9 +191,9 @@ class AnalysisHistoryViewModelTest {
     testDispatcher.scheduler.advanceUntilIdle()
 
     val saved = writer.saved.single()
-    assertEquals(Instant.parse("2026-08-30T00:00:00Z"), saved.periodStart)
-    assertEquals(Instant.parse("2026-08-31T00:00:00Z"), saved.periodEnd)
-    assertEquals(fixedNow, saved.analyzedAt)
+    assertEquals(responsePeriodStart, saved.periodStart)
+    assertEquals(responsePeriodEnd, saved.periodEnd)
+    assertEquals(responseAnalyzedAt, saved.analyzedAt)
     assertEquals("今日は穏やかでした", saved.body)
     assertEquals(AnalysisRunState.Succeeded, viewModel.analysisRunState.value)
   }
@@ -207,7 +216,7 @@ class AnalysisHistoryViewModelTest {
 
   @Test
   fun `AnalysisResult保存に失敗するとfailureなしのFailedになる`() = runTest(testDispatcher) {
-    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Success("結果") }
+    val analyzer = FakePeriodAnalyzer { success() }
     val writer = FakeAnalysisResultWriter(failOnSave = true)
     val viewModel = createViewModel(analyzer = analyzer, writer = writer)
 
@@ -219,7 +228,7 @@ class AnalysisHistoryViewModelTest {
 
   @Test
   fun `解析実行中の再呼び出しは無視される`() = runTest(testDispatcher) {
-    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Success("結果") }
+    val analyzer = FakePeriodAnalyzer { success() }
     val viewModel = createViewModel(analyzer = analyzer)
 
     viewModel.analyze(LocalDate.of(2026, 8, 30))
@@ -263,7 +272,7 @@ class AnalysisHistoryViewModelTest {
     integrationRepository: AnalysisIntegrationRepository =
       FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK),
     entryReader: PeriodJournalEntryReader = FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z"))),
-    analyzer: PeriodAnalyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Success("結果") },
+    analyzer: PeriodAnalyzer = FakePeriodAnalyzer { success() },
     writer: AnalysisResultWriter = FakeAnalysisResultWriter(),
     currentZoneId: () -> ZoneId = { ZoneOffset.UTC },
   ) = AnalysisHistoryViewModel(
@@ -273,7 +282,6 @@ class AnalysisHistoryViewModelTest {
     periodAnalyzer = analyzer,
     analysisResultWriter = writer,
     currentZoneId = currentZoneId,
-    now = { fixedNow },
   )
 
   private fun entry(at: String) = JournalEntry(

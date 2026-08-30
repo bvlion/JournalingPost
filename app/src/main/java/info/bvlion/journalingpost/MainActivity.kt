@@ -131,11 +131,13 @@ class MainActivity : ComponentActivity() {
                 val webhookFormState by settingsViewModel.webhookFormState.collectAsState()
                 val webhookValidationErrors by settingsViewModel.webhookValidationErrors.collectAsState()
                 val webhookSaveFailed by settingsViewModel.webhookSaveFailed.collectAsState()
+                val webhookSaveSucceeded by settingsViewModel.webhookSaveSucceeded.collectAsState()
                 WebhookSettingsScreen(
                   loadState = webhookSettingsLoadState,
                   formState = webhookFormState,
                   validationErrors = webhookValidationErrors,
                   saveFailed = webhookSaveFailed,
+                  saveSucceeded = webhookSaveSucceeded,
                   onUrlChange = settingsViewModel::updateWebhookUrl,
                   onHeaderAdd = settingsViewModel::addWebhookHeader,
                   onHeaderRemove = settingsViewModel::removeWebhookHeader,
@@ -143,6 +145,7 @@ class MainActivity : ComponentActivity() {
                   onHeaderValueChange = settingsViewModel::updateWebhookHeaderValue,
                   onBodyTemplateChange = settingsViewModel::updateWebhookBodyTemplate,
                   onBodyTemplateReset = settingsViewModel::resetWebhookBodyTemplate,
+                  onSaveSucceededShown = settingsViewModel::consumeWebhookSaveSucceeded,
                   onSave = settingsViewModel::saveWebhookSettings,
                   onBack = {
                     settingsViewModel.onWebhookSettingsScreenClosed()

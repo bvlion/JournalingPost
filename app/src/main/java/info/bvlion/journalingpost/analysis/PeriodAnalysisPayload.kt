@@ -22,8 +22,11 @@ internal data class WebhookAnalysisEntry(
 }
 
 /**
- * Custom Webhookからの成功response。Hosted解析APIの成功response(`analysis.text` ほか)と同じ契約に
- * 揃える。Android側で使うのは `analysis.text`(振り返り本文)だけで、他フィールドは無視する。
+ * Custom Webhookからの成功response。Hosted解析APIの `POST /v1/analyses` Response 200と同じschemaとして
+ * 扱う(定義元はJournalingPostServerの `docs/hosted-analysis-api.md`)。ここで定義した必須fieldが揃って
+ * parseできることを成功responseの条件とする。未知fieldはHosted契約どおり無視する。
+ *
+ * `entryCount` / `model` は現在の[AnalysisResult]に保存先が無いためparseするだけで永続化しない。
  */
 @Serializable
 internal data class WebhookAnalysisResponse(
@@ -31,8 +34,18 @@ internal data class WebhookAnalysisResponse(
 ) {
   @Serializable
   internal data class Analysis(
+    val period: Period,
+    val analyzedAt: String,
+    val entryCount: Int,
+    val model: String,
     val text: String,
-  )
+  ) {
+    @Serializable
+    internal data class Period(
+      val start: String,
+      val end: String,
+    )
+  }
 }
 
 /** moodは記録時点のsnapshot(emoji/label)をそのまま載せる。noteはinsert時にblank→nullで正規化済み。 */

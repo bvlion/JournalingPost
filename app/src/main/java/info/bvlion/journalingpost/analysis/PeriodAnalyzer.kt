@@ -14,7 +14,16 @@ fun interface PeriodAnalyzer {
 
 /** 手動期間解析の結果。失敗してもJournalEntryは変更しないため、成否と表示用の理由のみ持つ。 */
 sealed interface PeriodAnalysisOutcome {
-  data class Success(val body: String) : PeriodAnalysisOutcome
+  /**
+   * Custom Webhookでは、[AnalysisResult]の対象期間・解析日時・本文はいずれもresponse
+   * (Hosted契約の `analysis`)から作る。requestで渡したInstantや受信時刻は使わない。
+   */
+  data class Success(
+    val periodStart: Instant,
+    val periodEnd: Instant,
+    val analyzedAt: Instant,
+    val body: String,
+  ) : PeriodAnalysisOutcome
 
   enum class Failure : PeriodAnalysisOutcome {
     /** Custom Webhookが解析先として有効でない(未選択、または利用可能な設定がない)。 */

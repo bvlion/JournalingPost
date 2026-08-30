@@ -125,6 +125,14 @@ class SettingsViewModel(
   private val _webhookSaveFailed = MutableStateFlow(false)
   val webhookSaveFailed: StateFlow<Boolean> = _webhookSaveFailed.asStateFlow()
 
+  // 保存成功を1度だけ画面へ通知する(画面がToast等を出したら[consumeWebhookSaveSucceeded]で消す)。
+  private val _webhookSaveSucceeded = MutableStateFlow(false)
+  val webhookSaveSucceeded: StateFlow<Boolean> = _webhookSaveSucceeded.asStateFlow()
+
+  fun consumeWebhookSaveSucceeded() {
+    _webhookSaveSucceeded.value = false
+  }
+
   private val webhookRequestGeneration = AtomicInteger(0)
 
   /**
@@ -143,6 +151,7 @@ class SettingsViewModel(
     val generation = webhookRequestGeneration.incrementAndGet()
     _webhookValidationErrors.value = emptyList()
     _webhookSaveFailed.value = false
+    _webhookSaveSucceeded.value = false
     _webhookFormLoaded.value = false
     _webhookFormState.value = WebhookFormState()
     viewModelScope.launch {
@@ -167,6 +176,7 @@ class SettingsViewModel(
     webhookRequestGeneration.incrementAndGet()
     _webhookValidationErrors.value = emptyList()
     _webhookSaveFailed.value = false
+    _webhookSaveSucceeded.value = false
     _webhookFormLoaded.value = false
     _webhookFormState.value = WebhookFormState()
     _pendingCustomWebhookSelection.value = false
@@ -231,6 +241,7 @@ class SettingsViewModel(
     }
     _webhookValidationErrors.value = emptyList()
     _webhookSaveFailed.value = false
+    _webhookSaveSucceeded.value = false
     viewModelScope.launch {
       try {
         webhookSettingsRepository.save(WebhookSettings(form.url, validation.normalizedHeaders, form.bodyTemplate))
@@ -243,6 +254,7 @@ class SettingsViewModel(
       if (generation == webhookRequestGeneration.get()) {
         persistAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK, integrationRequestGeneration.incrementAndGet())
         _pendingCustomWebhookSelection.value = false
+        _webhookSaveSucceeded.value = true
       }
     }
   }

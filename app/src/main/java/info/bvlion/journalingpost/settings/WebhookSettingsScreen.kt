@@ -1,6 +1,6 @@
 package info.bvlion.journalingpost.settings
 
-import androidx.compose.foundation.clickable
+import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,12 +13,15 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -30,9 +33,28 @@ import info.bvlion.journalingpost.webhook.WebhookBodyTemplateRenderer
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
 
+// Hosted解析API(`docs/hosted-analysis-api.md`)の `POST /v1/analyses` Response 200 と同じ成功response。
+// Custom Webhookもこのschema全体としてparseし、text/period/analyzedAt を AnalysisResult へ保存する。
+private const val HOSTED_ANALYSIS_RESPONSE_EXAMPLE = """{
+  "analysis": {
+    "period": {
+      "start": "2026-08-29T00:00:00Z",
+      "end": "2026-08-29T09:00:00Z"
+    },
+    "analyzedAt": "2026-08-29T09:00:05Z",
+    "entryCount": 3,
+    "model": "example/analysis-model",
+    "text": "..."
+  }
+}"""
+
+private const val ENTRIES_ELEMENT_EXAMPLE =
+  """{ "recordedAt": "2026-08-29T01:15:00Z", "mood": { "emoji": "🙂", "label": "すこし上向き" }, "note": "架空のメモ" }"""
+
 /**
  * Custom Webhookの現在設定を、確認と編集を分けずにそのまま表示・変更する画面。
  * 変更は「保存する」で明示的に確定し、保存せずBack等で離脱した場合は保存済み設定を変更しない。
+ * 契約(送信方法・placeholder・成功response)は設定しながら確認できるよう常時表示する。
  */
 @Composable
 fun WebhookSettingsScreen(
@@ -40,6 +62,7 @@ fun WebhookSettingsScreen(
   formState: WebhookFormState,
   validationErrors: List<WebhookSettingsValidator.ValidationError>,
   saveFailed: Boolean,
+  saveSucceeded: Boolean,
   onUrlChange: (String) -> Unit,
   onHeaderAdd: () -> Unit,
   onHeaderRemove: (Int) -> Unit,
@@ -47,9 +70,18 @@ fun WebhookSettingsScreen(
   onHeaderValueChange: (Int, String) -> Unit,
   onBodyTemplateChange: (String) -> Unit,
   onBodyTemplateReset: () -> Unit,
+  onSaveSucceededShown: () -> Unit,
   onSave: () -> Unit,
   onBack: () -> Unit,
 ) {
+  val context = LocalContext.current
+  LaunchedEffect(saveSucceeded) {
+    if (saveSucceeded) {
+      Toast.makeText(context.applicationContext, "Webhook設定を保存しました", Toast.LENGTH_SHORT).show()
+      onSaveSucceededShown()
+    }
+  }
+
   Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
     ScreenTopAppBar(title = "Webhook設定", onBack = onBack)
 
@@ -205,51 +237,50 @@ private fun WebhookBodyTemplateField(
 
 @Composable
 private fun WebhookContractReference() {
-  var expanded by remember { mutableStateOf(false) }
+  Column(modifier = Modifier.padding(top = 16.dp)) {
+    Text(text = "契約", style = MaterialTheme.typography.titleSmall)
 
-  Text(
-    text = if (expanded) "契約の詳細を隠す" else "契約の詳細を表示",
-    style = MaterialTheme.typography.bodySmall,
-    color = MaterialTheme.colorScheme.primary,
-    modifier = Modifier
-      .padding(top = 12.dp)
-      .clickable { expanded = !expanded },
-  )
+    ContractLine("送信方法", "POST / Content-Type: application/json")
+    ContractLine(
+      "{{periodStart}} / {{periodEnd}}",
+      "対象期間の境界。RFC 3339のUTC文字列に展開されます（例: ${WebhookBodyTemplateRenderer.PERIOD_EXAMPLE}）。" +
+        "template側では引用符で囲んで使います。",
+    )
+    ContractLine(
+      "{{entries}}",
+      "対象期間のJournalEntryのJSON arrayに、引用符なしのraw JSONとして展開されます。" +
+        "展開後のbody全体が有効なJSONである必要があります。",
+    )
+    ContractLine("{{entries}} の各要素", ENTRIES_ELEMENT_EXAMPLE)
+    ContractLine(
+      "moodのみ / noteのみ",
+      "その要素では対応するkey（mood または note）が省略されます。moodId等の内部IDは送りません。",
+    )
+    ContractLine("上記以外の {{...}}", "placeholderとして扱われず、そのままの文字列で送信されます。")
 
-  if (expanded) {
-    Column(modifier = Modifier.padding(top = 4.dp)) {
-      ContractLine("送信方法", "POST / Content-Type: application/json")
-      ContractLine(
-        "{{periodStart}} / {{periodEnd}}",
-        "対象期間の境界。RFC 3339のUTC文字列に展開されます（例: ${WebhookBodyTemplateRenderer.PERIOD_EXAMPLE}）。" +
-          "template側では引用符で囲んで使います。",
-      )
-      ContractLine(
-        "{{entries}}",
-        "対象期間のJournalEntryのJSON arrayに、引用符なしのraw JSONとして展開されます。" +
-          "展開後のbody全体が有効なJSONである必要があります。",
-      )
-      ContractLine(
-        "{{entries}} の各要素",
-        """{ "recordedAt": "<RFC 3339>", "mood": { "emoji": "…", "label": "…" }, "note": "…" }。""" +
-          "moodのみ / noteのみの要素もあり、その場合はそのkeyが省略されます。",
-      )
-      ContractLine(
-        "上記以外の {{...}}",
-        "placeholderとして扱われず、そのままの文字列で送信されます。",
-      )
-      ContractLine(
-        "レスポンス（成功時）",
-        """{ "analysis": { "text": "振り返り本文", "…": "…" } }。HTTP 2xxで analysis.text が空でなければ成功として保存します。""" +
-          "共通schemaの定義元はJournalingPostServerの docs/hosted-analysis-api.md です。",
-      )
-    }
+    Text(
+      text = "成功レスポンス（JournalingPostServer docs/hosted-analysis-api.md の Response 200 と同じ）",
+      style = MaterialTheme.typography.labelMedium,
+      modifier = Modifier.padding(top = 12.dp),
+    )
+    Text(
+      text = HOSTED_ANALYSIS_RESPONSE_EXAMPLE,
+      style = MaterialTheme.typography.bodySmall,
+      fontFamily = FontFamily.Monospace,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.padding(top = 4.dp),
+    )
+    Text(
+      text = "HTTP 2xxで、このschemaとしてparseでき text が空でなければ成功として保存します。",
+      style = MaterialTheme.typography.bodySmall,
+      modifier = Modifier.padding(top = 4.dp),
+    )
   }
 }
 
 @Composable
 private fun ContractLine(term: String, description: String) {
-  Column(modifier = Modifier.padding(top = 6.dp)) {
+  Column(modifier = Modifier.padding(top = 8.dp)) {
     Text(text = term, style = MaterialTheme.typography.labelMedium)
     Text(
       text = description,
@@ -314,6 +345,7 @@ fun WebhookSettingsScreenPreview() {
       ),
       validationErrors = emptyList(),
       saveFailed = false,
+      saveSucceeded = false,
       onUrlChange = {},
       onHeaderAdd = {},
       onHeaderRemove = {},
@@ -321,6 +353,7 @@ fun WebhookSettingsScreenPreview() {
       onHeaderValueChange = { _, _ -> },
       onBodyTemplateChange = {},
       onBodyTemplateReset = {},
+      onSaveSucceededShown = {},
       onSave = {},
       onBack = {},
     )

@@ -73,11 +73,47 @@ class WebhookPeriodAnalyzerTest {
   }
 
   @Test
-  fun `成功responseのanalysis_textをSuccessとして返す`() = runTest {
-    val analyzer = analyzer(handler = { respondText("今週は穏やかでした") })
+  fun `Hosted契約のresponseからperiod・analyzedAt・textでSuccessを作る`() = runTest {
+    val analyzer = analyzer(
+      handler = {
+        respondJson(
+          hostedSuccessBody(
+            start = "2026-08-29T00:00:00Z",
+            end = "2026-08-29T09:00:00Z",
+            analyzedAt = "2026-08-29T09:00:05Z",
+            text = "今週は穏やかでした",
+          ),
+        )
+      },
+    )
 
     assertEquals(
-      PeriodAnalysisOutcome.Success("今週は穏やかでした"),
+      PeriodAnalysisOutcome.Success(
+        periodStart = Instant.parse("2026-08-29T00:00:00Z"),
+        periodEnd = Instant.parse("2026-08-29T09:00:00Z"),
+        analyzedAt = Instant.parse("2026-08-29T09:00:05Z"),
+        body = "今週は穏やかでした",
+      ),
+      analyzer.analyze(periodStart, periodEnd, oneEntry),
+    )
+  }
+
+  @Test
+  fun `analysis_textだけの不完全なresponseはINVALID_RESPONSE`() = runTest {
+    val analyzer = analyzer(handler = { respondJson("""{"analysis":{"text":"ok"}}""") })
+
+    assertEquals(
+      PeriodAnalysisOutcome.Failure.INVALID_RESPONSE,
+      analyzer.analyze(periodStart, periodEnd, oneEntry),
+    )
+  }
+
+  @Test
+  fun `period・analyzedAtがRFC3339でないとINVALID_RESPONSE`() = runTest {
+    val analyzer = analyzer(handler = { respondJson(hostedSuccessBody(analyzedAt = "not a timestamp")) })
+
+    assertEquals(
+      PeriodAnalysisOutcome.Failure.INVALID_RESPONSE,
       analyzer.analyze(periodStart, periodEnd, oneEntry),
     )
   }
@@ -128,17 +164,35 @@ class WebhookPeriodAnalyzerTest {
   }
 
   @Test
-  fun `想定外フィールドを含むresponseでもanalysis_textがあればSuccess`() = runTest {
+  fun `Hosted契約どおり未知フィールドは無視してSuccess`() = runTest {
     val analyzer = analyzer(
-      handler = { respondJson("""{"analysis":{"text":"ok","model":"m","entryCount":1},"extra":true}""") },
+      handler = {
+        respondJson(
+          """
+          {
+            "analysis": {
+              "period": { "start": "2026-08-29T00:00:00Z", "end": "2026-08-29T09:00:00Z", "extra": 1 },
+              "analyzedAt": "2026-08-29T09:00:05Z",
+              "entryCount": 3,
+              "model": "example/analysis-model",
+              "text": "ok",
+              "future": "field"
+            },
+            "meta": true
+          }
+          """.trimIndent(),
+        )
+      },
     )
 
-    assertEquals(PeriodAnalysisOutcome.Success("ok"), analyzer.analyze(periodStart, periodEnd, oneEntry))
+    val outcome = analyzer.analyze(periodStart, periodEnd, oneEntry)
+    assertTrue(outcome is PeriodAnalysisOutcome.Success)
+    assertEquals("ok", (outcome as PeriodAnalysisOutcome.Success).body)
   }
 
   @Test
   fun `analysis_textが空文字ならINVALID_RESPONSE`() = runTest {
-    val analyzer = analyzer(handler = { respondJson("""{"analysis":{"text":"  "}}""") })
+    val analyzer = analyzer(handler = { respondJson(hostedSuccessBody(text = "  ")) })
 
     assertEquals(
       PeriodAnalysisOutcome.Failure.INVALID_RESPONSE,
@@ -218,7 +272,24 @@ class WebhookPeriodAnalyzerTest {
   )
 
   private fun MockRequestHandleScope.respondText(text: String = "ok"): HttpResponseData =
-    respondJson("""{"analysis":{"text":"$text"}}""")
+    respondJson(hostedSuccessBody(text = text))
+
+  private fun hostedSuccessBody(
+    start: String = "2026-08-29T00:00:00Z",
+    end: String = "2026-08-29T09:00:00Z",
+    analyzedAt: String = "2026-08-29T09:00:05Z",
+    text: String = "ok",
+  ): String = """
+    {
+      "analysis": {
+        "period": { "start": "$start", "end": "$end" },
+        "analyzedAt": "$analyzedAt",
+        "entryCount": 3,
+        "model": "example/analysis-model",
+        "text": "$text"
+      }
+    }
+  """.trimIndent()
 
   private fun settings(
     bodyTemplate: String = WebhookBodyTemplateRenderer.DEFAULT_TEMPLATE,

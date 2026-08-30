@@ -33,7 +33,6 @@ class AnalysisHistoryViewModel(
   // 端末timezoneは解析開始・一覧生成のたびに解決する。ViewModel生成時に固定すると、移動などで
   // timezoneが変わったあと選択日の境界が古いオフセットで計算されてしまうため。
   private val currentZoneId: () -> ZoneId = { ZoneId.systemDefault() },
-  private val now: () -> Instant = Instant::now,
 ) : ViewModel() {
   val uiState: StateFlow<AnalysisHistoryUiState> = reader.observeAll()
     .map { results ->
@@ -89,11 +88,12 @@ class AnalysisHistoryViewModel(
       _analysisRunState.value = try {
         when (val outcome = periodAnalyzer.analyze(periodStart, periodEnd, entries)) {
           is PeriodAnalysisOutcome.Success -> {
+            // 対象期間・解析日時・本文はいずれもresponseの値を保存元にする(Custom Webhook契約)。
             analysisResultWriter.save(
               AnalysisResult(
-                periodStart = periodStart,
-                periodEnd = periodEnd,
-                analyzedAt = now(),
+                periodStart = outcome.periodStart,
+                periodEnd = outcome.periodEnd,
+                analyzedAt = outcome.analyzedAt,
                 body = outcome.body,
               ),
             )

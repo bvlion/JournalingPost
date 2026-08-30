@@ -15,6 +15,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.format.DateTimeParseException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
@@ -26,9 +28,10 @@ import kotlinx.serialization.json.Json
  * 表示制御にすぎず安全境界にしない(「使用しない」へ変更した直後などUI状態が古くても外部へ送らない)。
  *
  * request bodyは利用者のBody templateを[WebhookBodyTemplateRenderer]で展開したもの。成功はHTTP 2xx
- * かつ responseがHostedと同じ `analysis.text` schemaとしてparseでき、text が非空文字の場合のみ。
- * どの失敗でもJournalEntryへは一切触れず[PeriodAnalysisOutcome.Failure]を返す。1回のanalyze()では
- * 同じsettings snapshotだけを使う。
+ * かつ responseがHosted契約(`analysis` の必須field一式)としてparseでき、`text` が非空文字で、
+ * `period` / `analyzedAt` がRFC 3339として解釈できる場合のみ。保存する対象期間・解析日時・本文は
+ * すべてresponseの値から作る。どの失敗でもJournalEntryへは一切触れず[PeriodAnalysisOutcome.Failure]を
+ * 返す。1回のanalyze()では同じsettings snapshotだけを使う。
  */
 internal class WebhookPeriodAnalyzer(
   private val httpClient: HttpClient,
@@ -85,15 +88,34 @@ internal class WebhookPeriodAnalyzer(
       return PeriodAnalysisOutcome.Failure.NETWORK
     }
 
-    val text = try {
-      responseJson.decodeFromString<WebhookAnalysisResponse>(responseText).analysis.text
+    val analysis = try {
+      responseJson.decodeFromString<WebhookAnalysisResponse>(responseText).analysis
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
       return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
     }
-    if (text.isBlank()) return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
+    if (analysis.text.isBlank()) return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
 
-    return PeriodAnalysisOutcome.Success(text)
+    val responsePeriodStart = analysis.period.start.toRfc3339InstantOrNull()
+      ?: return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
+    val responsePeriodEnd = analysis.period.end.toRfc3339InstantOrNull()
+      ?: return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
+    val responseAnalyzedAt = analysis.analyzedAt.toRfc3339InstantOrNull()
+      ?: return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
+
+    return PeriodAnalysisOutcome.Success(
+      periodStart = responsePeriodStart,
+      periodEnd = responsePeriodEnd,
+      analyzedAt = responseAnalyzedAt,
+      body = analysis.text,
+    )
   }
+}
+
+// RFC 3339は `Z` と `+09:00` の両方のoffset表記を許すため、OffsetDateTimeでparseしてInstantへ落とす。
+private fun String.toRfc3339InstantOrNull(): Instant? = try {
+  OffsetDateTime.parse(this).toInstant()
+} catch (e: DateTimeParseException) {
+  null
 }
