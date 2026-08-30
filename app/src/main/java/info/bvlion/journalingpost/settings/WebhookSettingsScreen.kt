@@ -60,6 +60,7 @@ fun WebhookSettingsScreen(
   validationErrors: List<WebhookSettingsValidator.ValidationError>,
   saveFailed: Boolean,
   saveSucceeded: Boolean,
+  activationFailed: Boolean,
   onUrlChange: (String) -> Unit,
   onHeaderAdd: () -> Unit,
   onHeaderRemove: (Int) -> Unit,
@@ -79,6 +80,14 @@ fun WebhookSettingsScreen(
           text = "Webhook設定を保存しました",
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.padding(bottom = 4.dp),
+        )
+      }
+      if (activationFailed) {
+        Text(
+          text = "Webhook設定は保存しましたが、Custom Webhookを有効にできませんでした。もう一度お試しください。",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.error,
           modifier = Modifier.padding(bottom = 4.dp),
         )
       }
@@ -337,6 +346,7 @@ fun WebhookSettingsScreenPreview() {
       validationErrors = emptyList(),
       saveFailed = false,
       saveSucceeded = false,
+      activationFailed = false,
       onUrlChange = {},
       onHeaderAdd = {},
       onHeaderRemove = {},

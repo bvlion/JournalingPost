@@ -192,6 +192,26 @@ class SettingsViewModelTest {
   }
 
   @Test
+  fun `Webhook設定は保存できてもCustom Webhook有効化に失敗したら成功表示にしない`() = runTest(dispatcher) {
+    val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE, failNextSets = 1)
+    val webhookRepository = FakeWebhookSettingsRepository()
+    val viewModel = SettingsViewModel(integrationRepository, webhookRepository)
+    fillValidForm(viewModel)
+
+    viewModel.saveWebhookSettings()
+    advanceUntilIdle()
+
+    // Webhook設定自体は保存されている
+    assertEquals(1, webhookRepository.saveCallCount)
+    // が、実効AnalysisIntegrationはNONEのまま
+    assertEquals(AnalysisIntegration.NONE, integrationRepository.current)
+    // 成功表示にはならず、有効化失敗が表示され、解析連携の保存失敗も立つ
+    assertFalse(viewModel.webhookSaveSucceeded.value)
+    assertTrue(viewModel.webhookActivationFailed.value)
+    assertTrue(viewModel.integrationSaveFailed.value)
+  }
+
+  @Test
   fun `Webhook設定の保存失敗時はwebhookSaveSucceededがfalseのまま`() = runTest(dispatcher) {
     val viewModel = SettingsViewModel(
       FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
@@ -366,12 +386,19 @@ class SettingsViewModelTest {
     bodyTemplate = """{"period":{"start":"{{periodStart}}","end":"{{periodEnd}}"},"entries":{{entries}}}""",
   )
 
-  private class FakeAnalysisIntegrationRepository(initial: AnalysisIntegration) : AnalysisIntegrationRepository {
+  private class FakeAnalysisIntegrationRepository(
+    initial: AnalysisIntegration,
+    private var failNextSets: Int = 0,
+  ) : AnalysisIntegrationRepository {
     private val state = MutableStateFlow(initial)
     override val analysisIntegration: Flow<AnalysisIntegration> = state
     val current: AnalysisIntegration get() = state.value
 
     override suspend fun setAnalysisIntegration(integration: AnalysisIntegration) {
+      if (failNextSets > 0) {
+        failNextSets--
+        throw IOException("analysis integration write failed")
+      }
       state.value = integration
     }
   }

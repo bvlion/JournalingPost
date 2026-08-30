@@ -91,13 +91,16 @@ class SettingsViewModel(
     }
   }
 
-  private suspend fun persistAnalysisIntegration(integration: AnalysisIntegration, generation: Int) {
-    try {
+  /** 永続化できたら true。失敗時は false を返しつつ[_integrationSaveFailed]を立てる。 */
+  private suspend fun persistAnalysisIntegration(integration: AnalysisIntegration, generation: Int): Boolean {
+    return try {
       analysisIntegrationRepository.setAnalysisIntegration(integration)
+      true
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
       if (generation == integrationRequestGeneration.get()) _integrationSaveFailed.value = true
+      false
     }
   }
 
@@ -129,6 +132,10 @@ class SettingsViewModel(
   private val _webhookSaveSucceeded = MutableStateFlow(false)
   val webhookSaveSucceeded: StateFlow<Boolean> = _webhookSaveSucceeded.asStateFlow()
 
+  // Webhook設定は保存できたが、Custom Webhookの有効化(実効AnalysisIntegration切替)に失敗した状態。
+  private val _webhookActivationFailed = MutableStateFlow(false)
+  val webhookActivationFailed: StateFlow<Boolean> = _webhookActivationFailed.asStateFlow()
+
   private val webhookRequestGeneration = AtomicInteger(0)
 
   /**
@@ -148,6 +155,7 @@ class SettingsViewModel(
     _webhookValidationErrors.value = emptyList()
     _webhookSaveFailed.value = false
     _webhookSaveSucceeded.value = false
+    _webhookActivationFailed.value = false
     _webhookFormLoaded.value = false
     _webhookFormState.value = WebhookFormState()
     viewModelScope.launch {
@@ -173,6 +181,7 @@ class SettingsViewModel(
     _webhookValidationErrors.value = emptyList()
     _webhookSaveFailed.value = false
     _webhookSaveSucceeded.value = false
+    _webhookActivationFailed.value = false
     _webhookFormLoaded.value = false
     _webhookFormState.value = WebhookFormState()
     _pendingCustomWebhookSelection.value = false
@@ -221,6 +230,7 @@ class SettingsViewModel(
 
   private fun updateWebhookForm(transform: (WebhookFormState) -> WebhookFormState) {
     _webhookSaveSucceeded.value = false
+    _webhookActivationFailed.value = false
     _webhookFormState.update(transform)
   }
 
@@ -239,6 +249,7 @@ class SettingsViewModel(
     _webhookValidationErrors.value = emptyList()
     _webhookSaveFailed.value = false
     _webhookSaveSucceeded.value = false
+    _webhookActivationFailed.value = false
     viewModelScope.launch {
       try {
         webhookSettingsRepository.save(WebhookSettings(form.url, validation.normalizedHeaders, form.bodyTemplate))
@@ -249,9 +260,15 @@ class SettingsViewModel(
         return@launch
       }
       if (generation == webhookRequestGeneration.get()) {
-        persistAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK, integrationRequestGeneration.incrementAndGet())
+        // Webhook設定の保存に成功しても、Custom Webhookの有効化まで成功して初めて「保存できた」と
+        // 見せる。有効化に失敗した場合は実効AnalysisIntegrationがNONEのままなので、その旨を表示する。
+        val activated = persistAnalysisIntegration(
+          AnalysisIntegration.CUSTOM_WEBHOOK,
+          integrationRequestGeneration.incrementAndGet(),
+        )
         _pendingCustomWebhookSelection.value = false
-        _webhookSaveSucceeded.value = true
+        _webhookSaveSucceeded.value = activated
+        _webhookActivationFailed.value = !activated
       }
     }
   }
