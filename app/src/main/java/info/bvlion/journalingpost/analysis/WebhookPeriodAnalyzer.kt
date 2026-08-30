@@ -24,8 +24,7 @@ import kotlinx.serialization.json.Json
  * Webhook設定が存在する場合だけrequestを送る。UI側の`canRunAnalysis`は表示制御にすぎず、それを安全境界に
  * しない(「使用しない」へ変更した直後などUI状態が古くても、JournalEntryを外部へ送らない)。
  *
- * 成功はリダイレクト解決後の最終responseが2xx かつ PeriodAnalysisResponseとしてparseでき body が
- * 非空文字の場合のみ(リダイレクト追従はhttpClient側の設定に委ねる)。
+ * 成功はHTTP 2xx かつ responseがPeriodAnalysisResponseとしてparseでき body が非空文字の場合のみ。
  * 設定取得・対象期間の取得・送受信・response解析のどこで失敗しても、JournalEntryへは一切触れず
  * [PeriodAnalysisOutcome.Failure]を返す。1回のanalyze()では同じsettings snapshotだけを使う。
  */
@@ -80,8 +79,7 @@ internal class WebhookPeriodAnalyzer(
       return PeriodAnalysisOutcome.Failure.NETWORK
     }
 
-    // 成功はリダイレクト解決後の最終responseが2xxの場合のみ。最終responseが2xx以外(解決されずに
-    // 残った3xxを含む)はSERVER_ERROR。
+    // 2xx以外(3xxを含む)はSERVER_ERROR。
     if (!response.status.isSuccess()) return PeriodAnalysisOutcome.Failure.SERVER_ERROR
 
     val body = try {
