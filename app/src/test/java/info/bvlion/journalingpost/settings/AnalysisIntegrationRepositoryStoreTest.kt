@@ -56,7 +56,7 @@ class AnalysisIntegrationRepositoryStoreTest {
   private class ConfiguredWebhookSettingsRepository : WebhookSettingsRepository {
     override val settings: Flow<WebhookSettingsState> = MutableStateFlow(
       WebhookSettingsState.Configured(
-        WebhookSettings(url = "https://example.com/webhook", headers = emptyList()),
+        WebhookSettings(url = "https://example.com/webhook", headers = emptyList(), bodyTemplate = "{}"),
       ),
     )
 

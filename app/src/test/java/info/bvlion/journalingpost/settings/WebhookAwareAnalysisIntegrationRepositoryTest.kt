@@ -76,6 +76,7 @@ class WebhookAwareAnalysisIntegrationRepositoryTest {
   private fun webhookSettings() = WebhookSettings(
     url = "https://example.com/webhook",
     headers = emptyList(),
+    bodyTemplate = "{}",
   )
 
   private class FakeAnalysisIntegrationRepository(initial: AnalysisIntegration) : AnalysisIntegrationRepository {

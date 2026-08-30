@@ -8,6 +8,7 @@ import info.bvlion.journalingpost.analysis.AnalysisResultWriter
 import info.bvlion.journalingpost.analysis.PeriodAnalyzer
 import info.bvlion.journalingpost.analysis.WebhookPeriodAnalyzer
 import info.bvlion.journalingpost.analysis.db.RoomAnalysisResultRepository
+import info.bvlion.journalingpost.journal.PeriodJournalEntryReader
 import info.bvlion.journalingpost.journal.db.JournalDatabase
 import info.bvlion.journalingpost.journal.db.RoomJournalEntryRepository
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
@@ -43,11 +44,11 @@ object AnalysisHistoryViewModelFactory : ViewModelProvider.Factory {
       httpClient = httpClient,
       analysisIntegrationRepository = analysisIntegrationRepository,
       webhookSettingsRepository = WebhookSettingsRepositoryStore.getInstance(context),
-      periodJournalEntryReader = journalRepository,
     )
     dependencies = Dependencies(
       reader = analysisRepository,
       writer = analysisRepository,
+      periodJournalEntryReader = journalRepository,
       analysisIntegrationRepository = analysisIntegrationRepository,
       analyzer = analyzer,
     )
@@ -59,6 +60,7 @@ object AnalysisHistoryViewModelFactory : ViewModelProvider.Factory {
     return AnalysisHistoryViewModel(
       reader = dependencies.reader,
       analysisIntegrationRepository = dependencies.analysisIntegrationRepository,
+      periodJournalEntryReader = dependencies.periodJournalEntryReader,
       periodAnalyzer = dependencies.analyzer,
       analysisResultWriter = dependencies.writer,
     ) as T
@@ -67,6 +69,7 @@ object AnalysisHistoryViewModelFactory : ViewModelProvider.Factory {
   private class Dependencies(
     val reader: AnalysisResultReader,
     val writer: AnalysisResultWriter,
+    val periodJournalEntryReader: PeriodJournalEntryReader,
     val analysisIntegrationRepository: AnalysisIntegrationRepository,
     val analyzer: PeriodAnalyzer,
   )

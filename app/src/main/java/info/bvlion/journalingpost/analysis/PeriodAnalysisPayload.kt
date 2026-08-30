@@ -4,48 +4,41 @@ import info.bvlion.journalingpost.journal.JournalEntry
 import kotlinx.serialization.Serializable
 
 /**
- * Custom Webhookへ送る期間解析request。JournalEntryの原本表現(Instant)はISO-8601 UTC文字列へ
- * 変換して送る。schemaVersionは、将来Webhook受け口の形式を変えたときに互換を判断できるよう固定で送る。
- * 期間は `[periodStart, periodEnd)` の半開区間。
+ * `{{entries}}` placeholderへ展開するJournalEntryのJSON表現。Hosted解析APIのrequest
+ * `entries[]` と同じ形にする(共通schemaの定義元はJournalingPostServerの
+ * `docs/hosted-analysis-api.md`)。`moodId` やAndroid内部IDは送らない。
  */
 @Serializable
-internal data class PeriodAnalysisRequest(
-  val schemaVersion: Int = SCHEMA_VERSION,
-  val periodStart: String,
-  val periodEnd: String,
-  val entries: List<Entry>,
+internal data class WebhookAnalysisEntry(
+  val recordedAt: String,
+  val mood: Mood? = null,
+  val note: String? = null,
 ) {
   @Serializable
-  internal data class Entry(
-    val timestamp: String,
-    val mood: Mood?,
-    val note: String?,
-  )
-
-  @Serializable
   internal data class Mood(
-    val id: String,
     val emoji: String,
     val label: String,
   )
-
-  companion object {
-    const val SCHEMA_VERSION = 1
-  }
 }
 
-/** Custom Webhookからの期間解析response。bodyだけをAnalysisResultへ保存し、他フィールドは無視する。 */
+/**
+ * Custom Webhookからの成功response。Hosted解析APIの成功response(`analysis.text` ほか)と同じ契約に
+ * 揃える。Android側で使うのは `analysis.text`(振り返り本文)だけで、他フィールドは無視する。
+ */
 @Serializable
-internal data class PeriodAnalysisResponse(
-  val body: String,
-)
+internal data class WebhookAnalysisResponse(
+  val analysis: Analysis,
+) {
+  @Serializable
+  internal data class Analysis(
+    val text: String,
+  )
+}
 
-/** moodはmoodIdを持つentryだけに載せる。emoji/labelは記録時点のsnapshotをそのまま送る。 */
-internal fun JournalEntry.toPeriodAnalysisEntry(): PeriodAnalysisRequest.Entry =
-  PeriodAnalysisRequest.Entry(
-    timestamp = timestamp.toString(),
-    mood = moodId?.let { id ->
-      PeriodAnalysisRequest.Mood(id = id, emoji = moodEmoji.orEmpty(), label = moodLabel.orEmpty())
-    },
+/** moodは記録時点のsnapshot(emoji/label)をそのまま載せる。noteはinsert時にblank→nullで正規化済み。 */
+internal fun JournalEntry.toWebhookAnalysisEntry(): WebhookAnalysisEntry =
+  WebhookAnalysisEntry(
+    recordedAt = timestamp.toString(),
+    mood = if (moodId != null) WebhookAnalysisEntry.Mood(moodEmoji.orEmpty(), moodLabel.orEmpty()) else null,
     note = note,
   )

@@ -10,6 +10,7 @@ object WebhookSettingsValidator {
     DUPLICATE_HEADER_NAME,
     RESERVED_CONTENT_TYPE_HEADER,
     INVALID_HEADER_SYNTAX,
+    INVALID_BODY_TEMPLATE,
   }
 
   /**
@@ -22,7 +23,7 @@ object WebhookSettingsValidator {
     val normalizedHeaders: List<WebhookHeader>,
   )
 
-  fun validate(url: String, headers: List<WebhookHeader>): Result {
+  fun validate(url: String, headers: List<WebhookHeader>, bodyTemplate: String): Result {
     val errors = mutableListOf<ValidationError>()
     if (!isPostableHttpUrl(url)) errors += ValidationError.INVALID_URL
 
@@ -40,6 +41,11 @@ object WebhookSettingsValidator {
       (header.name.isNotBlank() && !header.name.isValidHeaderNameToken()) || header.value.containsCrOrLf()
     }
     if (hasInvalidHeaderSyntax) errors += ValidationError.INVALID_HEADER_SYNTAX
+
+    // {{entries}}をraw JSON値(空array)として、期間placeholderを見本文字列として展開した結果が
+    // 有効なJSONになることだけを検証する。未知の {{...}} はそのまま残るため、それがJSONを壊す場合も
+    // ここで弾かれる。
+    if (!WebhookBodyTemplateRenderer.rendersValidJson(bodyTemplate)) errors += ValidationError.INVALID_BODY_TEMPLATE
 
     return Result(errors, normalizedHeaders)
   }

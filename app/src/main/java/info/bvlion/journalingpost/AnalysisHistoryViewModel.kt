@@ -9,6 +9,7 @@ import info.bvlion.journalingpost.analysis.AnalysisResultWriter
 import info.bvlion.journalingpost.analysis.PeriodAnalysisOutcome
 import info.bvlion.journalingpost.analysis.PeriodAnalyzer
 import info.bvlion.journalingpost.analysis.toAnalysisHistoryItems
+import info.bvlion.journalingpost.journal.PeriodJournalEntryReader
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import java.time.Instant
@@ -26,6 +27,7 @@ import kotlinx.coroutines.launch
 class AnalysisHistoryViewModel(
   reader: AnalysisResultReader,
   analysisIntegrationRepository: AnalysisIntegrationRepository,
+  private val periodJournalEntryReader: PeriodJournalEntryReader,
   private val periodAnalyzer: PeriodAnalyzer,
   private val analysisResultWriter: AnalysisResultWriter,
   // 端末timezoneは解析開始・一覧生成のたびに解決する。ViewModel生成時に固定すると、移動などで
@@ -61,8 +63,8 @@ class AnalysisHistoryViewModel(
 
   /**
    * [day]を、解析開始時点の現在の端末timezoneでの1日として `[00:00, 翌日00:00)` のInstant区間へ
-   * 変換して解析する。実行中の再呼び出しは無視する。失敗してもJournalEntryは変更しないため、
-   * 同じ日を再実行できる。
+   * 変換して解析する。対象期間のJournalEntryが0件なら[PeriodAnalysisOutcome.Failure.NO_ENTRIES]として
+   * 扱い、HTTP requestは送らない。実行中の再呼び出しは無視する。失敗してもJournalEntryは変更しない。
    */
   fun analyze(day: LocalDate) {
     if (_analysisRunState.value == AnalysisRunState.Running) return
@@ -71,8 +73,21 @@ class AnalysisHistoryViewModel(
     val periodStart = day.atStartOfDay(zoneId).toInstant()
     val periodEnd = day.plusDays(1).atStartOfDay(zoneId).toInstant()
     viewModelScope.launch {
+      val entries = try {
+        periodJournalEntryReader.entriesInPeriod(periodStart, periodEnd)
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        _analysisRunState.value = AnalysisRunState.Failed(PeriodAnalysisOutcome.Failure.LOCAL_READ)
+        return@launch
+      }
+      if (entries.isEmpty()) {
+        _analysisRunState.value = AnalysisRunState.Failed(PeriodAnalysisOutcome.Failure.NO_ENTRIES)
+        return@launch
+      }
+
       _analysisRunState.value = try {
-        when (val outcome = periodAnalyzer.analyze(periodStart, periodEnd)) {
+        when (val outcome = periodAnalyzer.analyze(periodStart, periodEnd, entries)) {
           is PeriodAnalysisOutcome.Success -> {
             analysisResultWriter.save(
               AnalysisResult(

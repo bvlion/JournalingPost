@@ -6,6 +6,8 @@ import kotlinx.serialization.Serializable
 data class WebhookSettings(
   val url: String,
   val headers: List<WebhookHeader>,
+  /** 送信するrequest bodyのJSON template。placeholderは[WebhookBodyTemplateRenderer]が展開する。 */
+  val bodyTemplate: String,
 )
 
 @Serializable

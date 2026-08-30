@@ -2,10 +2,12 @@ package info.bvlion.journalingpost
 
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
+import info.bvlion.journalingpost.webhook.WebhookBodyTemplateRenderer
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettings
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
 import info.bvlion.journalingpost.webhook.WebhookSettingsState
+import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -108,6 +110,7 @@ class SettingsViewModelTest {
       WebhookSettings(
         url = "https://hooks.example.com/path?token=secret",
         headers = emptyList(),
+        bodyTemplate = "{}",
       ),
     )
     val viewModel = SettingsViewModel(integrationRepository, webhookRepository)
@@ -138,6 +141,7 @@ class SettingsViewModelTest {
     assertEquals(WebhookSettingsLoadState.READY, viewModel.webhookSettingsLoadState.value)
     assertEquals(saved.url, viewModel.webhookFormState.value.url)
     assertEquals(saved.headers, viewModel.webhookFormState.value.headers)
+    assertEquals(saved.bodyTemplate, viewModel.webhookFormState.value.bodyTemplate)
     collection.cancel()
   }
 
@@ -194,6 +198,52 @@ class SettingsViewModelTest {
 
     assertEquals(0, webhookRepository.saveCallCount)
     assertTrue(viewModel.webhookValidationErrors.value.isNotEmpty())
+  }
+
+  @Test
+  fun `新規設定フォームは初期Body templateから始まる`() = runTest(dispatcher) {
+    val viewModel = SettingsViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+    val collection = collectState(viewModel)
+
+    viewModel.onWebhookSettingsScreenOpened()
+    advanceUntilIdle()
+
+    assertEquals(WebhookBodyTemplateRenderer.DEFAULT_TEMPLATE, viewModel.webhookFormState.value.bodyTemplate)
+    collection.cancel()
+  }
+
+  @Test
+  fun `resetWebhookBodyTemplateで初期値へ戻る`() = runTest(dispatcher) {
+    val viewModel = SettingsViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+    viewModel.updateWebhookBodyTemplate("編集中のテンプレート")
+
+    viewModel.resetWebhookBodyTemplate()
+
+    assertEquals(WebhookBodyTemplateRenderer.DEFAULT_TEMPLATE, viewModel.webhookFormState.value.bodyTemplate)
+  }
+
+  @Test
+  fun `Body templateが有効なJSONにならないと保存しない`() = runTest(dispatcher) {
+    val webhookRepository = FakeWebhookSettingsRepository()
+    val viewModel = SettingsViewModel(FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE), webhookRepository)
+    viewModel.updateWebhookUrl("https://hooks.example.com/webhook")
+    viewModel.updateWebhookBodyTemplate("{ not json")
+
+    viewModel.saveWebhookSettings()
+    advanceUntilIdle()
+
+    assertEquals(0, webhookRepository.saveCallCount)
+    assertTrue(
+      viewModel.webhookValidationErrors.value.contains(
+        WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE,
+      ),
+    )
   }
 
   @Test
@@ -281,6 +331,7 @@ class SettingsViewModelTest {
   private fun configuredSettings() = WebhookSettings(
     url = "https://hooks.example.com/webhook",
     headers = listOf(WebhookHeader("Authorization", "Bearer secret")),
+    bodyTemplate = """{"period":{"start":"{{periodStart}}","end":"{{periodEnd}}"},"entries":{{entries}}}""",
   )
 
   private class FakeAnalysisIntegrationRepository(initial: AnalysisIntegration) : AnalysisIntegrationRepository {

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
+import info.bvlion.journalingpost.webhook.WebhookBodyTemplateRenderer
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettings
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
@@ -203,6 +204,15 @@ class SettingsViewModel(
     }
   }
 
+  fun updateWebhookBodyTemplate(bodyTemplate: String) {
+    updateWebhookForm { it.copy(bodyTemplate = bodyTemplate) }
+  }
+
+  /** Body templateを初期値へ戻す。呼び出し側(画面)が確認を取ってから呼ぶ。 */
+  fun resetWebhookBodyTemplate() {
+    updateWebhookForm { it.copy(bodyTemplate = WebhookBodyTemplateRenderer.DEFAULT_TEMPLATE) }
+  }
+
   private fun updateWebhookForm(transform: (WebhookFormState) -> WebhookFormState) {
     _webhookFormState.update(transform)
   }
@@ -214,7 +224,7 @@ class SettingsViewModel(
   fun saveWebhookSettings() {
     val generation = webhookRequestGeneration.incrementAndGet()
     val form = _webhookFormState.value
-    val validation = WebhookSettingsValidator.validate(form.url, form.headers)
+    val validation = WebhookSettingsValidator.validate(form.url, form.headers, form.bodyTemplate)
     if (validation.errors.isNotEmpty()) {
       _webhookValidationErrors.value = validation.errors
       return
@@ -223,7 +233,7 @@ class SettingsViewModel(
     _webhookSaveFailed.value = false
     viewModelScope.launch {
       try {
-        webhookSettingsRepository.save(WebhookSettings(form.url, validation.normalizedHeaders))
+        webhookSettingsRepository.save(WebhookSettings(form.url, validation.normalizedHeaders, form.bodyTemplate))
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {
@@ -247,6 +257,9 @@ enum class WebhookSettingsLoadState {
 data class WebhookFormState(
   val url: String = "",
   val headers: List<WebhookHeader> = emptyList(),
+  // 新規設定は初期templateから始める。保存済み設定を開いたときは[toFormState]で上書きする。
+  val bodyTemplate: String = WebhookBodyTemplateRenderer.DEFAULT_TEMPLATE,
 )
 
-private fun WebhookSettings.toFormState() = WebhookFormState(url = url, headers = headers)
+private fun WebhookSettings.toFormState() =
+  WebhookFormState(url = url, headers = headers, bodyTemplate = bodyTemplate)

@@ -141,6 +141,8 @@ class MainActivity : ComponentActivity() {
                   onHeaderRemove = settingsViewModel::removeWebhookHeader,
                   onHeaderNameChange = settingsViewModel::updateWebhookHeaderName,
                   onHeaderValueChange = settingsViewModel::updateWebhookHeaderValue,
+                  onBodyTemplateChange = settingsViewModel::updateWebhookBodyTemplate,
+                  onBodyTemplateReset = settingsViewModel::resetWebhookBodyTemplate,
                   onSave = settingsViewModel::saveWebhookSettings,
                   onBack = {
                     settingsViewModel.onWebhookSettingsScreenClosed()

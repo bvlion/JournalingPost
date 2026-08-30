@@ -6,6 +6,9 @@ import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.analysis.AnalysisResultWriter
 import info.bvlion.journalingpost.analysis.PeriodAnalysisOutcome
 import info.bvlion.journalingpost.analysis.PeriodAnalyzer
+import info.bvlion.journalingpost.journal.JournalEntry
+import info.bvlion.journalingpost.journal.JournalSource
+import info.bvlion.journalingpost.journal.PeriodJournalEntryReader
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import java.time.Instant
@@ -106,20 +109,57 @@ class AnalysisHistoryViewModelTest {
   }
 
   @Test
-  fun `analyzeは選択日を端末timezoneの半開区間へ変換してanalyzerへ渡す`() = runTest(testDispatcher) {
-    val analyzer = FakePeriodAnalyzer { _, _ -> PeriodAnalysisOutcome.Success("結果") }
-    val viewModel = createViewModel(analyzer = analyzer, currentZoneId = { ZoneOffset.UTC })
+  fun `analyzeは選択日を端末timezoneの半開区間へ変換してentryを取得しanalyzerへ渡す`() = runTest(testDispatcher) {
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Success("結果") }
+    val reader = FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z")))
+    val viewModel = createViewModel(analyzer = analyzer, entryReader = reader, currentZoneId = { ZoneOffset.UTC })
 
     viewModel.analyze(LocalDate.of(2026, 8, 30))
     testDispatcher.scheduler.advanceUntilIdle()
 
+    assertEquals(Instant.parse("2026-08-30T00:00:00Z"), reader.lastPeriodStart)
+    assertEquals(Instant.parse("2026-08-31T00:00:00Z"), reader.lastPeriodEnd)
     assertEquals(Instant.parse("2026-08-30T00:00:00Z"), analyzer.lastPeriodStart)
     assertEquals(Instant.parse("2026-08-31T00:00:00Z"), analyzer.lastPeriodEnd)
+    assertEquals(1, analyzer.lastEntries?.size)
+  }
+
+  @Test
+  fun `対象期間にentryが無ければ送信せずNO_ENTRIESのFailedになる`() = runTest(testDispatcher) {
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Success("結果") }
+    val viewModel = createViewModel(analyzer = analyzer, entryReader = FakePeriodJournalEntryReader(emptyList()))
+
+    viewModel.analyze(LocalDate.of(2026, 8, 30))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(0, analyzer.callCount)
+    assertEquals(
+      AnalysisRunState.Failed(PeriodAnalysisOutcome.Failure.NO_ENTRIES),
+      viewModel.analysisRunState.value,
+    )
+  }
+
+  @Test
+  fun `entry取得が失敗するとLOCAL_READのFailedになる`() = runTest(testDispatcher) {
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Success("結果") }
+    val viewModel = createViewModel(
+      analyzer = analyzer,
+      entryReader = PeriodJournalEntryReader { _, _ -> throw RuntimeException("db boom") },
+    )
+
+    viewModel.analyze(LocalDate.of(2026, 8, 30))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(0, analyzer.callCount)
+    assertEquals(
+      AnalysisRunState.Failed(PeriodAnalysisOutcome.Failure.LOCAL_READ),
+      viewModel.analysisRunState.value,
+    )
   }
 
   @Test
   fun `analyzeは解析開始時点の現在timezoneで期間境界を計算する`() = runTest(testDispatcher) {
-    val analyzer = FakePeriodAnalyzer { _, _ -> PeriodAnalysisOutcome.Success("結果") }
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Success("結果") }
     var zone: ZoneId = ZoneOffset.UTC
     val viewModel = createViewModel(analyzer = analyzer, currentZoneId = { zone })
 
@@ -134,7 +174,7 @@ class AnalysisHistoryViewModelTest {
 
   @Test
   fun `analyze成功時は同じ期間と解析日時でAnalysisResultを保存しSucceededになる`() = runTest(testDispatcher) {
-    val analyzer = FakePeriodAnalyzer { _, _ -> PeriodAnalysisOutcome.Success("今日は穏やかでした") }
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Success("今日は穏やかでした") }
     val writer = FakeAnalysisResultWriter()
     val viewModel = createViewModel(analyzer = analyzer, writer = writer, currentZoneId = { ZoneOffset.UTC })
 
@@ -151,7 +191,7 @@ class AnalysisHistoryViewModelTest {
 
   @Test
   fun `analyze失敗時はAnalysisResultを保存せずFailedになる`() = runTest(testDispatcher) {
-    val analyzer = FakePeriodAnalyzer { _, _ -> PeriodAnalysisOutcome.Failure.SERVER_ERROR }
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.SERVER_ERROR }
     val writer = FakeAnalysisResultWriter()
     val viewModel = createViewModel(analyzer = analyzer, writer = writer)
 
@@ -167,7 +207,7 @@ class AnalysisHistoryViewModelTest {
 
   @Test
   fun `AnalysisResult保存に失敗するとfailureなしのFailedになる`() = runTest(testDispatcher) {
-    val analyzer = FakePeriodAnalyzer { _, _ -> PeriodAnalysisOutcome.Success("結果") }
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Success("結果") }
     val writer = FakeAnalysisResultWriter(failOnSave = true)
     val viewModel = createViewModel(analyzer = analyzer, writer = writer)
 
@@ -179,7 +219,7 @@ class AnalysisHistoryViewModelTest {
 
   @Test
   fun `解析実行中の再呼び出しは無視される`() = runTest(testDispatcher) {
-    val analyzer = FakePeriodAnalyzer { _, _ -> PeriodAnalysisOutcome.Success("結果") }
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Success("結果") }
     val viewModel = createViewModel(analyzer = analyzer)
 
     viewModel.analyze(LocalDate.of(2026, 8, 30))
@@ -191,7 +231,7 @@ class AnalysisHistoryViewModelTest {
 
   @Test
   fun `consumeRunResultで実行結果表示がIdleへ戻る`() = runTest(testDispatcher) {
-    val analyzer = FakePeriodAnalyzer { _, _ -> PeriodAnalysisOutcome.Failure.NETWORK }
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.NETWORK }
     val viewModel = createViewModel(analyzer = analyzer)
     viewModel.analyze(LocalDate.of(2026, 8, 30))
     testDispatcher.scheduler.advanceUntilIdle()
@@ -205,7 +245,7 @@ class AnalysisHistoryViewModelTest {
   @Test
   fun `失敗結果はconsumeするまで保持される`() = runTest(testDispatcher) {
     // 解析中にタブを離れて戻るケースで、完了した失敗結果を画面へ出す前に消さないことを固定する。
-    val analyzer = FakePeriodAnalyzer { _, _ -> PeriodAnalysisOutcome.Failure.NETWORK }
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.NETWORK }
     val viewModel = createViewModel(analyzer = analyzer)
     viewModel.analyze(LocalDate.of(2026, 8, 30))
     testDispatcher.scheduler.advanceUntilIdle()
@@ -222,16 +262,24 @@ class AnalysisHistoryViewModelTest {
     reader: AnalysisResultReader = FakeAnalysisResultReader(),
     integrationRepository: AnalysisIntegrationRepository =
       FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK),
-    analyzer: PeriodAnalyzer = FakePeriodAnalyzer { _, _ -> PeriodAnalysisOutcome.Success("結果") },
+    entryReader: PeriodJournalEntryReader = FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z"))),
+    analyzer: PeriodAnalyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Success("結果") },
     writer: AnalysisResultWriter = FakeAnalysisResultWriter(),
     currentZoneId: () -> ZoneId = { ZoneOffset.UTC },
   ) = AnalysisHistoryViewModel(
     reader = reader,
     analysisIntegrationRepository = integrationRepository,
+    periodJournalEntryReader = entryReader,
     periodAnalyzer = analyzer,
     analysisResultWriter = writer,
     currentZoneId = currentZoneId,
     now = { fixedNow },
+  )
+
+  private fun entry(at: String) = JournalEntry(
+    timestamp = Instant.parse(at),
+    note = "メモ",
+    source = JournalSource.APP,
   )
 
   private fun result(id: Long, analyzedAt: String, body: String) = AnalysisResult(
@@ -280,7 +328,7 @@ class AnalysisHistoryViewModelTest {
   }
 
   private class FakePeriodAnalyzer(
-    private val outcome: (Instant, Instant) -> PeriodAnalysisOutcome,
+    private val outcome: () -> PeriodAnalysisOutcome,
   ) : PeriodAnalyzer {
     var callCount = 0
       private set
@@ -288,12 +336,32 @@ class AnalysisHistoryViewModelTest {
       private set
     var lastPeriodEnd: Instant? = null
       private set
+    var lastEntries: List<JournalEntry>? = null
+      private set
 
-    override suspend fun analyze(periodStart: Instant, periodEnd: Instant): PeriodAnalysisOutcome {
+    override suspend fun analyze(
+      periodStart: Instant,
+      periodEnd: Instant,
+      entries: List<JournalEntry>,
+    ): PeriodAnalysisOutcome {
       callCount++
       lastPeriodStart = periodStart
       lastPeriodEnd = periodEnd
-      return outcome(periodStart, periodEnd)
+      lastEntries = entries
+      return outcome()
+    }
+  }
+
+  private class FakePeriodJournalEntryReader(private val entries: List<JournalEntry>) : PeriodJournalEntryReader {
+    var lastPeriodStart: Instant? = null
+      private set
+    var lastPeriodEnd: Instant? = null
+      private set
+
+    override suspend fun entriesInPeriod(periodStart: Instant, periodEnd: Instant): List<JournalEntry> {
+      lastPeriodStart = periodStart
+      lastPeriodEnd = periodEnd
+      return entries
     }
   }
 }

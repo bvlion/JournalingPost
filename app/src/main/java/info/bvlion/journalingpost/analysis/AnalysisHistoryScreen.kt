@@ -50,6 +50,8 @@ private val analysisDateTimeFormatter = DateTimeFormatter.ofPattern("yyyy/M/d HH
  *
  * Custom Webhookが解析先として有効な場合([canRunAnalysis])だけ、上部に「解析する」導線を出し、
  * 対象日を1日選んで手動解析を実行できる。一覧の主目的は振り返りのため、導線は最小限に留める。
+ * 実行中・失敗の表示は[canRunAnalysis]と独立させ、解析中にCustom Webhookを「使用しない」へ
+ * 変えても、進行中の状態や失敗理由が見えなくならないようにする。
  */
 @Composable
 fun AnalysisHistoryScreen(
@@ -70,8 +72,8 @@ fun AnalysisHistoryScreen(
   Column(modifier = Modifier.fillMaxSize()) {
     ScreenTopAppBar(title = "解析履歴")
 
-    if (canRunAnalysis) {
-      AnalysisTrigger(runState = runState, onAnalyze = onAnalyze)
+    if (canRunAnalysis || runState != AnalysisRunState.Idle) {
+      AnalysisTrigger(canRunAnalysis = canRunAnalysis, runState = runState, onAnalyze = onAnalyze)
     }
 
     when (uiState) {
@@ -102,14 +104,15 @@ fun AnalysisHistoryScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AnalysisTrigger(
+  canRunAnalysis: Boolean,
   runState: AnalysisRunState,
   onAnalyze: (LocalDate) -> Unit,
 ) {
   var showDatePicker by remember { mutableStateOf(false) }
 
   Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-    if (runState is AnalysisRunState.Running) {
-      Row(verticalAlignment = Alignment.CenterVertically) {
+    when {
+      runState is AnalysisRunState.Running -> Row(verticalAlignment = Alignment.CenterVertically) {
         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
         Text(
           text = "解析中…",
@@ -117,8 +120,12 @@ private fun AnalysisTrigger(
           modifier = Modifier.padding(start = 8.dp),
         )
       }
-    } else {
-      TextButton(onClick = { showDatePicker = true }, contentPadding = PaddingValues(0.dp)) {
+
+      // 「解析する」導線はCustom Webhookが有効なときだけ出す。失敗表示はこの下で独立に描画する。
+      canRunAnalysis -> TextButton(
+        onClick = { showDatePicker = true },
+        contentPadding = PaddingValues(0.dp),
+      ) {
         Text("解析する")
       }
     }
@@ -132,7 +139,7 @@ private fun AnalysisTrigger(
     }
   }
 
-  if (showDatePicker) {
+  if (showDatePicker && canRunAnalysis) {
     val zoneId = remember { ZoneId.systemDefault() }
     val datePickerState = rememberDatePickerState(
       initialSelectedDateMillis = LocalDate.now(zoneId).toUtcMillis(),
@@ -169,7 +176,8 @@ private fun Long.toLocalDateFromUtc(): LocalDate =
   Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
 
 private fun AnalysisRunState.Failed.toMessage(): String = when (failure) {
-  PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE -> "Custom Webhookの設定を確認できませんでした"
+  PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE -> "Custom Webhookが解析先として有効ではありません"
+  PeriodAnalysisOutcome.Failure.NO_ENTRIES -> "選択した日には記録がないため解析できません"
   PeriodAnalysisOutcome.Failure.LOCAL_READ -> "対象期間の記録を読み込めませんでした"
   PeriodAnalysisOutcome.Failure.NETWORK -> "解析リクエストの送受信に失敗しました"
   PeriodAnalysisOutcome.Failure.SERVER_ERROR -> "解析先からエラーが返されました"

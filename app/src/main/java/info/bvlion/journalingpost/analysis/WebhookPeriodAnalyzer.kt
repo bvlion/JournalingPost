@@ -1,8 +1,9 @@
 package info.bvlion.journalingpost.analysis
 
-import info.bvlion.journalingpost.journal.PeriodJournalEntryReader
+import info.bvlion.journalingpost.journal.JournalEntry
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
+import info.bvlion.journalingpost.webhook.WebhookBodyTemplateRenderer
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
 import info.bvlion.journalingpost.webhook.WebhookSettingsState
 import io.ktor.client.HttpClient
@@ -20,49 +21,42 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
- * 送信の可否はここで判断する。開始時点で実効[AnalysisIntegration]がCUSTOM_WEBHOOKであり、かつ保存済み
- * Webhook設定が存在する場合だけrequestを送る。UI側の`canRunAnalysis`は表示制御にすぎず、それを安全境界に
- * しない(「使用しない」へ変更した直後などUI状態が古くても、JournalEntryを外部へ送らない)。
+ * 送信の可否はここで判断する。開始時点で実効[AnalysisIntegration]がCUSTOM_WEBHOOKであり、対象期間の
+ * entryが1件以上あり、かつ保存済みWebhook設定が存在する場合だけrequestを送る。UI側の`canRunAnalysis`は
+ * 表示制御にすぎず安全境界にしない(「使用しない」へ変更した直後などUI状態が古くても外部へ送らない)。
  *
- * 成功はHTTP 2xx かつ responseがPeriodAnalysisResponseとしてparseでき body が非空文字の場合のみ。
- * 設定取得・対象期間の取得・送受信・response解析のどこで失敗しても、JournalEntryへは一切触れず
- * [PeriodAnalysisOutcome.Failure]を返す。1回のanalyze()では同じsettings snapshotだけを使う。
+ * request bodyは利用者のBody templateを[WebhookBodyTemplateRenderer]で展開したもの。成功はHTTP 2xx
+ * かつ responseがHostedと同じ `analysis.text` schemaとしてparseでき、text が非空文字の場合のみ。
+ * どの失敗でもJournalEntryへは一切触れず[PeriodAnalysisOutcome.Failure]を返す。1回のanalyze()では
+ * 同じsettings snapshotだけを使う。
  */
 internal class WebhookPeriodAnalyzer(
   private val httpClient: HttpClient,
   private val analysisIntegrationRepository: AnalysisIntegrationRepository,
   private val webhookSettingsRepository: WebhookSettingsRepository,
-  private val periodJournalEntryReader: PeriodJournalEntryReader,
 ) : PeriodAnalyzer {
-  // schemaVersionのような既定値つきフィールドも必ず送るため encodeDefaults を有効にする。
-  private val requestJson = Json { encodeDefaults = true }
-
-  // 想定外フィールドを含むresponseでも body だけ取れれば成功として扱う。
+  // moodのみ/noteのみのentryではnullのフィールドをJSONへ出さない(Hostedのentries[]と同じ形)。
+  private val entriesJson = Json { explicitNulls = false }
   private val responseJson = Json { ignoreUnknownKeys = true }
 
-  override suspend fun analyze(periodStart: Instant, periodEnd: Instant): PeriodAnalysisOutcome {
+  override suspend fun analyze(
+    periodStart: Instant,
+    periodEnd: Instant,
+    entries: List<JournalEntry>,
+  ): PeriodAnalysisOutcome {
     if (analysisIntegrationRepository.analysisIntegration.first() != AnalysisIntegration.CUSTOM_WEBHOOK) {
       return PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE
     }
+    if (entries.isEmpty()) return PeriodAnalysisOutcome.Failure.NO_ENTRIES
 
-    val state = webhookSettingsRepository.settings.first()
-    val settings = (state as? WebhookSettingsState.Configured)?.settings
+    val settings = (webhookSettingsRepository.settings.first() as? WebhookSettingsState.Configured)?.settings
       ?: return PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE
 
-    val entries = try {
-      periodJournalEntryReader.entriesInPeriod(periodStart, periodEnd)
-    } catch (e: CancellationException) {
-      throw e
-    } catch (e: Exception) {
-      return PeriodAnalysisOutcome.Failure.LOCAL_READ
-    }
-
-    val requestBody = requestJson.encodeToString(
-      PeriodAnalysisRequest(
-        periodStart = periodStart.toString(),
-        periodEnd = periodEnd.toString(),
-        entries = entries.map { it.toPeriodAnalysisEntry() },
-      ),
+    val body = WebhookBodyTemplateRenderer.render(
+      template = settings.bodyTemplate,
+      periodStart = periodStart.toString(),
+      periodEnd = periodEnd.toString(),
+      entriesJson = entriesJson.encodeToString(entries.map { it.toWebhookAnalysisEntry() }),
     )
 
     val response = try {
@@ -71,7 +65,7 @@ internal class WebhookPeriodAnalyzer(
         headers {
           settings.headers.forEach { header -> append(header.name, header.value) }
         }
-        setBody(requestBody)
+        setBody(body)
       }
     } catch (e: CancellationException) {
       throw e
@@ -91,15 +85,15 @@ internal class WebhookPeriodAnalyzer(
       return PeriodAnalysisOutcome.Failure.NETWORK
     }
 
-    val body = try {
-      responseJson.decodeFromString<PeriodAnalysisResponse>(responseText).body
+    val text = try {
+      responseJson.decodeFromString<WebhookAnalysisResponse>(responseText).analysis.text
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
       return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
     }
-    if (body.isBlank()) return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
+    if (text.isBlank()) return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
 
-    return PeriodAnalysisOutcome.Success(body)
+    return PeriodAnalysisOutcome.Success(text)
   }
 }
