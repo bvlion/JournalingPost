@@ -21,6 +21,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.utils.io.ByteChannel
 import java.io.IOException
 import java.time.Instant
 import kotlinx.coroutines.flow.Flow
@@ -151,6 +152,22 @@ class WebhookPeriodAnalyzerTest {
   @Test
   fun `送信時の例外はNETWORK`() = runTest {
     val analyzer = analyzer(handler = { throw IOException("boom") })
+
+    assertEquals(PeriodAnalysisOutcome.Failure.NETWORK, analyzer.analyze(periodStart, periodEnd))
+  }
+
+  @Test
+  fun `response本文の受信失敗はINVALID_RESPONSEではなくNETWORK`() = runTest {
+    // ヘッダ受信後に接続が切れた等で、本文読み取り(bodyAsText)が例外になるケース。
+    val analyzer = analyzer(
+      handler = {
+        respond(
+          content = ByteChannel(autoFlush = true).apply { cancel(IOException("connection reset")) },
+          status = HttpStatusCode.OK,
+          headers = headersOf(HttpHeaders.ContentType, "application/json"),
+        )
+      },
+    )
 
     assertEquals(PeriodAnalysisOutcome.Failure.NETWORK, analyzer.analyze(periodStart, periodEnd))
   }

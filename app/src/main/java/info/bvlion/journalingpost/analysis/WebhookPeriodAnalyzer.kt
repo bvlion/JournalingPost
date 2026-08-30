@@ -82,8 +82,17 @@ internal class WebhookPeriodAnalyzer(
     // 2xx以外(3xxを含む)はSERVER_ERROR。
     if (!response.status.isSuccess()) return PeriodAnalysisOutcome.Failure.SERVER_ERROR
 
+    // response本文の受信失敗(接続切断・読み取りtimeout等)はparse不能ではなく受信失敗なのでNETWORK。
+    val responseText = try {
+      response.bodyAsText()
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      return PeriodAnalysisOutcome.Failure.NETWORK
+    }
+
     val body = try {
-      responseJson.decodeFromString<PeriodAnalysisResponse>(response.bodyAsText()).body
+      responseJson.decodeFromString<PeriodAnalysisResponse>(responseText).body
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
