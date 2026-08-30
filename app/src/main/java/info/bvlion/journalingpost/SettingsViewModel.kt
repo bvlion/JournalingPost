@@ -125,13 +125,9 @@ class SettingsViewModel(
   private val _webhookSaveFailed = MutableStateFlow(false)
   val webhookSaveFailed: StateFlow<Boolean> = _webhookSaveFailed.asStateFlow()
 
-  // 保存成功を1度だけ画面へ通知する(画面がToast等を出したら[consumeWebhookSaveSucceeded]で消す)。
+  // 保存成功の確認表示。フォームを編集し直すか、画面を開閉すると消える。
   private val _webhookSaveSucceeded = MutableStateFlow(false)
   val webhookSaveSucceeded: StateFlow<Boolean> = _webhookSaveSucceeded.asStateFlow()
-
-  fun consumeWebhookSaveSucceeded() {
-    _webhookSaveSucceeded.value = false
-  }
 
   private val webhookRequestGeneration = AtomicInteger(0)
 
@@ -224,6 +220,7 @@ class SettingsViewModel(
   }
 
   private fun updateWebhookForm(transform: (WebhookFormState) -> WebhookFormState) {
+    _webhookSaveSucceeded.value = false
     _webhookFormState.update(transform)
   }
 

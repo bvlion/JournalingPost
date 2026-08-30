@@ -1,6 +1,5 @@
 package info.bvlion.journalingpost.settings
 
-import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,14 +12,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
@@ -70,22 +67,21 @@ fun WebhookSettingsScreen(
   onHeaderValueChange: (Int, String) -> Unit,
   onBodyTemplateChange: (String) -> Unit,
   onBodyTemplateReset: () -> Unit,
-  onSaveSucceededShown: () -> Unit,
   onSave: () -> Unit,
   onBack: () -> Unit,
 ) {
-  val context = LocalContext.current
-  LaunchedEffect(saveSucceeded) {
-    if (saveSucceeded) {
-      Toast.makeText(context.applicationContext, "Webhook設定を保存しました", Toast.LENGTH_SHORT).show()
-      onSaveSucceededShown()
-    }
-  }
-
   Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
     ScreenTopAppBar(title = "Webhook設定", onBack = onBack)
 
     Column(modifier = Modifier.padding(16.dp)) {
+      if (saveSucceeded) {
+        Text(
+          text = "Webhook設定を保存しました",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.padding(bottom = 4.dp),
+        )
+      }
       if (saveFailed) {
         Text(
           text = "Webhook設定を保存できませんでした",
@@ -270,11 +266,6 @@ private fun WebhookContractReference() {
       color = MaterialTheme.colorScheme.onSurfaceVariant,
       modifier = Modifier.padding(top = 4.dp),
     )
-    Text(
-      text = "HTTP 2xxで、このschemaとしてparseでき text が空でなければ成功として保存します。",
-      style = MaterialTheme.typography.bodySmall,
-      modifier = Modifier.padding(top = 4.dp),
-    )
   }
 }
 
@@ -353,7 +344,6 @@ fun WebhookSettingsScreenPreview() {
       onHeaderValueChange = { _, _ -> },
       onBodyTemplateChange = {},
       onBodyTemplateReset = {},
-      onSaveSucceededShown = {},
       onSave = {},
       onBack = {},
     )

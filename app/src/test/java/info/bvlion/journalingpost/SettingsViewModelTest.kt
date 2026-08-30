@@ -174,7 +174,7 @@ class SettingsViewModelTest {
   }
 
   @Test
-  fun `Webhook設定の保存に成功するとwebhookSaveSucceededがtrueになりconsumeで戻る`() = runTest(dispatcher) {
+  fun `Webhook設定の保存に成功するとwebhookSaveSucceededがtrueになり編集で戻る`() = runTest(dispatcher) {
     val viewModel = SettingsViewModel(
       FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
       FakeWebhookSettingsRepository(),
@@ -186,7 +186,7 @@ class SettingsViewModelTest {
 
     assertTrue(viewModel.webhookSaveSucceeded.value)
 
-    viewModel.consumeWebhookSaveSucceeded()
+    viewModel.updateWebhookUrl("https://hooks.example.com/changed")
 
     assertFalse(viewModel.webhookSaveSucceeded.value)
   }
