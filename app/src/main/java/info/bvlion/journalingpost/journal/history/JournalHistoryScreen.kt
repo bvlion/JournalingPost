@@ -41,13 +41,12 @@ fun JournalHistoryScreen(
   uiState: JournalHistoryUiState,
   deleteFailed: Boolean,
   onDelete: (Long) -> Unit,
-  onBack: () -> Unit,
 ) {
   // 削除確認中のentryは、回転しても対象を見失わないようidだけを保持する。
   var pendingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
 
   Column(modifier = Modifier.fillMaxSize()) {
-    ScreenTopAppBar(title = "履歴", onBack = onBack)
+    ScreenTopAppBar(title = "履歴")
 
     if (deleteFailed) {
       Text(
@@ -227,7 +226,6 @@ fun JournalHistoryScreenPreview() {
       ),
       deleteFailed = false,
       onDelete = {},
-      onBack = {},
     )
   }
 }

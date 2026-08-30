@@ -33,10 +33,9 @@ fun SettingsScreen(
   onAnalysisIntegrationChange: (AnalysisIntegration) -> Unit,
   webhookDestinationLabel: String?,
   onWebhookSettingsOpen: () -> Unit,
-  onBack: () -> Unit,
 ) {
   Column(modifier = Modifier.fillMaxWidth()) {
-    ScreenTopAppBar(title = "設定", onBack = onBack)
+    ScreenTopAppBar(title = "設定")
 
     Column(modifier = Modifier.padding(16.dp)) {
       Text(
@@ -104,7 +103,6 @@ fun SettingsScreenPreview() {
       onAnalysisIntegrationChange = {},
       webhookDestinationLabel = "https://hooks.example.com",
       onWebhookSettingsOpen = {},
-      onBack = {},
     )
   }
 }

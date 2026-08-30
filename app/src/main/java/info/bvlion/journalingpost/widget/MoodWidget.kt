@@ -36,8 +36,8 @@ import androidx.glance.semantics.contentDescription
 import androidx.glance.semantics.semantics
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.mood.Mood
+import info.bvlion.journalingpost.mood.moodCatalog
 
 /**
  * SizeMode.Exact + LocalSize.currentで実際のWidgetサイズを取得し、縦方向に
@@ -45,9 +45,7 @@ import info.bvlion.journalingpost.mood.Mood
  * (compact)では絵文字のみを横一列に表示する。横方向へ広げた場合は、compact/
  * expandedいずれもdefaultWeight()により各Mood領域がそのまま広がる。
  *
- * 現在MOOD_ITEMSはIssue #21のWidgetレイアウト評価用に10件（Mood.kt末尾の一時Mood含む）
- * まで増やしている。「気分は10種類」というプロダクト仕様ではなく、Mood数が増えた場合に
- * compact/横方向resize/縦方向expandedがそれぞれどう振る舞うかを実機確認するための仮データ。
+ * 表示するMoodと並びは記録画面と共有する[moodCatalog]を正とする。
  */
 class MoodWidget : GlanceAppWidget() {
   override val sizeMode: SizeMode = SizeMode.Exact
@@ -105,14 +103,14 @@ private fun MoodWidgetContent() {
 private fun CompactMoodRow() {
   val context = LocalContext.current
   Row(modifier = GlanceModifier.fillMaxSize().padding(2.dp)) {
-    MOOD_ITEMS.forEach { item ->
-      val emojiBitmap = remember(item.mood) { renderEmojiBitmap(context.getString(item.emojiRes)) }
+    moodCatalog.forEach { mood ->
+      val emojiBitmap = remember(mood) { renderEmojiBitmap(mood.emoji) }
       Box(
         modifier = GlanceModifier
           .defaultWeight()
           .fillMaxHeight()
-          .clickable(moodAction(item.mood))
-          .semantics { contentDescription = context.getString(item.descriptionRes) },
+          .clickable(moodAction(mood))
+          .semantics { contentDescription = context.getString(mood.descriptionRes) },
         contentAlignment = Alignment.Center,
       ) {
         Image(
@@ -151,22 +149,22 @@ private const val EMOJI_BITMAP_SIZE_PX = 128
 private fun ExpandedMoodList() {
   val context = LocalContext.current
   Column(modifier = GlanceModifier.fillMaxSize().padding(4.dp)) {
-    MOOD_ITEMS.forEach { item ->
+    moodCatalog.forEach { mood ->
       Row(
         modifier = GlanceModifier
           .defaultWeight()
           .fillMaxWidth()
           .padding(horizontal = 8.dp)
-          .clickable(moodAction(item.mood))
-          .semantics { contentDescription = context.getString(item.descriptionRes) },
+          .clickable(moodAction(mood))
+          .semantics { contentDescription = context.getString(mood.descriptionRes) },
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Text(
-          text = context.getString(item.emojiRes),
+          text = mood.emoji,
           style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 18.sp),
         )
         Text(
-          text = context.getString(item.labelRes),
+          text = context.getString(mood.labelRes),
           maxLines = 1,
           modifier = GlanceModifier.defaultWeight().padding(start = 8.dp),
           style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 13.sp),
@@ -184,76 +182,3 @@ private val MOOD_KEY = ActionParameters.Key<String>(MoodEntryActivity.EXTRA_MOOD
 // Androidのセルサイズ計算式(70dp×セル数-30dp)で3セル分の高さ。
 // compactの横一列だけでは手狭なラベルを、縦3セル以上に広げたときに表示する。
 private const val LABELED_MIN_HEIGHT_DP = 180
-
-private data class MoodWidgetItem(
-  val mood: Mood,
-  val emojiRes: Int,
-  val labelRes: Int,
-  val descriptionRes: Int,
-)
-
-// Issue #21のWidgetレイアウト評価用の一時リスト。既存5Mood(VERY_SAD〜VERY_HAPPY)に
-// 評価用の仮Mood5件を加えて合計10件にしている。「10件が最終Mood数」という意味ではなく、
-// Mood数が増えたときのcompact/横方向resize/縦方向expandedの振る舞いを実機確認するため。
-private val MOOD_ITEMS = listOf(
-  MoodWidgetItem(
-    Mood.ANGRY,
-    R.string.mood_emoji_angry,
-    R.string.mood_label_angry,
-    R.string.mood_description_angry,
-  ),
-  MoodWidgetItem(
-    Mood.VERY_SAD,
-    R.string.mood_emoji_very_sad,
-    R.string.mood_label_very_sad,
-    R.string.mood_description_very_sad,
-  ),
-  MoodWidgetItem(
-    Mood.ANXIOUS,
-    R.string.mood_emoji_anxious,
-    R.string.mood_label_anxious,
-    R.string.mood_description_anxious,
-  ),
-  MoodWidgetItem(
-    Mood.SAD,
-    R.string.mood_emoji_sad,
-    R.string.mood_label_sad,
-    R.string.mood_description_sad,
-  ),
-  MoodWidgetItem(
-    Mood.TEARFUL,
-    R.string.mood_emoji_tearful,
-    R.string.mood_label_tearful,
-    R.string.mood_description_tearful,
-  ),
-  MoodWidgetItem(
-    Mood.NEUTRAL,
-    R.string.mood_emoji_neutral,
-    R.string.mood_label_neutral,
-    R.string.mood_description_neutral,
-  ),
-  MoodWidgetItem(
-    Mood.CALM,
-    R.string.mood_emoji_calm,
-    R.string.mood_label_calm,
-    R.string.mood_description_calm,
-  ),
-  MoodWidgetItem(
-    Mood.HAPPY,
-    R.string.mood_emoji_happy,
-    R.string.mood_label_happy,
-    R.string.mood_description_happy,
-  ),
-  MoodWidgetItem(
-    Mood.VERY_HAPPY,
-    R.string.mood_emoji_very_happy,
-    R.string.mood_label_very_happy,
-    R.string.mood_description_very_happy,
-  ),
-  MoodWidgetItem(
-    Mood.ELATED,
-    R.string.mood_emoji_elated,
-    R.string.mood_label_elated,
-    R.string.mood_description_elated,
-  ),
-)
