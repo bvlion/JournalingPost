@@ -3,8 +3,8 @@
   Android 15未満(generated widget previewが使えない環境)向けの、Widget picker用
   静的fallback preview。MoodWidget.kt側のGlanceロジックをそのまま再現するもの
   ではなく、「Moodを横一列で選ぶWidget」であることが分かる程度の簡易な近似表現。
-  ここに並ぶ絵文字の並び順はMoodWidget.ktのMOOD_ITEMSと合わせているが、
-  MOOD_ITEMSが変わった場合に自動追従するものではない(pickerのpreview用途のため)。
+  ここに並ぶ絵文字の並び順はmoodCatalogと合わせているが、
+  moodCatalogが変わった場合に自動追従するものではない(pickerのpreview用途のため)。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"

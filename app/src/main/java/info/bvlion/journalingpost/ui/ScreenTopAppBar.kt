@@ -11,7 +11,10 @@ import androidx.compose.ui.res.painterResource
 import info.bvlion.journalingpost.R
 
 /**
- * 履歴・設定で同じnavigation + titleの階層を使うためのTop App Bar。
+ * 画面タイトルを示すTop App Bar。
+ *
+ * [onBack]がある場合のみ戻るナビゲーションを出す。下部NavigationBarで切り替わる上位画面では
+ * 戻る操作を持たないためnullで呼び、Webhook設定のような下位画面では戻る操作を渡す。
  *
  * insetsを0にしているのは、呼び出し側のScaffoldがtopBarを持たず、content paddingとして
  * すでにstatus barぶんを渡しているため。TopAppBarの既定insetsのままだと上余白が二重になる。
@@ -20,16 +23,18 @@ import info.bvlion.journalingpost.R
 @Composable
 fun ScreenTopAppBar(
   title: String,
-  onBack: () -> Unit,
+  onBack: (() -> Unit)? = null,
 ) {
   TopAppBar(
     title = { Text(title) },
     navigationIcon = {
-      IconButton(onClick = onBack) {
-        Icon(
-          painter = painterResource(R.drawable.ic_arrow_back),
-          contentDescription = "戻る",
-        )
+      if (onBack != null) {
+        IconButton(onClick = onBack) {
+          Icon(
+            painter = painterResource(R.drawable.ic_arrow_back),
+            contentDescription = "戻る",
+          )
+        }
       }
     },
     windowInsets = WindowInsets(0, 0, 0, 0),

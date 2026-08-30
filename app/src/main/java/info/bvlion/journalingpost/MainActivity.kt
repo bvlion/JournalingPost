@@ -1,47 +1,41 @@
 package info.bvlion.journalingpost
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.lifecycleScope
+import info.bvlion.journalingpost.analysis.AnalysisHistoryScreen
 import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.history.JournalHistoryScreen
+import info.bvlion.journalingpost.mood.Mood
+import info.bvlion.journalingpost.mood.MoodRecordOverlay
+import info.bvlion.journalingpost.mood.MoodRecordScreen
+import info.bvlion.journalingpost.mood.MoodSnapshot
+import info.bvlion.journalingpost.mood.moodCatalog
 import info.bvlion.journalingpost.settings.SettingsScreen
 import info.bvlion.journalingpost.settings.WebhookSettingsScreen
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
@@ -65,99 +59,69 @@ class MainActivity : ComponentActivity() {
 
     setContent {
       JournalingPostTheme {
-        val snackbarHostState = remember { SnackbarHostState() }
+        val context = LocalContext.current
         val uiState by viewModel.uiState.collectAsState()
-        var screen by rememberSaveable { mutableStateOf(Screen.INPUT) }
 
-        // INPUT表示中はActivityの標準Back動作(終了)を保つため、他画面表示中のみ有効化する。
-        // WEBHOOK_SETTINGSはSETTINGSの下位画面のため、Backは1段階だけ戻す。
-        BackHandler(enabled = screen != Screen.INPUT) {
-          when (screen) {
-            Screen.WEBHOOK_SETTINGS -> {
-              settingsViewModel.onWebhookSettingsScreenClosed()
-              screen = Screen.SETTINGS
-            }
-            else -> screen = Screen.INPUT
+        var destination by rememberSaveable { mutableStateOf(MainDestination.RECORD) }
+        var showWebhookSettings by rememberSaveable { mutableStateOf(false) }
+        var selectedMood by rememberSaveable { mutableStateOf<Mood?>(null) }
+
+        // 記録処理中〜完了直後はダイアログの操作もタブ切り替えも受け付けない。MainViewModelは
+        // INITへ戻さないため、SUCCESS系もlock対象に含める。
+        val recordInProgress = uiState == MainViewModel.UiState.LOADING ||
+          uiState == MainViewModel.UiState.SUCCESS ||
+          uiState == MainViewModel.UiState.SUCCESS_DELIVERY_FAILED
+
+        LaunchedEffect(destination) {
+          when (destination) {
+            MainDestination.JOURNAL_HISTORY -> historyViewModel.onHistoryOpened()
+            MainDestination.SETTINGS -> settingsViewModel.onSettingsOpened()
+            else -> Unit
           }
         }
 
-        Scaffold(
-          modifier = Modifier.fillMaxSize().imePadding(),
-          snackbarHost = { SnackbarHost(snackbarHostState) },
-        ) { innerPadding ->
-          Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-            when (screen) {
-              Screen.INPUT -> Column(modifier = Modifier.fillMaxSize()) {
-                Row(
-                  modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                  horizontalArrangement = Arrangement.End,
-                ) {
-                  TextButton(
-                    onClick = {
-                      settingsViewModel.onSettingsOpened()
-                      screen = Screen.SETTINGS
-                    },
-                  ) {
-                    Text("設定")
-                  }
-                  TextButton(
-                    onClick = {
-                      historyViewModel.onHistoryOpened()
-                      screen = Screen.HISTORY
-                    },
-                  ) {
-                    Text("履歴を見る")
-                  }
-                }
-                Column(
-                  modifier = Modifier.weight(1f).fillMaxWidth(),
-                  verticalArrangement = Arrangement.Bottom,
-                ) {
-                  InputView(uiState) {
-                    viewModel.record(note = it, source = JournalSource.APP)
+        BackHandler(
+          enabled = selectedMood != null || showWebhookSettings || destination != MainDestination.RECORD,
+        ) {
+          when {
+            selectedMood != null -> if (!recordInProgress) {
+              selectedMood = null
+              viewModel.resetState()
+            }
+            // Webhook設定はSettingsの下位画面のため、Backは1段階だけ戻す。
+            showWebhookSettings -> {
+              settingsViewModel.onWebhookSettingsScreenClosed()
+              showWebhookSettings = false
+            }
+            else -> destination = MainDestination.RECORD
+          }
+        }
+
+        Box(modifier = Modifier.fillMaxSize()) {
+          Scaffold(
+            modifier = Modifier.fillMaxSize().imePadding(),
+            bottomBar = {
+              if (!showWebhookSettings) {
+                NavigationBar {
+                  MainDestination.entries.forEach { item ->
+                    NavigationBarItem(
+                      selected = destination == item,
+                      onClick = {
+                        if (item != destination) {
+                          selectedMood = null
+                          destination = item
+                        }
+                      },
+                      icon = { Icon(painterResource(item.icon), contentDescription = null) },
+                      label = { Text(item.label) },
+                    )
                   }
                 }
               }
-
-              Screen.HISTORY -> {
-                val historyUiState by historyViewModel.uiState.collectAsState()
-                val deleteFailed by historyViewModel.deleteFailed.collectAsState()
-                JournalHistoryScreen(
-                  uiState = historyUiState,
-                  deleteFailed = deleteFailed,
-                  onDelete = historyViewModel::deleteEntry,
-                  onBack = { screen = Screen.INPUT },
-                )
-              }
-
-              Screen.SETTINGS -> {
-                val selectedIntegration by settingsViewModel.selectedAnalysisIntegration.collectAsState()
-                val integrationSaveFailed by settingsViewModel.integrationSaveFailed.collectAsState()
-                val webhookDestinationLabel by settingsViewModel.webhookDestinationLabel.collectAsState()
-                val webhookSetupRequested by settingsViewModel.webhookSetupRequested.collectAsState()
-
-                LaunchedEffect(webhookSetupRequested) {
-                  if (webhookSetupRequested) {
-                    settingsViewModel.consumeWebhookSetupRequest()
-                    settingsViewModel.onWebhookSettingsScreenOpened()
-                    screen = Screen.WEBHOOK_SETTINGS
-                  }
-                }
-
-                SettingsScreen(
-                  selectedIntegration = selectedIntegration,
-                  integrationSaveFailed = integrationSaveFailed,
-                  onAnalysisIntegrationChange = settingsViewModel::setAnalysisIntegration,
-                  webhookDestinationLabel = webhookDestinationLabel,
-                  onWebhookSettingsOpen = {
-                    settingsViewModel.onWebhookSettingsScreenOpened()
-                    screen = Screen.WEBHOOK_SETTINGS
-                  },
-                  onBack = { screen = Screen.INPUT },
-                )
-              }
-
-              Screen.WEBHOOK_SETTINGS -> {
+            },
+          ) { innerPadding ->
+            Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+              if (showWebhookSettings) {
                 // process recreationでこの画面がそのまま復元された場合に備えたフォールバック。
                 LaunchedEffect(Unit) {
                   settingsViewModel.ensureWebhookSettingsScreenOpened()
@@ -180,45 +144,90 @@ class MainActivity : ComponentActivity() {
                   onSave = settingsViewModel::saveWebhookSettings,
                   onBack = {
                     settingsViewModel.onWebhookSettingsScreenClosed()
-                    screen = Screen.SETTINGS
+                    showWebhookSettings = false
                   },
                 )
+              } else {
+                when (destination) {
+                  MainDestination.RECORD -> MoodRecordScreen(
+                    moods = moodCatalog,
+                    onMoodClick = { mood ->
+                      viewModel.resetState()
+                      selectedMood = mood
+                    },
+                  )
+
+                  MainDestination.JOURNAL_HISTORY -> {
+                    val historyUiState by historyViewModel.uiState.collectAsState()
+                    val deleteFailed by historyViewModel.deleteFailed.collectAsState()
+                    JournalHistoryScreen(
+                      uiState = historyUiState,
+                      deleteFailed = deleteFailed,
+                      onDelete = historyViewModel::deleteEntry,
+                    )
+                  }
+
+                  MainDestination.ANALYSIS_HISTORY -> AnalysisHistoryScreen()
+
+                  MainDestination.SETTINGS -> {
+                    val selectedIntegration by settingsViewModel.selectedAnalysisIntegration.collectAsState()
+                    val integrationSaveFailed by settingsViewModel.integrationSaveFailed.collectAsState()
+                    val webhookDestinationLabel by settingsViewModel.webhookDestinationLabel.collectAsState()
+                    val webhookSetupRequested by settingsViewModel.webhookSetupRequested.collectAsState()
+
+                    LaunchedEffect(webhookSetupRequested) {
+                      if (webhookSetupRequested) {
+                        settingsViewModel.consumeWebhookSetupRequest()
+                        settingsViewModel.onWebhookSettingsScreenOpened()
+                        showWebhookSettings = true
+                      }
+                    }
+
+                    SettingsScreen(
+                      selectedIntegration = selectedIntegration,
+                      integrationSaveFailed = integrationSaveFailed,
+                      onAnalysisIntegrationChange = settingsViewModel::setAnalysisIntegration,
+                      webhookDestinationLabel = webhookDestinationLabel,
+                      onWebhookSettingsOpen = {
+                        settingsViewModel.onWebhookSettingsScreenOpened()
+                        showWebhookSettings = true
+                      },
+                    )
+                  }
+                }
               }
             }
+          }
 
-            LoadingOverlay(uiState == MainViewModel.UiState.LOADING)
+          selectedMood?.let { mood ->
+            val moodLabel = stringResource(mood.labelRes)
+            val successMessage = stringResource(R.string.record_success)
+            MoodRecordOverlay(
+              moodEmoji = mood.emoji,
+              moodLabel = moodLabel,
+              isInteractionLocked = recordInProgress,
+              hasFailure = uiState == MainViewModel.UiState.FAILURE,
+              onRecord = { note ->
+                viewModel.record(
+                  note = note,
+                  mood = MoodSnapshot(id = mood.name, emoji = mood.emoji, label = moodLabel),
+                  source = JournalSource.APP,
+                )
+              },
+              onDismiss = {
+                selectedMood = null
+                viewModel.resetState()
+              },
+            )
 
             LaunchedEffect(uiState) {
-              when (uiState) {
-                MainViewModel.UiState.INIT -> Unit
-                MainViewModel.UiState.LOADING -> Unit
-
-                MainViewModel.UiState.SUCCESS -> {
-                  snackbarHostState.showSnackbar(
-                    message = "登録に成功しました",
-                    actionLabel = "閉じる",
-                    duration = SnackbarDuration.Short,
-                  )
-                  viewModel.resetState()
-                }
-
-                MainViewModel.UiState.SUCCESS_DELIVERY_FAILED -> {
-                  snackbarHostState.showSnackbar(
-                    message = "記録は保存しましたが、Webhookの送信に失敗しました",
-                    actionLabel = "閉じる",
-                    duration = SnackbarDuration.Long,
-                  )
-                  viewModel.resetState()
-                }
-
-                MainViewModel.UiState.FAILURE -> {
-                  snackbarHostState.showSnackbar(
-                    message = "登録に失敗しました",
-                    actionLabel = "閉じる",
-                    duration = SnackbarDuration.Long,
-                  )
-                  viewModel.resetState()
-                }
+              // Webhook配送失敗は記録自体の失敗ではないため、SUCCESSと同じく閉じて完了を伝える。
+              if (uiState == MainViewModel.UiState.SUCCESS ||
+                uiState == MainViewModel.UiState.SUCCESS_DELIVERY_FAILED
+              ) {
+                selectedMood = null
+                viewModel.resetState()
+                Toast.makeText(context.applicationContext, successMessage, Toast.LENGTH_SHORT).show()
               }
             }
           }
@@ -226,74 +235,14 @@ class MainActivity : ComponentActivity() {
       }
     }
   }
-
-  private enum class Screen {
-    INPUT,
-    HISTORY,
-    SETTINGS,
-    WEBHOOK_SETTINGS,
-  }
 }
 
-@Composable
-fun InputView(
-  uiState: MainViewModel.UiState,
-  postMessage: (String) -> Unit,
+enum class MainDestination(
+  val label: String,
+  val icon: Int,
 ) {
-  val text = rememberSaveable { mutableStateOf("") }
-  val focusRequester = remember { FocusRequester() }
-
-  LaunchedEffect(Unit) {
-    focusRequester.requestFocus()
-  }
-  LaunchedEffect(uiState) {
-    if (uiState == MainViewModel.UiState.SUCCESS || uiState == MainViewModel.UiState.SUCCESS_DELIVERY_FAILED) {
-      text.value = ""
-    }
-  }
-
-  Column(modifier = Modifier.padding(16.dp)) {
-    Text(
-      text = "考えてること",
-      style = MaterialTheme.typography.titleMedium,
-    )
-    TextField(
-      modifier = Modifier.padding(0.dp, 16.dp).fillMaxWidth().focusRequester(focusRequester),
-      value = text.value,
-      onValueChange = { text.value = it },
-    )
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.End,
-    ) {
-      Button(
-        onClick = {
-          postMessage(text.value)
-        },
-      ) {
-        Text("登録")
-      }
-    }
-  }
-}
-
-@Composable
-fun LoadingOverlay(isLoading: Boolean) {
-  if (isLoading) {
-    Box(
-      modifier = Modifier.fillMaxSize()
-        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)),
-      contentAlignment = Alignment.Center,
-    ) {
-      CircularProgressIndicator()
-    }
-  }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun InputViewPreview() {
-  JournalingPostTheme {
-    InputView(MainViewModel.UiState.LOADING) {}
-  }
+  RECORD("記録", R.drawable.ic_nav_record),
+  JOURNAL_HISTORY("記録履歴", R.drawable.ic_nav_journal_history),
+  ANALYSIS_HISTORY("解析履歴", R.drawable.ic_nav_analysis_history),
+  SETTINGS("設定", R.drawable.ic_nav_settings),
 }

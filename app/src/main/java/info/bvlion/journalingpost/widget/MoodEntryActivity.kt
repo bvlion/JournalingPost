@@ -10,29 +10,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.AlertDialogDefaults
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -44,22 +21,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.MainViewModel
 import info.bvlion.journalingpost.MainViewModelFactory
+import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.mood.Mood
+import info.bvlion.journalingpost.mood.MoodRecordOverlay
 import info.bvlion.journalingpost.mood.MoodSnapshot
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import kotlinx.coroutines.launch
@@ -151,8 +123,12 @@ internal fun MainViewModel.UiState.acceptsNewMoodEntry(): Boolean =
   this != MainViewModel.UiState.LOADING
 
 private const val CLOSE_FADE_DURATION_MS = 250
-private const val SCRIM_ALPHA = 0.32f
 
+/**
+ * Widgetから起動したときのMood記録画面。ダイアログのUI・挙動は[MoodRecordOverlay]で
+ * 記録画面と共通化し、ここではActivityのlifecycle固有の処理(fade out、finish、
+ * 完了Toast、前sessionの結果を引き継がないためのgating)だけを持つ。
+ */
 @Composable
 fun MoodEntryScreen(
   mood: Mood,
@@ -160,8 +136,6 @@ fun MoodEntryScreen(
   onRecord: (String) -> Unit,
   onClose: () -> Unit,
 ) {
-  var note by rememberSaveable { mutableStateOf("") }
-  var isNoteVisible by rememberSaveable { mutableStateOf(false) }
   // MainViewModelは前のsessionの結果を保持したままなので、このsessionが記録を始めるまでは
   // その結果へ反応しない。そうしないと、直前の記録が成功したまま開かれたsessionが
   // いきなりfade/finishしてWidgetタップを失う。
@@ -170,6 +144,7 @@ fun MoodEntryScreen(
   val context = LocalContext.current
   val coroutineScope = rememberCoroutineScope()
   val contentAlpha = remember { Animatable(1f) }
+  val successMessage = stringResource(R.string.record_success)
 
   val sessionState = if (hasRequestedRecord) uiState else MainViewModel.UiState.INIT
   val isRecording = sessionState == MainViewModel.UiState.LOADING
@@ -190,7 +165,7 @@ fun MoodEntryScreen(
       contentAlpha.animateTo(targetValue = 0f, animationSpec = tween(durationMillis = CLOSE_FADE_DURATION_MS))
       onClose()
       if (showSuccessToast) {
-        Toast.makeText(context.applicationContext, "記録しました", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context.applicationContext, successMessage, Toast.LENGTH_SHORT).show()
       }
     }
   }
@@ -210,108 +185,18 @@ fun MoodEntryScreen(
     }
   }
 
-  Box(
-    modifier = Modifier
-      .fillMaxSize()
-      .alpha(contentAlpha.value)
-      .background(MaterialTheme.colorScheme.scrim.copy(alpha = SCRIM_ALPHA))
-      .pointerInput(isInteractionLocked) {
-        if (isInteractionLocked) return@pointerInput
-        detectTapGestures { requestClose(showSuccessToast = false) }
-      },
-  ) {
-    Box(
-      modifier = Modifier.fillMaxSize().safeDrawingPadding(),
-      contentAlignment = Alignment.Center,
-    ) {
-      Surface(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 20.dp)
-          // 閉じる操作はscrim tapだけに限りたいので、Surface上のtapはここで止める。
-          .pointerInput(Unit) { detectTapGestures {} },
-        shape = AlertDialogDefaults.shape,
-        color = AlertDialogDefaults.containerColor,
-        contentColor = AlertDialogDefaults.titleContentColor,
-        tonalElevation = AlertDialogDefaults.TonalElevation,
-      ) {
-        Column(modifier = Modifier.padding(24.dp)) {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = mood.emoji, style = MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.width(8.dp))
-            Text(text = stringResource(mood.labelRes), style = MaterialTheme.typography.titleMedium)
-          }
-
-          if (isNoteVisible) {
-            val focusRequester = remember { FocusRequester() }
-            // 「メモを追加」を選んだ直後だけfocusを移し、ソフトキーボードを表示させる。
-            // 初期表示から入力欄を出さないのは、文章を書かなくても記録が成立することを
-            // UI自体で表現するため。
-            LaunchedEffect(Unit) {
-              focusRequester.requestFocus()
-            }
-            TextField(
-              value = note,
-              onValueChange = { note = it },
-              modifier = Modifier.fillMaxWidth().padding(top = 16.dp).focusRequester(focusRequester),
-              enabled = !isInteractionLocked,
-              maxLines = 4,
-              trailingIcon = if (note.isNotEmpty()) {
-                {
-                  IconButton(
-                    onClick = { note = "" },
-                    enabled = !isInteractionLocked,
-                    modifier = Modifier.semantics { contentDescription = "メモをクリア" },
-                  ) {
-                    Text("✕")
-                  }
-                }
-              } else {
-                null
-              },
-            )
-          }
-
-          if (hasFailure) {
-            Text(
-              text = "記録に失敗しました。もう一度お試しください",
-              color = MaterialTheme.colorScheme.error,
-              style = MaterialTheme.typography.bodySmall,
-              modifier = Modifier.padding(top = 8.dp),
-            )
-          }
-
-          FlowRow(
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-          ) {
-            if (!isNoteVisible) {
-              TextButton(onClick = { isNoteVisible = true }, enabled = !isInteractionLocked) {
-                Text("メモを追加")
-              }
-            }
-            TextButton(onClick = { requestClose(showSuccessToast = false) }, enabled = !isInteractionLocked) {
-              Text("記録しない")
-            }
-            Button(
-              onClick = {
-                hasRequestedRecord = true
-                onRecord(note)
-              },
-              enabled = !isInteractionLocked,
-            ) {
-              if (isInteractionLocked) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-              } else {
-                Text("記録")
-              }
-            }
-          }
-        }
-      }
-    }
-  }
+  MoodRecordOverlay(
+    moodEmoji = mood.emoji,
+    moodLabel = stringResource(mood.labelRes),
+    isInteractionLocked = isInteractionLocked,
+    hasFailure = hasFailure,
+    onRecord = { note ->
+      hasRequestedRecord = true
+      onRecord(note)
+    },
+    onDismiss = { requestClose(showSuccessToast = false) },
+    modifier = Modifier.alpha(contentAlpha.value),
+  )
 }
 
 @Preview(showBackground = true)

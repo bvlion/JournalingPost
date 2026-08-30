@@ -1,6 +1,9 @@
 <resources>
   <string name="app_name">ジャーナリング記録</string>
 
+  <!-- Moodを選んで記録が成立したときの共通フィードバック。記録画面・Widgetで同じ文言を使う。 -->
+  <string name="record_success">記録しました</string>
+
   <string name="mood_emoji_very_sad">😭</string>
   <string name="mood_emoji_sad">😞</string>
   <string name="mood_emoji_neutral">😐</string>
@@ -20,10 +23,9 @@
   <string name="mood_label_very_happy">とても嬉しい</string>
 
   <!--
-    ここから下はIssue #21のWidgetレイアウト評価用の仮文字列。
-    「気分は10種類」という仕様ではなく、Mood数が増えた場合のcompact/横方向resize/
-    縦方向expandedの振る舞いを実機確認するための一時データ。文言・絵文字ともに
-    評価用であり、プロダクト仕様として詰めたものではない。
+    #42のMoodカスタマイズまで固定で使うMoodセットの追加分。件数・並び・文言は
+    暫定で、ユーザーが変更できるようにするのは #42。mood_emoji_* はWidget picker用の
+    静的fallback layout(widget_mood_preview_fallback.xml)からのみ参照する。
   -->
   <string name="mood_emoji_angry">😡</string>
   <string name="mood_emoji_anxious">😰</string>
