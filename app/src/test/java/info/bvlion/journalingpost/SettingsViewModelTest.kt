@@ -201,13 +201,35 @@ class SettingsViewModelTest {
     viewModel.saveWebhookSettings()
     advanceUntilIdle()
 
-    // Webhook設定自体は保存されている
     assertEquals(1, webhookRepository.saveCallCount)
-    // が、実効AnalysisIntegrationはNONEのまま
     assertEquals(AnalysisIntegration.NONE, integrationRepository.current)
-    // 成功にはせず、有効化失敗として伝える。二重表示を避けるためintegrationSaveFailedは立てない。
+    assertEquals(WebhookSaveResult.ACTIVATION_FAILED, viewModel.webhookSaveResult.value)
+    // Webhook画面のSnackbarで伝えるので、親Settingsのエラー表示は二重に出さない。
+    assertFalse(viewModel.integrationSaveFailed.value)
+  }
+
+  @Test
+  fun `Unavailableから復旧して既存設定を読み込んでも有効化に失敗したらACTIVATION_FAILEDにする`() = runTest(dispatcher) {
+    val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE, failNextSets = 1)
+    val webhookRepository = FakeWebhookSettingsRepository(initialState = WebhookSettingsState.Unavailable)
+    val viewModel = SettingsViewModel(integrationRepository, webhookRepository)
+    val collection = collectState(viewModel)
+
+    viewModel.setAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK)
+    advanceUntilIdle()
+    assertTrue(viewModel.webhookSetupRequested.value)
+
+    webhookRepository.emit(WebhookSettingsState.Configured(configuredSettings()))
+    viewModel.onWebhookSettingsScreenOpened()
+    advanceUntilIdle()
+
+    assertEquals(AnalysisIntegration.NONE, integrationRepository.current)
     assertEquals(WebhookSaveResult.ACTIVATION_FAILED, viewModel.webhookSaveResult.value)
     assertFalse(viewModel.integrationSaveFailed.value)
+
+    viewModel.consumeWebhookSaveResult()
+    assertNull(viewModel.webhookSaveResult.value)
+    collection.cancel()
   }
 
   @Test
@@ -429,6 +451,10 @@ class SettingsViewModelTest {
       private set
     var savedSettings: WebhookSettings? = initial
       private set
+
+    fun emit(newState: WebhookSettingsState) {
+      state.value = newState
+    }
 
     override suspend fun save(settings: WebhookSettings) {
       saveCallCount++

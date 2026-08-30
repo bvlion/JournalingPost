@@ -10,6 +10,7 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -27,9 +28,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import info.bvlion.journalingpost.analysis.AnalysisHistoryScreen
 import info.bvlion.journalingpost.journal.JournalSource
@@ -44,6 +47,9 @@ import info.bvlion.journalingpost.settings.WebhookSettingsScreen
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
 import kotlinx.coroutines.launch
+
+// Material3 NavigationBar の既定の高さ。Snackbarを下部ナビの上へ浮かせるためのオフセットに使う。
+private val NavigationBarHeight = 80.dp
 
 class MainActivity : ComponentActivity() {
   private val viewModel: MainViewModel by viewModels { MainViewModelFactory }
@@ -109,7 +115,6 @@ class MainActivity : ComponentActivity() {
         Box(modifier = Modifier.fillMaxSize()) {
           Scaffold(
             modifier = Modifier.fillMaxSize().imePadding(),
-            snackbarHost = { SnackbarHost(snackbarHostState) },
             bottomBar = {
               if (!showWebhookSettings) {
                 NavigationBar {
@@ -237,11 +242,14 @@ class MainActivity : ComponentActivity() {
           selectedMood?.let { mood ->
             val moodLabel = stringResource(mood.labelRes)
             val successMessage = stringResource(R.string.record_success)
+            val failureMessage = stringResource(R.string.record_failure)
             MoodRecordOverlay(
               moodEmoji = mood.emoji,
               moodLabel = moodLabel,
               isInteractionLocked = recordInProgress,
-              hasFailure = uiState == MainViewModel.UiState.FAILURE,
+              // アプリ内では失敗もSnackbarで伝えるため、ダイアログ内のinline表示は使わない
+              // (dialogは開いたままで、入力内容を保持して再試行できる)。
+              hasFailure = false,
               onRecord = { note ->
                 viewModel.record(
                   note = note,
@@ -256,13 +264,39 @@ class MainActivity : ComponentActivity() {
             )
 
             LaunchedEffect(uiState) {
-              if (uiState == MainViewModel.UiState.SUCCESS) {
-                selectedMood = null
-                viewModel.resetState()
-                showMessage(successMessage)
+              when (uiState) {
+                MainViewModel.UiState.SUCCESS -> {
+                  selectedMood = null
+                  viewModel.resetState()
+                  showMessage(successMessage)
+                }
+
+                MainViewModel.UiState.FAILURE -> {
+                  showMessage(failureMessage)
+                  viewModel.resetState()
+                }
+
+                else -> Unit
               }
             }
           }
+
+          // Snackbarは記録ダイアログより手前へ描く。通常時は下部ナビの上へ、
+          // ダイアログ表示中やWebhook設定画面ではナビが無い/隠れているので底へ寄せる。
+          SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+              .align(Alignment.BottomCenter)
+              .navigationBarsPadding()
+              .imePadding()
+              .then(
+                if (showWebhookSettings || selectedMood != null) {
+                  Modifier
+                } else {
+                  Modifier.padding(bottom = NavigationBarHeight)
+                },
+              ),
+          )
         }
       }
     }

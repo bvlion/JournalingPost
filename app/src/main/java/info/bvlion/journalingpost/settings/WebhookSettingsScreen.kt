@@ -34,33 +34,6 @@ import info.bvlion.journalingpost.webhook.WebhookBodyTemplateRenderer
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
 
-// {{entries}} が置き換わる形の見本。1件目はmood+note、2件目はnoteのみ。
-private const val ENTRIES_EXAMPLE = """[
-  {
-    "recordedAt": "2026-08-30T09:00:00Z",
-    "mood": { "emoji": "🙂", "label": "嬉しい" },
-    "note": "今日は集中できた"
-  },
-  {
-    "recordedAt": "2026-08-30T22:00:00Z",
-    "note": "早めに休む"
-  }
-]"""
-
-// 成功時にCustom Webhookが返す必要があるResponse JSON。
-private const val SUCCESS_RESPONSE_EXAMPLE = """{
-  "analysis": {
-    "period": {
-      "start": "2026-08-29T00:00:00Z",
-      "end": "2026-08-29T09:00:00Z"
-    },
-    "analyzedAt": "2026-08-29T09:00:05Z",
-    "entryCount": 3,
-    "model": "example/analysis-model",
-    "text": "..."
-  }
-}"""
-
 /**
  * Custom Webhookを設定する画面。この画面だけで、送信先・ヘッダー・リクエスト本文・期待する成功
  * レスポンスが分かるようにする。保存操作の結果はSnackbarで伝える。
@@ -167,7 +140,7 @@ private fun WebhookSettingsForm(
     )
 
     SectionHeading(stringResource(R.string.webhook_settings_response_heading))
-    MonospaceBlock(SUCCESS_RESPONSE_EXAMPLE)
+    MonospaceBlock(stringResource(R.string.webhook_settings_success_response_example))
 
     validationErrors.forEach { error ->
       Text(
@@ -220,7 +193,7 @@ private fun WebhookBodyTemplateField(
     style = MaterialTheme.typography.labelMedium,
     modifier = Modifier.padding(top = 8.dp),
   )
-  MonospaceBlock(ENTRIES_EXAMPLE)
+  MonospaceBlock(stringResource(R.string.webhook_settings_entries_example))
 
   if (showResetConfirm) {
     AlertDialog(

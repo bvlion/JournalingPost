@@ -52,6 +52,8 @@ private const val SCRIM_ALPHA = 0.32f
  * fade animationやActivityのlifecycle制御(Widget側)は呼び出し元が[modifier]や状態で扱う。
  *
  * @param isInteractionLocked 記録処理中や完了直後など、操作を受け付けない状態。scrimタップも無効化する。
+ * @param hasFailure trueにするとカード内へ失敗メッセージを出す。アプリ側はSnackbarで伝えるためfalseで
+ *   呼び、Widget起動のMoodEntryActivityのようにSnackbarを出せないsurfaceだけtrueにする。
  */
 @Composable
 fun MoodRecordOverlay(

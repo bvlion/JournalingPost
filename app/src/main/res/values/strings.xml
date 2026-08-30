@@ -4,7 +4,7 @@
   <!-- ==== 共通 ==== -->
   <string name="action_cancel">キャンセル</string>
   <string name="action_delete">削除</string>
-  <string name="action_save">保存する</string>
+  <string name="action_save">保存</string>
   <string name="action_back">戻る</string>
 
   <!-- 下部ナビゲーション。画面タイトルにも同じ文言を使う。 -->
@@ -19,7 +19,7 @@
   <string name="record_dismiss">記録しない</string>
   <string name="record_action">記録</string>
   <string name="record_note_clear">メモを消す</string>
-  <string name="record_failure">記録に失敗しました。もう一度お試しください</string>
+  <string name="record_failure">記録できませんでした。もう一度お試しください</string>
   <!-- Moodを選んで記録が成立したときの共通フィードバック。記録画面・Widgetで同じ文言を使う。 -->
   <string name="record_success">記録しました</string>
 
@@ -27,7 +27,7 @@
   <string name="journal_history_empty">まだ記録がありません</string>
   <string name="journal_history_delete_failed">記録を削除できませんでした</string>
   <string name="journal_history_delete_confirm_title">この記録を削除しますか？</string>
-  <string name="journal_history_delete_confirm_body">削除すると元に戻せません。</string>
+  <string name="journal_history_delete_confirm_body">削除すると元に戻せません</string>
   <!-- %1$s は記録の時刻。一覧で同じ「削除」が並ぶため読み上げで対象を区別する。 -->
   <string name="journal_history_delete_row_description">%1$sの記録を削除</string>
 
@@ -35,14 +35,14 @@
   <string name="analysis_history_empty">まだ解析結果がありません</string>
   <string name="analysis_run_button">解析する</string>
   <string name="analysis_running">解析中…</string>
-  <string name="analysis_pick_day_no_entries">この日には記録がないため解析できません</string>
-  <string name="analysis_result_saved">解析結果を保存しました</string>
+  <string name="analysis_pick_day_no_entries">解析できるのは記録がある日だけです</string>
+  <string name="analysis_completed">解析が完了しました</string>
   <!-- %1$s 対象期間の開始、%2$s 対象期間の終了 -->
-  <string name="analysis_card_period">対象期間: %1$s 〜 %2$s</string>
+  <string name="analysis_card_period">対象期間：%1$s 〜 %2$s</string>
   <!-- %1$s 解析日時 -->
-  <string name="analysis_card_analyzed_at">解析日時: %1$s</string>
-  <string name="analysis_failure_webhook_unavailable">Custom Webhookが解析先として使えません</string>
-  <string name="analysis_failure_no_entries">選んだ日には記録がないため解析できません</string>
+  <string name="analysis_card_analyzed_at">解析日時：%1$s</string>
+  <string name="analysis_failure_webhook_unavailable">Custom Webhookの設定を確認できませんでした</string>
+  <string name="analysis_failure_no_entries">選んだ日の記録がないため解析できませんでした</string>
   <string name="analysis_failure_local_read">端末内の記録を読み込めませんでした</string>
   <string name="analysis_failure_network">解析先と通信できませんでした</string>
   <string name="analysis_failure_server_error">解析先からエラーが返されました</string>
@@ -64,27 +64,30 @@
   <string name="webhook_settings_header_value_label">値</string>
   <string name="webhook_settings_header_add">ヘッダーを追加</string>
   <string name="webhook_settings_body_heading">リクエスト本文</string>
-  <string name="webhook_settings_body_hint">POST / application/json で送信します。本文の中の次の記号が置き換わります。</string>
+  <string name="webhook_settings_body_hint">解析リクエストは JSON 形式（Content-Type: application/json）で POST します。本文中の次のプレースホルダーが展開されます。</string>
   <!-- %1$s は展開後の日時の例 -->
-  <string name="webhook_settings_placeholder_period_start">{{periodStart}}：対象期間の開始日時（例 %1$s）</string>
-  <string name="webhook_settings_placeholder_period_end">{{periodEnd}}：対象期間の終了日時</string>
-  <string name="webhook_settings_placeholder_entries">{{entries}}：対象期間の記録一覧（JSON配列）</string>
-  <string name="webhook_settings_entries_example_heading">{{entries}} が置き換わる形</string>
+  <string name="webhook_settings_placeholder_period_start">{{periodStart}}：対象期間の開始。RFC 3339 のUTC表記（例 %1$s）</string>
+  <string name="webhook_settings_placeholder_period_end">{{periodEnd}}：対象期間の終了。開始と同じ表記</string>
+  <string name="webhook_settings_placeholder_entries">{{entries}}：対象期間の記録。下の例の形のJSON配列に展開されます</string>
+  <string name="webhook_settings_entries_example_heading">{{entries}} の展開例（mood・note は無い記録もあります）</string>
   <string name="webhook_settings_body_reset">初期値に戻す</string>
   <string name="webhook_settings_body_reset_confirm_title">リクエスト本文を初期値に戻す</string>
   <string name="webhook_settings_body_reset_confirm_body">編集中のリクエスト本文は破棄されます。よろしいですか？</string>
-  <string name="webhook_settings_response_heading">成功時のResponse JSON</string>
+  <string name="webhook_settings_response_heading">解析成功時に返すJSON</string>
   <string name="webhook_settings_loading">Webhook設定を読み込んでいます</string>
   <string name="webhook_settings_unavailable">Webhook設定を読み込めませんでした</string>
   <string name="webhook_settings_save_succeeded">Webhook設定を保存しました</string>
   <string name="webhook_settings_save_failed">Webhook設定を保存できませんでした</string>
   <string name="webhook_settings_activation_failed">Webhook設定は保存しましたが、Custom Webhookを有効にできませんでした</string>
-  <string name="webhook_settings_error_invalid_url">URLがhttpまたはhttpsのURLとして正しくありません</string>
+  <string name="webhook_settings_error_invalid_url">URLが正しくありません。http:// または https:// で始まるURLを入力してください</string>
   <string name="webhook_settings_error_blank_header_name">ヘッダー名が空の項目があります</string>
-  <string name="webhook_settings_error_duplicate_header_name">同じヘッダー名が複数あります</string>
+  <string name="webhook_settings_error_duplicate_header_name">同じ名前のヘッダーが複数あります</string>
   <string name="webhook_settings_error_reserved_content_type">Content-Typeはヘッダーに指定できません</string>
-  <string name="webhook_settings_error_invalid_header_syntax">ヘッダー名の形式が正しくないか、改行が含まれています</string>
-  <string name="webhook_settings_error_invalid_body_template">リクエスト本文が、記録一覧を入れたときに正しいJSONになりません</string>
+  <string name="webhook_settings_error_invalid_header_syntax">ヘッダー名の形式が正しくないか、名前または値に改行が含まれています</string>
+  <string name="webhook_settings_error_invalid_body_template">リクエスト本文が、プレースホルダーを展開すると正しいJSONになりません</string>
+  <!-- 画面に表示する見本のJSON。改行とインデントを残すため全体を引用符で囲む。 -->
+  <string name="webhook_settings_entries_example">"[\n  {\n    \"recordedAt\": \"2026-08-30T09:00:00Z\",\n    \"mood\": { \"emoji\": \"🙂\", \"label\": \"ふつう\" }\n  },\n  {\n    \"recordedAt\": \"2026-08-30T22:00:00Z\",\n    \"note\": \"メモ\"\n  }\n]"</string>
+  <string name="webhook_settings_success_response_example">"{\n  \"analysis\": {\n    \"period\": {\n      \"start\": \"2026-08-29T00:00:00Z\",\n      \"end\": \"2026-08-29T09:00:00Z\"\n    },\n    \"analyzedAt\": \"2026-08-29T09:00:05Z\",\n    \"entryCount\": 3,\n    \"model\": \"example/analysis-model\",\n    \"text\": \"…\"\n  }\n}"</string>
 
   <string name="mood_emoji_very_sad">😭</string>
   <string name="mood_emoji_sad">😞</string>
@@ -92,11 +95,11 @@
   <string name="mood_emoji_happy">🙂</string>
   <string name="mood_emoji_very_happy">😆</string>
 
-  <string name="mood_description_very_sad">気分:とても悲しい</string>
-  <string name="mood_description_sad">気分:悲しい</string>
-  <string name="mood_description_neutral">気分:普通</string>
-  <string name="mood_description_happy">気分:嬉しい</string>
-  <string name="mood_description_very_happy">気分:とても嬉しい</string>
+  <string name="mood_description_very_sad">気分：とても悲しい</string>
+  <string name="mood_description_sad">気分：悲しい</string>
+  <string name="mood_description_neutral">気分：普通</string>
+  <string name="mood_description_happy">気分：嬉しい</string>
+  <string name="mood_description_very_happy">気分：とても嬉しい</string>
 
   <string name="mood_label_very_sad">とても悲しい</string>
   <string name="mood_label_sad">悲しい</string>
@@ -115,11 +118,11 @@
   <string name="mood_emoji_calm">😌</string>
   <string name="mood_emoji_elated">🤩</string>
 
-  <string name="mood_description_angry">気分:怒り</string>
-  <string name="mood_description_anxious">気分:不安</string>
-  <string name="mood_description_tearful">気分:泣きたい</string>
-  <string name="mood_description_calm">気分:穏やか</string>
-  <string name="mood_description_elated">気分:高揚</string>
+  <string name="mood_description_angry">気分：怒り</string>
+  <string name="mood_description_anxious">気分：不安</string>
+  <string name="mood_description_tearful">気分：泣きたい</string>
+  <string name="mood_description_calm">気分：穏やか</string>
+  <string name="mood_description_elated">気分：高揚</string>
 
   <string name="mood_label_angry">怒り</string>
   <!-- 意図的に長い日本語ラベル。expanded表示で長いMood名称を入れたときの折り返し/見切れ/

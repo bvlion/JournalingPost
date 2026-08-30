@@ -103,8 +103,9 @@ class SettingsViewModel(
   }
 
   /**
-   * 永続化できたら true。[reportFailure] が true のときだけ失敗を[_integrationSaveFailed]へ立てる
-   * (Webの保存フローや復旧処理では、失敗はそれぞれの画面のfeedbackで扱うため false で呼ぶ)。
+   * 永続化できたら true。[reportFailure] が true のときだけ失敗を[_integrationSaveFailed]へ立てる。
+   * Webhookの保存・復旧フローでは失敗をWebhook設定画面のfeedback([_webhookSaveResult])で扱うため
+   * false で呼び、戻り値で有効化の成否を判断する。
    */
   private suspend fun persistAnalysisIntegration(
     integration: AnalysisIntegration,
@@ -178,14 +179,16 @@ class SettingsViewModel(
       if (generation != webhookRequestGeneration.get()) return@launch
       if (settled is WebhookSettingsState.Configured) {
         _webhookFormState.value = settled.settings.toFormState()
-        // 一時的な読み取り失敗から復旧して既存設定が見つかった場合、意味のない再保存を要求しない。
+        // 一時的な読み取り失敗から復旧して既存設定が見つかった場合、意味のない再保存は要求しないが、
+        // ここでの有効化に失敗すると実効integrationはNONEのままなので、保存フローと同じfeedbackを出す。
         if (_pendingCustomWebhookSelection.value) {
-          persistAnalysisIntegration(
+          val activated = persistAnalysisIntegration(
             AnalysisIntegration.CUSTOM_WEBHOOK,
             integrationRequestGeneration.incrementAndGet(),
             reportFailure = false,
           )
           _pendingCustomWebhookSelection.value = false
+          if (!activated) _webhookSaveResult.value = WebhookSaveResult.ACTIVATION_FAILED
         }
       }
       _webhookFormLoaded.value = true

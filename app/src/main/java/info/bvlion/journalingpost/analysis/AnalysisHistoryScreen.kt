@@ -65,12 +65,12 @@ fun AnalysisHistoryScreen(
   onCandidateDayClear: () -> Unit,
   onAnalyze: (LocalDate) -> Unit,
 ) {
-  val savedMessage = stringResource(R.string.analysis_result_saved)
+  val completedMessage = stringResource(R.string.analysis_completed)
   val failureMessage = (runState as? AnalysisRunState.Failed)?.let { stringResource(it.messageRes()) }
   LaunchedEffect(runState) {
     when (runState) {
       is AnalysisRunState.Succeeded -> {
-        onShowMessage(savedMessage)
+        onShowMessage(completedMessage)
         onRunResultShown()
       }
 
@@ -193,11 +193,12 @@ private fun AnalysisTrigger(
       },
     ) {
       DatePicker(state = datePickerState)
+      // エラーではなく「実行条件を満たしていない」ことの事前提示なので、通常のsupporting text色にする。
       if (checked != null && checked.day == pickedDay && !checked.hasEntries) {
         Text(
           text = stringResource(R.string.analysis_pick_day_no_entries),
           style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.error,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
           modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 12.dp),
         )
       }

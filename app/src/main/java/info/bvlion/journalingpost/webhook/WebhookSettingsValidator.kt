@@ -42,9 +42,10 @@ object WebhookSettingsValidator {
     }
     if (hasInvalidHeaderSyntax) errors += ValidationError.INVALID_HEADER_SYNTAX
 
-    // {{entries}}をraw JSON値(空array)として、期間placeholderを見本文字列として展開した結果が
-    // 有効なJSONになることだけを検証する。未知の {{...}} はそのまま残るため、それがJSONを壊す場合も
-    // ここで弾かれる。
+    // placeholderを見本値へ展開した結果が有効なJSONになることだけを検証する。{{entries}}の見本は
+    // 1件入りのarrayを使う(空arrayだと `"{{entries}}"` のように引用符で囲まれた壊れた記述も
+    // valid扱いになってしまうため。詳細はWebhookBodyTemplateRenderer)。未知の {{...}} はそのまま
+    // 残るため、それがJSONを壊す場合もここで弾かれる。
     if (!WebhookBodyTemplateRenderer.rendersValidJson(bodyTemplate)) errors += ValidationError.INVALID_BODY_TEMPLATE
 
     return Result(errors, normalizedHeaders)
