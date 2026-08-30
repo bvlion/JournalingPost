@@ -48,12 +48,13 @@ class AnalysisHistoryViewModel(
   private val _analysisRunState = MutableStateFlow<AnalysisRunState>(AnalysisRunState.Idle)
   val analysisRunState: StateFlow<AnalysisRunState> = _analysisRunState.asStateFlow()
 
-  /** 解析履歴画面へ入り直したときに、前回の実行結果表示(成功/失敗)を持ち越さない。 */
-  fun onAnalysisHistoryOpened() {
-    consumeRunResult()
-  }
-
-  /** 実行結果の表示(Toast等)を画面側が消費したら呼ぶ。実行中は消さない。 */
+  /**
+   * 実行結果の表示を画面側が消費したら呼ぶ。実行中は消さない。
+   *
+   * ここ以外で結果表示を消さないのは、解析中にタブを離れて戻ったケースで、完了した結果
+   * (特にFailed)を画面へ出す前に消してしまわないため。Failedは次の[analyze]まで表示を維持し、
+   * Succeededは画面側がToastを出したうえでこれを呼んで消す。
+   */
   fun consumeRunResult() {
     if (_analysisRunState.value != AnalysisRunState.Running) _analysisRunState.value = AnalysisRunState.Idle
   }

@@ -27,6 +27,9 @@ object AnalysisHistoryViewModelFactory : ViewModelProvider.Factory {
     install(ContentNegotiation) {
       json()
     }
+    // 利用者が設定したendpoint自身のresponseで2xx判定するため、リダイレクトは追わない
+    // (追うと、301/302の転送先が200を返した場合に成功として保存されてしまう)。
+    followRedirects = false
   }
 
   @Volatile

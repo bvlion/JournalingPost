@@ -76,7 +76,6 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(destination) {
           when (destination) {
             MainDestination.JOURNAL_HISTORY -> historyViewModel.onHistoryOpened()
-            MainDestination.ANALYSIS_HISTORY -> analysisHistoryViewModel.onAnalysisHistoryOpened()
             MainDestination.SETTINGS -> settingsViewModel.onSettingsOpened()
             else -> Unit
           }

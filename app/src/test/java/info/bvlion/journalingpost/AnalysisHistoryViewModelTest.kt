@@ -202,6 +202,22 @@ class AnalysisHistoryViewModelTest {
     assertEquals(AnalysisRunState.Idle, viewModel.analysisRunState.value)
   }
 
+  @Test
+  fun `失敗結果はconsumeするまで保持される`() = runTest(testDispatcher) {
+    // 解析中にタブを離れて戻るケースで、完了した失敗結果を画面へ出す前に消さないことを固定する。
+    val analyzer = FakePeriodAnalyzer { _, _ -> PeriodAnalysisOutcome.Failure.NETWORK }
+    val viewModel = createViewModel(analyzer = analyzer)
+    viewModel.analyze(LocalDate.of(2026, 8, 30))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(
+      AnalysisRunState.Failed(PeriodAnalysisOutcome.Failure.NETWORK),
+      viewModel.analysisRunState.value,
+    )
+  }
+
   private fun createViewModel(
     reader: AnalysisResultReader = FakeAnalysisResultReader(),
     integrationRepository: AnalysisIntegrationRepository =

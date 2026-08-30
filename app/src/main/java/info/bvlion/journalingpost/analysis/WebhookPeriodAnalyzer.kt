@@ -79,7 +79,8 @@ internal class WebhookPeriodAnalyzer(
       return PeriodAnalysisOutcome.Failure.NETWORK
     }
 
-    // 2xx以外(3xxリダイレクト含む)は成功として扱わない。
+    // 2xx以外は成功として扱わない。httpClientはリダイレクトを追わない設定のため、3xxはそのまま
+    // ここへ届いてSERVER_ERRORになる。
     if (!response.status.isSuccess()) return PeriodAnalysisOutcome.Failure.SERVER_ERROR
 
     val body = try {

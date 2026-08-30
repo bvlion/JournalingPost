@@ -133,11 +133,22 @@ class WebhookPeriodAnalyzerTest {
   }
 
   @Test
-  fun `2xx以外の3xxは成功扱いにせずSERVER_ERROR`() = runTest {
-    // 300はktorのredirect追従対象(301-308)外のため、そのままresponseとして返る。
-    val analyzer = analyzer(handler = { respondJson("""{"body":"ignored"}""", HttpStatusCode.MultipleChoices) })
+  fun `3xxリダイレクトは追わず成功扱いにもせずSERVER_ERROR`() = runTest {
+    // httpClientはfollowRedirects=falseのため、302のLocation(転送先の200)を見に行かず302が届く。
+    var requestCount = 0
+    val analyzer = analyzer(
+      handler = {
+        requestCount++
+        respond(
+          content = "",
+          status = HttpStatusCode.Found,
+          headers = headersOf(HttpHeaders.Location, "https://example.com/moved"),
+        )
+      },
+    )
 
     assertEquals(PeriodAnalysisOutcome.Failure.SERVER_ERROR, analyzer.analyze(periodStart, periodEnd))
+    assertEquals(1, requestCount)
   }
 
   @Test
@@ -203,6 +214,8 @@ class WebhookPeriodAnalyzerTest {
   ): WebhookPeriodAnalyzer {
     val client = HttpClient(MockEngine { request -> handler(request) }) {
       install(ContentNegotiation) { json() }
+      // productionのAnalysisHistoryViewModelFactoryと同じく、リダイレクトは追わない。
+      followRedirects = false
     }
     val reader = PeriodJournalEntryReader { start, end ->
       entriesReader?.invoke(start, end) ?: entries
