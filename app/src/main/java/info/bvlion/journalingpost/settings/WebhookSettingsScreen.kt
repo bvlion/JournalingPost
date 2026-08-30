@@ -12,17 +12,21 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.WebhookFormState
+import info.bvlion.journalingpost.WebhookSaveResult
 import info.bvlion.journalingpost.WebhookSettingsLoadState
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
@@ -30,9 +34,21 @@ import info.bvlion.journalingpost.webhook.WebhookBodyTemplateRenderer
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
 
-// Hosted解析API(`docs/hosted-analysis-api.md`)の `POST /v1/analyses` Response 200 と同じ成功response。
-// Custom Webhookもこのschema全体としてparseし、text/period/analyzedAt を AnalysisResult へ保存する。
-private const val HOSTED_ANALYSIS_RESPONSE_EXAMPLE = """{
+// {{entries}} が置き換わる形の見本。1件目はmood+note、2件目はnoteのみ。
+private const val ENTRIES_EXAMPLE = """[
+  {
+    "recordedAt": "2026-08-30T09:00:00Z",
+    "mood": { "emoji": "🙂", "label": "嬉しい" },
+    "note": "今日は集中できた"
+  },
+  {
+    "recordedAt": "2026-08-30T22:00:00Z",
+    "note": "早めに休む"
+  }
+]"""
+
+// 成功時にCustom Webhookが返す必要があるResponse JSON。
+private const val SUCCESS_RESPONSE_EXAMPLE = """{
   "analysis": {
     "period": {
       "start": "2026-08-29T00:00:00Z",
@@ -45,22 +61,18 @@ private const val HOSTED_ANALYSIS_RESPONSE_EXAMPLE = """{
   }
 }"""
 
-private const val ENTRIES_ELEMENT_EXAMPLE =
-  """{ "recordedAt": "2026-08-29T01:15:00Z", "mood": { "emoji": "🙂", "label": "すこし上向き" }, "note": "架空のメモ" }"""
-
 /**
- * Custom Webhookの現在設定を、確認と編集を分けずにそのまま表示・変更する画面。
- * 変更は「保存する」で明示的に確定し、保存せずBack等で離脱した場合は保存済み設定を変更しない。
- * 契約(送信方法・placeholder・成功response)は設定しながら確認できるよう常時表示する。
+ * Custom Webhookを設定する画面。この画面だけで、送信先・ヘッダー・リクエスト本文・期待する成功
+ * レスポンスが分かるようにする。保存操作の結果はSnackbarで伝える。
  */
 @Composable
 fun WebhookSettingsScreen(
   loadState: WebhookSettingsLoadState,
   formState: WebhookFormState,
   validationErrors: List<WebhookSettingsValidator.ValidationError>,
-  saveFailed: Boolean,
-  saveSucceeded: Boolean,
-  activationFailed: Boolean,
+  saveResult: WebhookSaveResult?,
+  onShowMessage: (String) -> Unit,
+  onSaveResultShown: () -> Unit,
   onUrlChange: (String) -> Unit,
   onHeaderAdd: () -> Unit,
   onHeaderRemove: (Int) -> Unit,
@@ -71,58 +83,34 @@ fun WebhookSettingsScreen(
   onSave: () -> Unit,
   onBack: () -> Unit,
 ) {
+  val saveResultMessage = saveResult?.let { stringResource(it.messageRes()) }
+  LaunchedEffect(saveResult) {
+    if (saveResultMessage != null) {
+      onShowMessage(saveResultMessage)
+      onSaveResultShown()
+    }
+  }
+
   Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-    ScreenTopAppBar(title = "Webhook設定", onBack = onBack)
+    ScreenTopAppBar(title = stringResource(R.string.settings_webhook_item), onBack = onBack)
 
     Column(modifier = Modifier.padding(16.dp)) {
-      if (saveSucceeded) {
-        Text(
-          text = "Webhook設定を保存しました",
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.padding(bottom = 4.dp),
-        )
-      }
-      if (activationFailed) {
-        Text(
-          text = "Webhook設定は保存しましたが、Custom Webhookを有効にできませんでした。もう一度お試しください。",
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.error,
-          modifier = Modifier.padding(bottom = 4.dp),
-        )
-      }
-      if (saveFailed) {
-        Text(
-          text = "Webhook設定を保存できませんでした",
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.error,
-          modifier = Modifier.padding(bottom = 4.dp),
-        )
-      }
-      validationErrors.forEach { error ->
-        Text(
-          text = error.toMessage(),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.error,
-          modifier = Modifier.padding(bottom = 4.dp),
-        )
-      }
-
       when (loadState) {
         // authoritativeな状態が分かるまではフォームを表示しない
         // (既存設定を誤って空フォームで上書きしないため)。
         WebhookSettingsLoadState.LOADING -> Text(
-          text = "Webhook設定を読み込んでいます",
+          text = stringResource(R.string.webhook_settings_loading),
           style = MaterialTheme.typography.bodyMedium,
         )
 
         WebhookSettingsLoadState.UNAVAILABLE -> Text(
-          text = "Webhook設定を読み込めませんでした",
+          text = stringResource(R.string.webhook_settings_unavailable),
           style = MaterialTheme.typography.bodyMedium,
         )
 
         WebhookSettingsLoadState.READY -> WebhookSettingsForm(
           formState = formState,
+          validationErrors = validationErrors,
           onUrlChange = onUrlChange,
           onHeaderAdd = onHeaderAdd,
           onHeaderRemove = onHeaderRemove,
@@ -140,6 +128,7 @@ fun WebhookSettingsScreen(
 @Composable
 private fun WebhookSettingsForm(
   formState: WebhookFormState,
+  validationErrors: List<WebhookSettingsValidator.ValidationError>,
   onUrlChange: (String) -> Unit,
   onHeaderAdd: () -> Unit,
   onHeaderRemove: (Int) -> Unit,
@@ -153,16 +142,12 @@ private fun WebhookSettingsForm(
     OutlinedTextField(
       value = formState.url,
       onValueChange = onUrlChange,
-      label = { Text("URL") },
+      label = { Text(stringResource(R.string.webhook_settings_url_label)) },
       modifier = Modifier.fillMaxWidth(),
       singleLine = true,
     )
 
-    Text(
-      text = "HTTP Headers",
-      style = MaterialTheme.typography.titleSmall,
-      modifier = Modifier.padding(top = 16.dp),
-    )
+    SectionHeading(stringResource(R.string.webhook_settings_headers_heading))
     formState.headers.forEachIndexed { index, header ->
       WebhookHeaderRow(
         header = header,
@@ -172,7 +157,7 @@ private fun WebhookSettingsForm(
       )
     }
     TextButton(onClick = onHeaderAdd, modifier = Modifier.padding(top = 4.dp)) {
-      Text("Headerを追加")
+      Text(stringResource(R.string.webhook_settings_header_add))
     }
 
     WebhookBodyTemplateField(
@@ -181,10 +166,20 @@ private fun WebhookSettingsForm(
       onBodyTemplateReset = onBodyTemplateReset,
     )
 
-    WebhookContractReference()
+    SectionHeading(stringResource(R.string.webhook_settings_response_heading))
+    MonospaceBlock(SUCCESS_RESPONSE_EXAMPLE)
+
+    validationErrors.forEach { error ->
+      Text(
+        text = stringResource(error.messageRes()),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+        modifier = Modifier.padding(top = 8.dp),
+      )
+    }
 
     TextButton(onClick = onSave, modifier = Modifier.padding(top = 16.dp)) {
-      Text("保存する")
+      Text(stringResource(R.string.action_save))
     }
   }
 }
@@ -197,30 +192,41 @@ private fun WebhookBodyTemplateField(
 ) {
   var showResetConfirm by remember { mutableStateOf(false) }
 
+  SectionHeading(stringResource(R.string.webhook_settings_body_heading))
   Text(
-    text = "Request body (POST / application/json)",
-    style = MaterialTheme.typography.titleSmall,
-    modifier = Modifier.padding(top = 16.dp),
-  )
-  Text(
-    text = "利用できるplaceholder: {{periodStart}} / {{periodEnd}} / {{entries}}",
+    text = stringResource(R.string.webhook_settings_body_hint),
     style = MaterialTheme.typography.bodySmall,
+    color = MaterialTheme.colorScheme.onSurfaceVariant,
   )
+  Column(modifier = Modifier.padding(top = 4.dp)) {
+    PlaceholderLine(
+      stringResource(R.string.webhook_settings_placeholder_period_start, WebhookBodyTemplateRenderer.PERIOD_EXAMPLE),
+    )
+    PlaceholderLine(stringResource(R.string.webhook_settings_placeholder_period_end))
+    PlaceholderLine(stringResource(R.string.webhook_settings_placeholder_entries))
+  }
   OutlinedTextField(
     value = bodyTemplate,
     onValueChange = onBodyTemplateChange,
-    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     minLines = 6,
   )
   TextButton(onClick = { showResetConfirm = true }, modifier = Modifier.padding(top = 4.dp)) {
-    Text("初期値に戻す")
+    Text(stringResource(R.string.webhook_settings_body_reset))
   }
+
+  Text(
+    text = stringResource(R.string.webhook_settings_entries_example_heading),
+    style = MaterialTheme.typography.labelMedium,
+    modifier = Modifier.padding(top = 8.dp),
+  )
+  MonospaceBlock(ENTRIES_EXAMPLE)
 
   if (showResetConfirm) {
     AlertDialog(
       onDismissRequest = { showResetConfirm = false },
-      title = { Text("Body templateを初期値に戻す") },
-      text = { Text("現在編集中のBody templateは破棄されます。よろしいですか？") },
+      title = { Text(stringResource(R.string.webhook_settings_body_reset_confirm_title)) },
+      text = { Text(stringResource(R.string.webhook_settings_body_reset_confirm_body)) },
       confirmButton = {
         TextButton(
           onClick = {
@@ -228,12 +234,12 @@ private fun WebhookBodyTemplateField(
             showResetConfirm = false
           },
         ) {
-          Text("初期値に戻す")
+          Text(stringResource(R.string.webhook_settings_body_reset))
         }
       },
       dismissButton = {
         TextButton(onClick = { showResetConfirm = false }) {
-          Text("キャンセル")
+          Text(stringResource(R.string.action_cancel))
         }
       },
     )
@@ -241,53 +247,33 @@ private fun WebhookBodyTemplateField(
 }
 
 @Composable
-private fun WebhookContractReference() {
-  Column(modifier = Modifier.padding(top = 16.dp)) {
-    Text(text = "契約", style = MaterialTheme.typography.titleSmall)
-
-    ContractLine("送信方法", "POST / Content-Type: application/json")
-    ContractLine(
-      "{{periodStart}} / {{periodEnd}}",
-      "対象期間の境界。RFC 3339のUTC文字列に展開されます（例: ${WebhookBodyTemplateRenderer.PERIOD_EXAMPLE}）。" +
-        "template側では引用符で囲んで使います。",
-    )
-    ContractLine(
-      "{{entries}}",
-      "対象期間のJournalEntryのJSON arrayに、引用符なしのraw JSONとして展開されます。" +
-        "展開後のbody全体が有効なJSONである必要があります。",
-    )
-    ContractLine("{{entries}} の各要素", ENTRIES_ELEMENT_EXAMPLE)
-    ContractLine(
-      "moodのみ / noteのみ",
-      "その要素では対応するkey（mood または note）が省略されます。moodId等の内部IDは送りません。",
-    )
-    ContractLine("上記以外の {{...}}", "placeholderとして扱われず、そのままの文字列で送信されます。")
-
-    Text(
-      text = "成功レスポンス（JournalingPostServer docs/hosted-analysis-api.md の Response 200 と同じ）",
-      style = MaterialTheme.typography.labelMedium,
-      modifier = Modifier.padding(top = 12.dp),
-    )
-    Text(
-      text = HOSTED_ANALYSIS_RESPONSE_EXAMPLE,
-      style = MaterialTheme.typography.bodySmall,
-      fontFamily = FontFamily.Monospace,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      modifier = Modifier.padding(top = 4.dp),
-    )
-  }
+private fun SectionHeading(text: String) {
+  Text(
+    text = text,
+    style = MaterialTheme.typography.titleSmall,
+    modifier = Modifier.padding(top = 16.dp),
+  )
 }
 
 @Composable
-private fun ContractLine(term: String, description: String) {
-  Column(modifier = Modifier.padding(top = 8.dp)) {
-    Text(text = term, style = MaterialTheme.typography.labelMedium)
-    Text(
-      text = description,
-      style = MaterialTheme.typography.bodySmall,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-  }
+private fun PlaceholderLine(text: String) {
+  Text(
+    text = text,
+    style = MaterialTheme.typography.bodySmall,
+    color = MaterialTheme.colorScheme.onSurfaceVariant,
+    modifier = Modifier.padding(top = 2.dp),
+  )
+}
+
+@Composable
+private fun MonospaceBlock(text: String) {
+  Text(
+    text = text,
+    style = MaterialTheme.typography.bodySmall,
+    fontFamily = FontFamily.Monospace,
+    color = MaterialTheme.colorScheme.onSurfaceVariant,
+    modifier = Modifier.padding(top = 4.dp),
+  )
 }
 
 @Composable
@@ -304,33 +290,39 @@ private fun WebhookHeaderRow(
     OutlinedTextField(
       value = header.name,
       onValueChange = onNameChange,
-      label = { Text("Header名") },
+      label = { Text(stringResource(R.string.webhook_settings_header_name_label)) },
       modifier = Modifier.weight(1f),
       singleLine = true,
     )
     OutlinedTextField(
       value = header.value,
       onValueChange = onValueChange,
-      label = { Text("値") },
+      label = { Text(stringResource(R.string.webhook_settings_header_value_label)) },
       modifier = Modifier.weight(1f).padding(start = 8.dp),
       singleLine = true,
-      // secretを含み得るためHeader値は常時平文表示しない。
+      // secretを含み得るためヘッダー値は常時平文表示しない。
       visualTransformation = PasswordVisualTransformation(),
     )
     TextButton(onClick = onRemove) {
-      Text("削除")
+      Text(stringResource(R.string.action_delete))
     }
   }
 }
 
-private fun WebhookSettingsValidator.ValidationError.toMessage(): String = when (this) {
-  WebhookSettingsValidator.ValidationError.INVALID_URL -> "URLがhttpまたはhttpsのURLとして正しくありません"
-  WebhookSettingsValidator.ValidationError.BLANK_HEADER_NAME -> "Header名が空になっている項目があります"
-  WebhookSettingsValidator.ValidationError.DUPLICATE_HEADER_NAME -> "同じHeader名が複数あります"
-  WebhookSettingsValidator.ValidationError.RESERVED_CONTENT_TYPE_HEADER -> "Content-TypeはHeaderとして指定できません"
-  WebhookSettingsValidator.ValidationError.INVALID_HEADER_SYNTAX -> "Header名の形式が正しくないか、Headerに改行が含まれています"
-  WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE ->
-    "Body templateが、{{entries}}を展開したときに有効なJSONになりません"
+private fun WebhookSaveResult.messageRes(): Int = when (this) {
+  WebhookSaveResult.SUCCEEDED -> R.string.webhook_settings_save_succeeded
+  WebhookSaveResult.FAILED -> R.string.webhook_settings_save_failed
+  WebhookSaveResult.ACTIVATION_FAILED -> R.string.webhook_settings_activation_failed
+}
+
+private fun WebhookSettingsValidator.ValidationError.messageRes(): Int = when (this) {
+  WebhookSettingsValidator.ValidationError.INVALID_URL -> R.string.webhook_settings_error_invalid_url
+  WebhookSettingsValidator.ValidationError.BLANK_HEADER_NAME -> R.string.webhook_settings_error_blank_header_name
+  WebhookSettingsValidator.ValidationError.DUPLICATE_HEADER_NAME -> R.string.webhook_settings_error_duplicate_header_name
+  WebhookSettingsValidator.ValidationError.RESERVED_CONTENT_TYPE_HEADER ->
+    R.string.webhook_settings_error_reserved_content_type
+  WebhookSettingsValidator.ValidationError.INVALID_HEADER_SYNTAX -> R.string.webhook_settings_error_invalid_header_syntax
+  WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE -> R.string.webhook_settings_error_invalid_body_template
 }
 
 @Preview(showBackground = true)
@@ -344,9 +336,9 @@ fun WebhookSettingsScreenPreview() {
         headers = listOf(WebhookHeader("Authorization", "Bearer xxxxx")),
       ),
       validationErrors = emptyList(),
-      saveFailed = false,
-      saveSucceeded = false,
-      activationFailed = false,
+      saveResult = null,
+      onShowMessage = {},
+      onSaveResultShown = {},
       onUrlChange = {},
       onHeaderAdd = {},
       onHeaderRemove = {},

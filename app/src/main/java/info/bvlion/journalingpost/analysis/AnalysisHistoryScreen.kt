@@ -1,6 +1,5 @@
 package info.bvlion.journalingpost.analysis
 
-import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,10 +27,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.AnalysisRunState
+import info.bvlion.journalingpost.CandidateDayState
+import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import java.time.Instant
@@ -49,31 +50,51 @@ private val analysisDateTimeFormatter = DateTimeFormatter.ofPattern("yyyy/M/d HH
  * 解析履歴の遷移先。#37で保存したAnalysisResultを新しい順の一覧で表示する。
  *
  * Custom Webhookが解析先として有効な場合([canRunAnalysis])だけ、上部に「解析する」導線を出し、
- * 対象日を1日選んで手動解析を実行できる。一覧の主目的は振り返りのため、導線は最小限に留める。
- * 実行中・失敗の表示は[canRunAnalysis]と独立させ、解析中にCustom Webhookを「使用しない」へ
- * 変えても、進行中の状態や失敗理由が見えなくならないようにする。
+ * 対象日を1日選んで手動解析を実行できる。日付を選んだ段階でその日に記録があるか調べ、0件の日は
+ * 実行を確定できないようにする。実行結果はSnackbarで伝える。
  */
 @Composable
 fun AnalysisHistoryScreen(
   uiState: AnalysisHistoryUiState,
   canRunAnalysis: Boolean,
   runState: AnalysisRunState,
-  onAnalyze: (LocalDate) -> Unit,
+  candidateDay: CandidateDayState,
+  onShowMessage: (String) -> Unit,
   onRunResultShown: () -> Unit,
+  onCandidateDayChange: (LocalDate) -> Unit,
+  onCandidateDayClear: () -> Unit,
+  onAnalyze: (LocalDate) -> Unit,
 ) {
-  val context = LocalContext.current
+  val savedMessage = stringResource(R.string.analysis_result_saved)
+  val failureMessage = (runState as? AnalysisRunState.Failed)?.let { stringResource(it.messageRes()) }
   LaunchedEffect(runState) {
-    if (runState is AnalysisRunState.Succeeded) {
-      Toast.makeText(context.applicationContext, "解析結果を保存しました", Toast.LENGTH_SHORT).show()
-      onRunResultShown()
+    when (runState) {
+      is AnalysisRunState.Succeeded -> {
+        onShowMessage(savedMessage)
+        onRunResultShown()
+      }
+
+      is AnalysisRunState.Failed -> {
+        failureMessage?.let(onShowMessage)
+        onRunResultShown()
+      }
+
+      else -> Unit
     }
   }
 
   Column(modifier = Modifier.fillMaxSize()) {
-    ScreenTopAppBar(title = "解析履歴")
+    ScreenTopAppBar(title = stringResource(R.string.tab_analysis_history))
 
-    if (canRunAnalysis || runState != AnalysisRunState.Idle) {
-      AnalysisTrigger(canRunAnalysis = canRunAnalysis, runState = runState, onAnalyze = onAnalyze)
+    if (canRunAnalysis || runState is AnalysisRunState.Running) {
+      AnalysisTrigger(
+        canRunAnalysis = canRunAnalysis,
+        isRunning = runState is AnalysisRunState.Running,
+        candidateDay = candidateDay,
+        onCandidateDayChange = onCandidateDayChange,
+        onCandidateDayClear = onCandidateDayClear,
+        onAnalyze = onAnalyze,
+      )
     }
 
     when (uiState) {
@@ -83,7 +104,7 @@ fun AnalysisHistoryScreen(
 
       AnalysisHistoryUiState.Empty -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
-          text = "まだ解析結果がありません",
+          text = stringResource(R.string.analysis_history_empty),
           style = MaterialTheme.typography.bodyMedium,
         )
       }
@@ -105,37 +126,31 @@ fun AnalysisHistoryScreen(
 @Composable
 private fun AnalysisTrigger(
   canRunAnalysis: Boolean,
-  runState: AnalysisRunState,
+  isRunning: Boolean,
+  candidateDay: CandidateDayState,
+  onCandidateDayChange: (LocalDate) -> Unit,
+  onCandidateDayClear: () -> Unit,
   onAnalyze: (LocalDate) -> Unit,
 ) {
   var showDatePicker by remember { mutableStateOf(false) }
 
   Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
     when {
-      runState is AnalysisRunState.Running -> Row(verticalAlignment = Alignment.CenterVertically) {
+      isRunning -> Row(verticalAlignment = Alignment.CenterVertically) {
         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
         Text(
-          text = "解析中…",
+          text = stringResource(R.string.analysis_running),
           style = MaterialTheme.typography.bodyMedium,
           modifier = Modifier.padding(start = 8.dp),
         )
       }
 
-      // 「解析する」導線はCustom Webhookが有効なときだけ出す。失敗表示はこの下で独立に描画する。
       canRunAnalysis -> TextButton(
         onClick = { showDatePicker = true },
         contentPadding = PaddingValues(0.dp),
       ) {
-        Text("解析する")
+        Text(stringResource(R.string.analysis_run_button))
       }
-    }
-
-    if (runState is AnalysisRunState.Failed) {
-      Text(
-        text = runState.toMessage(),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.error,
-      )
     }
   }
 
@@ -144,27 +159,48 @@ private fun AnalysisTrigger(
     val datePickerState = rememberDatePickerState(
       initialSelectedDateMillis = LocalDate.now(zoneId).toUtcMillis(),
     )
+    val pickedDay = datePickerState.selectedDateMillis?.toLocalDateFromUtc()
+
+    LaunchedEffect(pickedDay) {
+      if (pickedDay != null) onCandidateDayChange(pickedDay)
+    }
+
+    fun close() {
+      showDatePicker = false
+      onCandidateDayClear()
+    }
+
+    val checked = candidateDay as? CandidateDayState.Checked
+    val canConfirm = pickedDay != null && checked?.day == pickedDay && checked.hasEntries
+
     DatePickerDialog(
-      onDismissRequest = { showDatePicker = false },
+      onDismissRequest = { close() },
       confirmButton = {
         TextButton(
+          enabled = canConfirm,
           onClick = {
-            datePickerState.selectedDateMillis?.let { millis ->
-              onAnalyze(millis.toLocalDateFromUtc())
-            }
-            showDatePicker = false
+            if (pickedDay != null) onAnalyze(pickedDay)
+            close()
           },
         ) {
-          Text("解析する")
+          Text(stringResource(R.string.analysis_run_button))
         }
       },
       dismissButton = {
-        TextButton(onClick = { showDatePicker = false }) {
-          Text("キャンセル")
+        TextButton(onClick = { close() }) {
+          Text(stringResource(R.string.action_cancel))
         }
       },
     ) {
       DatePicker(state = datePickerState)
+      if (checked != null && checked.day == pickedDay && !checked.hasEntries) {
+        Text(
+          text = stringResource(R.string.analysis_pick_day_no_entries),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.error,
+          modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 12.dp),
+        )
+      }
     }
   }
 }
@@ -175,26 +211,29 @@ private fun LocalDate.toUtcMillis(): Long = atStartOfDay(ZoneOffset.UTC).toInsta
 private fun Long.toLocalDateFromUtc(): LocalDate =
   Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
 
-private fun AnalysisRunState.Failed.toMessage(): String = when (failure) {
-  PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE -> "Custom Webhookが解析先として有効ではありません"
-  PeriodAnalysisOutcome.Failure.NO_ENTRIES -> "選択した日には記録がないため解析できません"
-  PeriodAnalysisOutcome.Failure.LOCAL_READ -> "対象期間の記録を読み込めませんでした"
-  PeriodAnalysisOutcome.Failure.NETWORK -> "解析リクエストの送受信に失敗しました"
-  PeriodAnalysisOutcome.Failure.SERVER_ERROR -> "解析先からエラーが返されました"
-  PeriodAnalysisOutcome.Failure.INVALID_RESPONSE -> "解析結果を受け取れませんでした"
-  null -> "解析結果を保存できませんでした"
+private fun AnalysisRunState.Failed.messageRes(): Int = when (failure) {
+  PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE -> R.string.analysis_failure_webhook_unavailable
+  PeriodAnalysisOutcome.Failure.NO_ENTRIES -> R.string.analysis_failure_no_entries
+  PeriodAnalysisOutcome.Failure.LOCAL_READ -> R.string.analysis_failure_local_read
+  PeriodAnalysisOutcome.Failure.NETWORK -> R.string.analysis_failure_network
+  PeriodAnalysisOutcome.Failure.SERVER_ERROR -> R.string.analysis_failure_server_error
+  PeriodAnalysisOutcome.Failure.INVALID_RESPONSE -> R.string.analysis_failure_invalid_response
+  null -> R.string.analysis_failure_save
 }
 
 @Composable
 private fun AnalysisHistoryCard(item: AnalysisHistoryItem) {
   Column(modifier = Modifier.fillMaxWidth()) {
     Text(
-      text = "対象期間: ${item.periodStart.format(analysisDateTimeFormatter)}" +
-        " 〜 ${item.periodEnd.format(analysisDateTimeFormatter)}",
+      text = stringResource(
+        R.string.analysis_card_period,
+        item.periodStart.format(analysisDateTimeFormatter),
+        item.periodEnd.format(analysisDateTimeFormatter),
+      ),
       style = MaterialTheme.typography.titleSmall,
     )
     Text(
-      text = "解析日時: ${item.analyzedAt.format(analysisDateTimeFormatter)}",
+      text = stringResource(R.string.analysis_card_analyzed_at, item.analyzedAt.format(analysisDateTimeFormatter)),
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
       modifier = Modifier.padding(top = 2.dp),
@@ -225,8 +264,12 @@ fun AnalysisHistoryScreenPreview() {
       ),
       canRunAnalysis = true,
       runState = AnalysisRunState.Idle,
-      onAnalyze = {},
+      candidateDay = CandidateDayState.None,
+      onShowMessage = {},
       onRunResultShown = {},
+      onCandidateDayChange = {},
+      onCandidateDayClear = {},
+      onAnalyze = {},
     )
   }
 }

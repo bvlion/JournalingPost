@@ -65,6 +65,12 @@ Hosted解析を扱う場合は、以下を現在の前提とする。実装詳�
 
 productionコードの識別子（クラス、関数、プロパティ、定数等）は上記のKotlin命名規則に従い、日本語化しません。
 
+### UI文言とフィードバック
+
+- ユーザーへ表示される文言（画面タイトル、ボタン、ラベル、説明、空状態、ダイアログ、validation / error / success message、Snackbar、accessibilityの`contentDescription`等）はAndroid string resourcesで管理し、Kotlin / Composeへ直接書きません。ユーザーに表示されない内部識別子・テストデータ・protocol値・JSON key、Compose `@Preview`内のサンプルデータは対象外です。
+- Activity / Compose画面上で利用者が操作し、その画面で結果を返すケースの一時的な成功・失敗・エラーfeedbackはSnackbarを基本とします。Toastや、操作結果として画面内に残るTextを混在させません（画面の恒常的な説明・空状態・入力欄自体の状態は「一時feedback」ではなく対象外）。
+- App Widget、通知、background処理などSnackbarが自然でないsurfaceには、そのsurfaceに適したfeedbackを使います（アプリ内画面のSnackbar方針を機械的に適用しません）。
+
 ### コメント
 
 コメントは原則として「処理内容の説明」には使いません。クラス名・関数名・変数名を軽く追えば処理内容が分かる状態を保ち、コメントはコードだけでは残せない「なぜ」「制約」「意図」を伝える場合に限って書いてください。コメント/KDocを追加・変更する場合は日本語で記述します。

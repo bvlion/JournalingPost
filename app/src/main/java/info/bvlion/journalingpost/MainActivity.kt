@@ -1,12 +1,12 @@
 package info.bvlion.journalingpost
 
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
@@ -15,16 +15,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.lifecycleScope
@@ -61,12 +64,21 @@ class MainActivity : ComponentActivity() {
 
     setContent {
       JournalingPostTheme {
-        val context = LocalContext.current
         val uiState by viewModel.uiState.collectAsState()
 
         var destination by rememberSaveable { mutableStateOf(MainDestination.RECORD) }
         var showWebhookSettings by rememberSaveable { mutableStateOf(false) }
         var selectedMood by rememberSaveable { mutableStateOf<Mood?>(null) }
+
+        val snackbarHostState = remember { SnackbarHostState() }
+        val scope = rememberCoroutineScope()
+        // アプリ内画面の一時feedbackはSnackbarへ集約する。連続で出す場合は前のものを引き継がない。
+        val showMessage: (String) -> Unit = { message ->
+          scope.launch {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            snackbarHostState.showSnackbar(message)
+          }
+        }
 
         // 記録処理中〜完了直後はダイアログの操作もタブ切り替えも受け付けない。MainViewModelは
         // INITへ戻さないため、SUCCESSもlock対象に含める。
@@ -74,11 +86,7 @@ class MainActivity : ComponentActivity() {
           uiState == MainViewModel.UiState.SUCCESS
 
         LaunchedEffect(destination) {
-          when (destination) {
-            MainDestination.JOURNAL_HISTORY -> historyViewModel.onHistoryOpened()
-            MainDestination.SETTINGS -> settingsViewModel.onSettingsOpened()
-            else -> Unit
-          }
+          if (destination == MainDestination.SETTINGS) settingsViewModel.onSettingsOpened()
         }
 
         BackHandler(
@@ -101,6 +109,7 @@ class MainActivity : ComponentActivity() {
         Box(modifier = Modifier.fillMaxSize()) {
           Scaffold(
             modifier = Modifier.fillMaxSize().imePadding(),
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             bottomBar = {
               if (!showWebhookSettings) {
                 NavigationBar {
@@ -114,7 +123,7 @@ class MainActivity : ComponentActivity() {
                         }
                       },
                       icon = { Icon(painterResource(item.icon), contentDescription = null) },
-                      label = { Text(item.label) },
+                      label = { Text(stringResource(item.labelRes)) },
                     )
                   }
                 }
@@ -130,16 +139,14 @@ class MainActivity : ComponentActivity() {
                 val webhookSettingsLoadState by settingsViewModel.webhookSettingsLoadState.collectAsState()
                 val webhookFormState by settingsViewModel.webhookFormState.collectAsState()
                 val webhookValidationErrors by settingsViewModel.webhookValidationErrors.collectAsState()
-                val webhookSaveFailed by settingsViewModel.webhookSaveFailed.collectAsState()
-                val webhookSaveSucceeded by settingsViewModel.webhookSaveSucceeded.collectAsState()
-                val webhookActivationFailed by settingsViewModel.webhookActivationFailed.collectAsState()
+                val webhookSaveResult by settingsViewModel.webhookSaveResult.collectAsState()
                 WebhookSettingsScreen(
                   loadState = webhookSettingsLoadState,
                   formState = webhookFormState,
                   validationErrors = webhookValidationErrors,
-                  saveFailed = webhookSaveFailed,
-                  saveSucceeded = webhookSaveSucceeded,
-                  activationFailed = webhookActivationFailed,
+                  saveResult = webhookSaveResult,
+                  onShowMessage = showMessage,
+                  onSaveResultShown = settingsViewModel::consumeWebhookSaveResult,
                   onUrlChange = settingsViewModel::updateWebhookUrl,
                   onHeaderAdd = settingsViewModel::addWebhookHeader,
                   onHeaderRemove = settingsViewModel::removeWebhookHeader,
@@ -169,6 +176,8 @@ class MainActivity : ComponentActivity() {
                     JournalHistoryScreen(
                       uiState = historyUiState,
                       deleteFailed = deleteFailed,
+                      onShowMessage = showMessage,
+                      onDeleteFailedShown = historyViewModel::consumeDeleteFailed,
                       onDelete = historyViewModel::deleteEntry,
                     )
                   }
@@ -177,18 +186,24 @@ class MainActivity : ComponentActivity() {
                     val analysisHistoryUiState by analysisHistoryViewModel.uiState.collectAsState()
                     val canRunAnalysis by analysisHistoryViewModel.canRunAnalysis.collectAsState()
                     val analysisRunState by analysisHistoryViewModel.analysisRunState.collectAsState()
+                    val candidateDay by analysisHistoryViewModel.candidateDay.collectAsState()
                     AnalysisHistoryScreen(
                       uiState = analysisHistoryUiState,
                       canRunAnalysis = canRunAnalysis,
                       runState = analysisRunState,
-                      onAnalyze = analysisHistoryViewModel::analyze,
+                      candidateDay = candidateDay,
+                      onShowMessage = showMessage,
                       onRunResultShown = analysisHistoryViewModel::consumeRunResult,
+                      onCandidateDayChange = analysisHistoryViewModel::checkCandidateDay,
+                      onCandidateDayClear = analysisHistoryViewModel::clearCandidateDay,
+                      onAnalyze = analysisHistoryViewModel::analyze,
                     )
                   }
 
                   MainDestination.SETTINGS -> {
                     val selectedIntegration by settingsViewModel.selectedAnalysisIntegration.collectAsState()
                     val integrationSaveFailed by settingsViewModel.integrationSaveFailed.collectAsState()
+                    val webhookConfigured by settingsViewModel.webhookConfigured.collectAsState()
                     val webhookDestinationLabel by settingsViewModel.webhookDestinationLabel.collectAsState()
                     val webhookSetupRequested by settingsViewModel.webhookSetupRequested.collectAsState()
 
@@ -203,7 +218,10 @@ class MainActivity : ComponentActivity() {
                     SettingsScreen(
                       selectedIntegration = selectedIntegration,
                       integrationSaveFailed = integrationSaveFailed,
+                      onShowMessage = showMessage,
+                      onIntegrationSaveFailedShown = settingsViewModel::consumeIntegrationSaveFailed,
                       onAnalysisIntegrationChange = settingsViewModel::setAnalysisIntegration,
+                      webhookConfigured = webhookConfigured,
                       webhookDestinationLabel = webhookDestinationLabel,
                       onWebhookSettingsOpen = {
                         settingsViewModel.onWebhookSettingsScreenOpened()
@@ -241,7 +259,7 @@ class MainActivity : ComponentActivity() {
               if (uiState == MainViewModel.UiState.SUCCESS) {
                 selectedMood = null
                 viewModel.resetState()
-                Toast.makeText(context.applicationContext, successMessage, Toast.LENGTH_SHORT).show()
+                showMessage(successMessage)
               }
             }
           }
@@ -252,11 +270,11 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class MainDestination(
-  val label: String,
+  @param:StringRes val labelRes: Int,
   val icon: Int,
 ) {
-  RECORD("記録", R.drawable.ic_nav_record),
-  JOURNAL_HISTORY("記録履歴", R.drawable.ic_nav_journal_history),
-  ANALYSIS_HISTORY("解析履歴", R.drawable.ic_nav_analysis_history),
-  SETTINGS("設定", R.drawable.ic_nav_settings),
+  RECORD(R.string.tab_record, R.drawable.ic_nav_record),
+  JOURNAL_HISTORY(R.string.tab_journal_history, R.drawable.ic_nav_journal_history),
+  ANALYSIS_HISTORY(R.string.tab_analysis_history, R.drawable.ic_nav_analysis_history),
+  SETTINGS(R.string.tab_settings, R.drawable.ic_nav_settings),
 }

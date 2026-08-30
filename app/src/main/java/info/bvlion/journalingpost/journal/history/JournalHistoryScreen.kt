@@ -14,17 +14,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import java.time.LocalDate
@@ -40,22 +43,23 @@ private val historyTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.J
 fun JournalHistoryScreen(
   uiState: JournalHistoryUiState,
   deleteFailed: Boolean,
+  onShowMessage: (String) -> Unit,
+  onDeleteFailedShown: () -> Unit,
   onDelete: (Long) -> Unit,
 ) {
   // 削除確認中のentryは、回転しても対象を見失わないようidだけを保持する。
   var pendingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
 
-  Column(modifier = Modifier.fillMaxSize()) {
-    ScreenTopAppBar(title = "履歴")
-
+  val deleteFailedMessage = stringResource(R.string.journal_history_delete_failed)
+  LaunchedEffect(deleteFailed) {
     if (deleteFailed) {
-      Text(
-        text = "記録を削除できませんでした",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.error,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-      )
+      onShowMessage(deleteFailedMessage)
+      onDeleteFailedShown()
     }
+  }
+
+  Column(modifier = Modifier.fillMaxSize()) {
+    ScreenTopAppBar(title = stringResource(R.string.tab_journal_history))
 
     when (uiState) {
       JournalHistoryUiState.Loading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -64,7 +68,7 @@ fun JournalHistoryScreen(
 
       JournalHistoryUiState.Empty -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
-          text = "まだ記録がありません",
+          text = stringResource(R.string.journal_history_empty),
           style = MaterialTheme.typography.bodyMedium,
         )
       }
@@ -105,7 +109,7 @@ private fun JournalHistoryDeleteConfirmDialog(
 ) {
   AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text("この記録を削除しますか？") },
+    title = { Text(stringResource(R.string.journal_history_delete_confirm_title)) },
     text = {
       Column {
         Text(
@@ -130,7 +134,7 @@ private fun JournalHistoryDeleteConfirmDialog(
           )
         }
         Text(
-          text = "削除すると元に戻せません。",
+          text = stringResource(R.string.journal_history_delete_confirm_body),
           style = MaterialTheme.typography.bodySmall,
           modifier = Modifier.padding(top = 8.dp),
         )
@@ -138,12 +142,12 @@ private fun JournalHistoryDeleteConfirmDialog(
     },
     confirmButton = {
       TextButton(onClick = onConfirm) {
-        Text(text = "削除", color = MaterialTheme.colorScheme.error)
+        Text(text = stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error)
       }
     },
     dismissButton = {
       TextButton(onClick = onDismiss) {
-        Text("キャンセル")
+        Text(stringResource(R.string.action_cancel))
       }
     },
   )
@@ -191,13 +195,15 @@ private fun JournalHistoryRow(
       }
     }
     // 一覧に同じ「削除」が並ぶため、読み上げでは対象の時刻まで分かるようにする。
+    val rowDescription = stringResource(
+      R.string.journal_history_delete_row_description,
+      item.time.format(historyTimeFormatter),
+    )
     TextButton(
       onClick = onDeleteRequest,
-      modifier = Modifier.semantics {
-        contentDescription = "${item.time.format(historyTimeFormatter)}の記録を削除"
-      },
+      modifier = Modifier.semantics { contentDescription = rowDescription },
     ) {
-      Text("削除")
+      Text(stringResource(R.string.action_delete))
     }
   }
 }
@@ -225,6 +231,8 @@ fun JournalHistoryScreenPreview() {
         ),
       ),
       deleteFailed = false,
+      onShowMessage = {},
+      onDeleteFailedShown = {},
       onDelete = {},
     )
   }

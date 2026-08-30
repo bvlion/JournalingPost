@@ -156,7 +156,8 @@ fun MoodEntryScreen(
   val hasFailure = sessionState == MainViewModel.UiState.FAILURE
 
   // finish()するとViewModelのcoroutineごと破棄されるため、fade outを完了させてから
-  // Activityを閉じる。Toastはfinish後でも安全なapplicationContextを使い、閉じたあとに出す。
+  // Activityを閉じる。ここはWidgetタップで開いて記録後すぐ閉じるsurfaceで、閉じたあとに
+  // 結果を伝えるためSnackbarではなくToastを使う(閉じても安全なapplicationContext)。
   fun requestClose(showSuccessToast: Boolean) {
     if (isClosing) return
     isClosing = true

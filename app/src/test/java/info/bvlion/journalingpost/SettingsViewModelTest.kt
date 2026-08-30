@@ -170,11 +170,11 @@ class SettingsViewModelTest {
 
     assertEquals(1, webhookRepository.saveCallCount)
     assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, integrationRepository.current)
-    assertFalse(viewModel.webhookSaveFailed.value)
+    assertEquals(WebhookSaveResult.SUCCEEDED, viewModel.webhookSaveResult.value)
   }
 
   @Test
-  fun `Webhook設定の保存に成功するとwebhookSaveSucceededがtrueになり編集で戻る`() = runTest(dispatcher) {
+  fun `Webhook設定の保存に成功するとSUCCEEDEDになりconsumeでnullへ戻る`() = runTest(dispatcher) {
     val viewModel = SettingsViewModel(
       FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
       FakeWebhookSettingsRepository(),
@@ -184,15 +184,15 @@ class SettingsViewModelTest {
     viewModel.saveWebhookSettings()
     advanceUntilIdle()
 
-    assertTrue(viewModel.webhookSaveSucceeded.value)
+    assertEquals(WebhookSaveResult.SUCCEEDED, viewModel.webhookSaveResult.value)
 
-    viewModel.updateWebhookUrl("https://hooks.example.com/changed")
+    viewModel.consumeWebhookSaveResult()
 
-    assertFalse(viewModel.webhookSaveSucceeded.value)
+    assertNull(viewModel.webhookSaveResult.value)
   }
 
   @Test
-  fun `Webhook設定は保存できてもCustom Webhook有効化に失敗したら成功表示にしない`() = runTest(dispatcher) {
+  fun `Webhook設定は保存できてもCustom Webhook有効化に失敗したらACTIVATION_FAILEDにする`() = runTest(dispatcher) {
     val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE, failNextSets = 1)
     val webhookRepository = FakeWebhookSettingsRepository()
     val viewModel = SettingsViewModel(integrationRepository, webhookRepository)
@@ -205,14 +205,13 @@ class SettingsViewModelTest {
     assertEquals(1, webhookRepository.saveCallCount)
     // が、実効AnalysisIntegrationはNONEのまま
     assertEquals(AnalysisIntegration.NONE, integrationRepository.current)
-    // 成功表示にはならず、有効化失敗が表示され、解析連携の保存失敗も立つ
-    assertFalse(viewModel.webhookSaveSucceeded.value)
-    assertTrue(viewModel.webhookActivationFailed.value)
-    assertTrue(viewModel.integrationSaveFailed.value)
+    // 成功にはせず、有効化失敗として伝える。二重表示を避けるためintegrationSaveFailedは立てない。
+    assertEquals(WebhookSaveResult.ACTIVATION_FAILED, viewModel.webhookSaveResult.value)
+    assertFalse(viewModel.integrationSaveFailed.value)
   }
 
   @Test
-  fun `Webhook設定の保存失敗時はwebhookSaveSucceededがfalseのまま`() = runTest(dispatcher) {
+  fun `Webhook設定の保存失敗時はFAILEDになる`() = runTest(dispatcher) {
     val viewModel = SettingsViewModel(
       FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
       FakeWebhookSettingsRepository(failNextSaves = 1),
@@ -222,7 +221,7 @@ class SettingsViewModelTest {
     viewModel.saveWebhookSettings()
     advanceUntilIdle()
 
-    assertFalse(viewModel.webhookSaveSucceeded.value)
+    assertEquals(WebhookSaveResult.FAILED, viewModel.webhookSaveResult.value)
   }
 
   @Test
@@ -236,7 +235,7 @@ class SettingsViewModelTest {
     advanceUntilIdle()
 
     assertEquals(AnalysisIntegration.NONE, integrationRepository.current)
-    assertTrue(viewModel.webhookSaveFailed.value)
+    assertEquals(WebhookSaveResult.FAILED, viewModel.webhookSaveResult.value)
   }
 
   @Test

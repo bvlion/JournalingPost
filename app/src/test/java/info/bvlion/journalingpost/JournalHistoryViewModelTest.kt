@@ -166,14 +166,14 @@ class JournalHistoryViewModelTest {
   }
 
   @Test
-  fun `履歴画面へ入り直すと前回の削除失敗表示は残らない`() = runTest(testDispatcher) {
+  fun `画面がSnackbar表示を消費すると削除失敗フラグはfalseへ戻る`() = runTest(testDispatcher) {
     val deleter = FakeJournalEntryDeleter(failNextDeletes = 1)
     val viewModel = JournalHistoryViewModel(FakeJournalEntryReader(), deleter, ZoneOffset.UTC)
     viewModel.deleteEntry(1)
     testDispatcher.scheduler.advanceUntilIdle()
     assertTrue(viewModel.deleteFailed.value)
 
-    viewModel.onHistoryOpened()
+    viewModel.consumeDeleteFailed()
 
     assertFalse(viewModel.deleteFailed.value)
   }

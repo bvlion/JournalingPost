@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 
 /**
@@ -40,7 +41,7 @@ fun MoodRecordScreen(
   ) {
     item {
       Text(
-        text = "今の気分を記録",
+        text = stringResource(R.string.record_screen_heading),
         style = MaterialTheme.typography.titleMedium,
         modifier = Modifier.padding(bottom = 8.dp),
       )

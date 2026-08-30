@@ -16,6 +16,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -50,14 +51,46 @@ class AnalysisHistoryViewModel(
   val analysisRunState: StateFlow<AnalysisRunState> = _analysisRunState.asStateFlow()
 
   /**
-   * 実行結果の表示を画面側が消費したら呼ぶ。実行中は消さない。
+   * 実行結果(Succeeded/Failed)を画面がSnackbarで見せたら呼ぶ。実行中(Running)は消さない。
    *
-   * ここ以外で結果表示を消さないのは、解析中にタブを離れて戻ったケースで、完了した結果
-   * (特にFailed)を画面へ出す前に消してしまわないため。Failedは次の[analyze]まで表示を維持し、
-   * Succeededは画面側がToastを出したうえでこれを呼んで消す。
+   * 実行中にタブを離れて戻ったケースで、完了した結果を画面へ出す前に消してしまわないため、
+   * ここ以外で結果を消さない。Failedは次の[analyze]まで、画面が消費するまで保持する。
    */
   fun consumeRunResult() {
     if (_analysisRunState.value != AnalysisRunState.Running) _analysisRunState.value = AnalysisRunState.Idle
+  }
+
+  private val _candidateDay = MutableStateFlow<CandidateDayState>(CandidateDayState.None)
+
+  /** 解析する日を選んでいる途中の状態。0件の日は実行を確定できないようにするためのもの。 */
+  val candidateDay: StateFlow<CandidateDayState> = _candidateDay.asStateFlow()
+
+  private var candidateDayJob: Job? = null
+
+  /** 日付選択のたびに、その日に解析対象の記録があるかを調べる。 */
+  fun checkCandidateDay(day: LocalDate) {
+    if ((_candidateDay.value as? CandidateDayState.Checked)?.day == day) return
+    candidateDayJob?.cancel()
+    _candidateDay.value = CandidateDayState.Checking
+    candidateDayJob = viewModelScope.launch {
+      val zoneId = currentZoneId()
+      val periodStart = day.atStartOfDay(zoneId).toInstant()
+      val periodEnd = day.plusDays(1).atStartOfDay(zoneId).toInstant()
+      val hasEntries = try {
+        periodJournalEntryReader.entriesInPeriod(periodStart, periodEnd).isNotEmpty()
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        // 読めないときは確定を止めない(実行時にLOCAL_READ扱いになる)。
+        true
+      }
+      _candidateDay.value = CandidateDayState.Checked(day, hasEntries)
+    }
+  }
+
+  fun clearCandidateDay() {
+    candidateDayJob?.cancel()
+    _candidateDay.value = CandidateDayState.None
   }
 
   /**
@@ -119,4 +152,11 @@ sealed interface AnalysisRunState {
 
   /** [failure]がnullなのは、解析自体は成功したがAnalysisResultの端末保存に失敗した場合。 */
   data class Failed(val failure: PeriodAnalysisOutcome.Failure?) : AnalysisRunState
+}
+
+/** 解析する日の候補と、その日に解析対象の記録があるか。 */
+sealed interface CandidateDayState {
+  data object None : CandidateDayState
+  data object Checking : CandidateDayState
+  data class Checked(val day: LocalDate, val hasEntries: Boolean) : CandidateDayState
 }
