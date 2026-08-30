@@ -45,12 +45,14 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
   private val viewModel: MainViewModel by viewModels { MainViewModelFactory }
   private val historyViewModel: JournalHistoryViewModel by viewModels { JournalHistoryViewModelFactory }
+  private val analysisHistoryViewModel: AnalysisHistoryViewModel by viewModels { AnalysisHistoryViewModelFactory }
   private val settingsViewModel: SettingsViewModel by viewModels { SettingsViewModelFactory }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     MainViewModelFactory.initialize(applicationContext)
     JournalHistoryViewModelFactory.initialize(applicationContext)
+    AnalysisHistoryViewModelFactory.initialize(applicationContext)
     SettingsViewModelFactory.initialize(applicationContext)
     enableEdgeToEdge()
 
@@ -167,7 +169,10 @@ class MainActivity : ComponentActivity() {
                     )
                   }
 
-                  MainDestination.ANALYSIS_HISTORY -> AnalysisHistoryScreen()
+                  MainDestination.ANALYSIS_HISTORY -> {
+                    val analysisHistoryUiState by analysisHistoryViewModel.uiState.collectAsState()
+                    AnalysisHistoryScreen(uiState = analysisHistoryUiState)
+                  }
 
                   MainDestination.SETTINGS -> {
                     val selectedIntegration by settingsViewModel.selectedAnalysisIntegration.collectAsState()
