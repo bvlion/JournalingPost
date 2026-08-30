@@ -32,6 +32,5 @@ class WebhookDestinationLabelTest {
   private fun webhookSettings(url: String) = WebhookSettings(
     url = url,
     headers = listOf(WebhookHeader("Authorization", "Bearer secret-token")),
-    bodyTemplate = """{"text": "{{message}}"}""",
   )
 }

@@ -38,7 +38,6 @@ fun WebhookSettingsScreen(
   onHeaderRemove: (Int) -> Unit,
   onHeaderNameChange: (Int, String) -> Unit,
   onHeaderValueChange: (Int, String) -> Unit,
-  onBodyTemplateChange: (String) -> Unit,
   onSave: () -> Unit,
   onBack: () -> Unit,
 ) {
@@ -83,7 +82,6 @@ fun WebhookSettingsScreen(
           onHeaderRemove = onHeaderRemove,
           onHeaderNameChange = onHeaderNameChange,
           onHeaderValueChange = onHeaderValueChange,
-          onBodyTemplateChange = onBodyTemplateChange,
           onSave = onSave,
         )
       }
@@ -99,7 +97,6 @@ private fun WebhookSettingsForm(
   onHeaderRemove: (Int) -> Unit,
   onHeaderNameChange: (Int, String) -> Unit,
   onHeaderValueChange: (Int, String) -> Unit,
-  onBodyTemplateChange: (String) -> Unit,
   onSave: () -> Unit,
 ) {
   Column {
@@ -127,22 +124,6 @@ private fun WebhookSettingsForm(
     TextButton(onClick = onHeaderAdd, modifier = Modifier.padding(top = 4.dp)) {
       Text("Headerを追加")
     }
-
-    Text(
-      text = "JSON Body template",
-      style = MaterialTheme.typography.titleSmall,
-      modifier = Modifier.padding(top = 16.dp),
-    )
-    Text(
-      text = "利用可能なplaceholder: {{message}} / {{timestamp}}",
-      style = MaterialTheme.typography.bodySmall,
-    )
-    OutlinedTextField(
-      value = formState.bodyTemplate,
-      onValueChange = onBodyTemplateChange,
-      modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-      minLines = 5,
-    )
 
     TextButton(onClick = onSave, modifier = Modifier.padding(top = 16.dp)) {
       Text("保存する")
@@ -189,7 +170,6 @@ private fun WebhookSettingsValidator.ValidationError.toMessage(): String = when 
   WebhookSettingsValidator.ValidationError.DUPLICATE_HEADER_NAME -> "同じHeader名が複数あります"
   WebhookSettingsValidator.ValidationError.RESERVED_CONTENT_TYPE_HEADER -> "Content-TypeはHeaderとして指定できません"
   WebhookSettingsValidator.ValidationError.INVALID_HEADER_SYNTAX -> "Header名の形式が正しくないか、Headerに改行が含まれています"
-  WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE -> "Body templateが有効なJSON、またはサポート対象のplaceholderではありません"
 }
 
 @Preview(showBackground = true)
@@ -201,7 +181,6 @@ fun WebhookSettingsScreenPreview() {
       formState = WebhookFormState(
         url = "https://hooks.example.com/services/xxx",
         headers = listOf(WebhookHeader("Authorization", "Bearer xxxxx")),
-        bodyTemplate = """{"text": "{{message}}"}""",
       ),
       validationErrors = emptyList(),
       saveFailed = false,
@@ -210,7 +189,6 @@ fun WebhookSettingsScreenPreview() {
       onHeaderRemove = {},
       onHeaderNameChange = { _, _ -> },
       onHeaderValueChange = { _, _ -> },
-      onBodyTemplateChange = {},
       onSave = {},
       onBack = {},
     )

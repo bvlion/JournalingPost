@@ -108,7 +108,6 @@ class SettingsViewModelTest {
       WebhookSettings(
         url = "https://hooks.example.com/path?token=secret",
         headers = emptyList(),
-        bodyTemplate = validBody,
       ),
     )
     val viewModel = SettingsViewModel(integrationRepository, webhookRepository)
@@ -139,7 +138,6 @@ class SettingsViewModelTest {
     assertEquals(WebhookSettingsLoadState.READY, viewModel.webhookSettingsLoadState.value)
     assertEquals(saved.url, viewModel.webhookFormState.value.url)
     assertEquals(saved.headers, viewModel.webhookFormState.value.headers)
-    assertEquals(saved.bodyTemplate, viewModel.webhookFormState.value.bodyTemplate)
     collection.cancel()
   }
 
@@ -190,7 +188,6 @@ class SettingsViewModelTest {
     val webhookRepository = FakeWebhookSettingsRepository()
     val viewModel = SettingsViewModel(FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE), webhookRepository)
     viewModel.updateWebhookUrl("not a url")
-    viewModel.updateWebhookBodyTemplate(validBody)
 
     viewModel.saveWebhookSettings()
     advanceUntilIdle()
@@ -279,13 +276,11 @@ class SettingsViewModelTest {
     viewModel.addWebhookHeader()
     viewModel.updateWebhookHeaderName(0, "Authorization")
     viewModel.updateWebhookHeaderValue(0, "Bearer secret")
-    viewModel.updateWebhookBodyTemplate(validBody)
   }
 
   private fun configuredSettings() = WebhookSettings(
     url = "https://hooks.example.com/webhook",
     headers = listOf(WebhookHeader("Authorization", "Bearer secret")),
-    bodyTemplate = validBody,
   )
 
   private class FakeAnalysisIntegrationRepository(initial: AnalysisIntegration) : AnalysisIntegrationRepository {
@@ -366,7 +361,4 @@ class SettingsViewModelTest {
     }
   }
 
-  private companion object {
-    const val validBody = """{"text":"{{message}}","ts":"{{timestamp}}"}"""
-  }
 }

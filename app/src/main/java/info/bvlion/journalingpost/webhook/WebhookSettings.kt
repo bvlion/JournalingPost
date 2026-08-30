@@ -6,7 +6,6 @@ import kotlinx.serialization.Serializable
 data class WebhookSettings(
   val url: String,
   val headers: List<WebhookHeader>,
-  val bodyTemplate: String,
 )
 
 @Serializable

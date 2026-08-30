@@ -8,8 +8,9 @@ import kotlinx.coroutines.flow.combine
 /**
  * CUSTOM_WEBHOOKを有効値として返すのは、保存済みWebhook設定が存在する場合だけにする。
  *
- * NotConfiguredではNONEへ倒す。一方、Unavailableは一時的な読み取り失敗なのでCUSTOM_WEBHOOKを維持し、
- * 記録時の送信失敗として扱う。ここでNONEへ倒すと配送失敗がNOT_REQUIREDとして隠れてしまうため。
+ * NotConfiguredではNONEへ倒す。一方、Unavailableは一時的な読み取り失敗なのでCUSTOM_WEBHOOKを維持する。
+ * ここでNONEへ倒すと、一時的な失敗のたびに手動解析の導線自体が消えてしまうため。実際に解析を実行した
+ * ときの失敗として扱う。
  */
 internal class WebhookAwareAnalysisIntegrationRepository(
   private val delegate: AnalysisIntegrationRepository,

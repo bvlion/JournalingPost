@@ -117,7 +117,7 @@ class MoodEntryActivity : ComponentActivity() {
 
 /**
  * 記録処理中(LOADING)だけは、新しいentryへ置き換えると実行中のrecord()をcancelしてしまうため
- * 受け付けない。完了済みのSUCCESS系は次のWidgetタップを取りこぼさないよう受け付ける。
+ * 受け付けない。完了済みのSUCCESSは次のWidgetタップを取りこぼさないよう受け付ける。
  */
 internal fun MainViewModel.UiState.acceptsNewMoodEntry(): Boolean =
   this != MainViewModel.UiState.LOADING
@@ -148,9 +148,8 @@ fun MoodEntryScreen(
 
   val sessionState = if (hasRequestedRecord) uiState else MainViewModel.UiState.INIT
   val isRecording = sessionState == MainViewModel.UiState.LOADING
-  val isSuccess =
-    sessionState == MainViewModel.UiState.SUCCESS || sessionState == MainViewModel.UiState.SUCCESS_DELIVERY_FAILED
-  // SUCCESS到達後もrecomposeで「記録」ボタンが一瞬通常表示へ戻らないよう、LOADING/SUCCESS系/
+  val isSuccess = sessionState == MainViewModel.UiState.SUCCESS
+  // SUCCESS到達後もrecomposeで「記録」ボタンが一瞬通常表示へ戻らないよう、LOADING/SUCCESS/
   // fade中(isClosing)のすべてを「操作不能」として扱う。MainViewModelはINITへ戻さないため、
   // この操作lockはUI側だけで判定する。
   val isInteractionLocked = isRecording || isSuccess || isClosing
@@ -171,7 +170,6 @@ fun MoodEntryScreen(
   }
 
   LaunchedEffect(sessionState) {
-    // Webhook配送失敗を記録自体の失敗として扱わず、SUCCESSと同様に画面を閉じる。
     if (isSuccess) {
       requestClose(showSuccessToast = true)
     }

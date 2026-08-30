@@ -9,6 +9,6 @@ enum class AnalysisIntegration {
   /** 端末内にのみ記録し、外部へは送信しない。 */
   NONE,
 
-  /** 記録時に、ユーザーが設定したCustom Webhookへ送信する。 */
+  /** 端末内に記録し、利用者が期間を指定して手動で解析するときだけCustom Webhookへ送信する。 */
   CUSTOM_WEBHOOK,
 }

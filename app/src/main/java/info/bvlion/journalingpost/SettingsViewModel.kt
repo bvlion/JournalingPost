@@ -203,10 +203,6 @@ class SettingsViewModel(
     }
   }
 
-  fun updateWebhookBodyTemplate(bodyTemplate: String) {
-    updateWebhookForm { it.copy(bodyTemplate = bodyTemplate) }
-  }
-
   private fun updateWebhookForm(transform: (WebhookFormState) -> WebhookFormState) {
     _webhookFormState.update(transform)
   }
@@ -218,7 +214,7 @@ class SettingsViewModel(
   fun saveWebhookSettings() {
     val generation = webhookRequestGeneration.incrementAndGet()
     val form = _webhookFormState.value
-    val validation = WebhookSettingsValidator.validate(form.url, form.headers, form.bodyTemplate)
+    val validation = WebhookSettingsValidator.validate(form.url, form.headers)
     if (validation.errors.isNotEmpty()) {
       _webhookValidationErrors.value = validation.errors
       return
@@ -227,7 +223,7 @@ class SettingsViewModel(
     _webhookSaveFailed.value = false
     viewModelScope.launch {
       try {
-        webhookSettingsRepository.save(WebhookSettings(form.url, validation.normalizedHeaders, form.bodyTemplate))
+        webhookSettingsRepository.save(WebhookSettings(form.url, validation.normalizedHeaders))
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {
@@ -251,7 +247,6 @@ enum class WebhookSettingsLoadState {
 data class WebhookFormState(
   val url: String = "",
   val headers: List<WebhookHeader> = emptyList(),
-  val bodyTemplate: String = "",
 )
 
-private fun WebhookSettings.toFormState() = WebhookFormState(url = url, headers = headers, bodyTemplate = bodyTemplate)
+private fun WebhookSettings.toFormState() = WebhookFormState(url = url, headers = headers)

@@ -10,7 +10,6 @@ object WebhookSettingsValidator {
     DUPLICATE_HEADER_NAME,
     RESERVED_CONTENT_TYPE_HEADER,
     INVALID_HEADER_SYNTAX,
-    INVALID_BODY_TEMPLATE,
   }
 
   /**
@@ -23,7 +22,7 @@ object WebhookSettingsValidator {
     val normalizedHeaders: List<WebhookHeader>,
   )
 
-  fun validate(url: String, headers: List<WebhookHeader>, bodyTemplate: String): Result {
+  fun validate(url: String, headers: List<WebhookHeader>): Result {
     val errors = mutableListOf<ValidationError>()
     if (!isPostableHttpUrl(url)) errors += ValidationError.INVALID_URL
 
@@ -35,17 +34,12 @@ object WebhookSettingsValidator {
     if (nonBlankLowerNames.any { it == CONTENT_TYPE_HEADER_NAME }) errors += ValidationError.RESERVED_CONTENT_TYPE_HEADER
 
     // HTTP field-nameとして送信できないnameは保存自体を拒否する。ここで弾かないと、保存は成功し
-    // 送信時にHTTP clientがrequest構築時に例外を投げて全ての記録がFAILEDになり続ける。
+    // 送信時にHTTP clientがrequest構築時に例外を投げて解析がすべて失敗し続ける。
     // valueはtoken文字に制限せず、CR/LF(header injection)だけを拒否する。
     val hasInvalidHeaderSyntax = normalizedHeaders.any { header ->
       (header.name.isNotBlank() && !header.name.isValidHeaderNameToken()) || header.value.containsCrOrLf()
     }
     if (hasInvalidHeaderSyntax) errors += ValidationError.INVALID_HEADER_SYNTAX
-
-    // 実際の置換値には依存しない失敗種別(InvalidJson/UnsupportedPlaceholder)だけを検証するため、
-    // renderへ渡す message/timestamp はダミー値で構わない。
-    val rendered = WebhookBodyTemplateRenderer.render(bodyTemplate, message = "", timestamp = "")
-    if (rendered is WebhookBodyTemplateRenderer.Result.Failure) errors += ValidationError.INVALID_BODY_TEMPLATE
 
     return Result(errors, normalizedHeaders)
   }

@@ -69,14 +69,14 @@ class MainActivity : ComponentActivity() {
         var selectedMood by rememberSaveable { mutableStateOf<Mood?>(null) }
 
         // 記録処理中〜完了直後はダイアログの操作もタブ切り替えも受け付けない。MainViewModelは
-        // INITへ戻さないため、SUCCESS系もlock対象に含める。
+        // INITへ戻さないため、SUCCESSもlock対象に含める。
         val recordInProgress = uiState == MainViewModel.UiState.LOADING ||
-          uiState == MainViewModel.UiState.SUCCESS ||
-          uiState == MainViewModel.UiState.SUCCESS_DELIVERY_FAILED
+          uiState == MainViewModel.UiState.SUCCESS
 
         LaunchedEffect(destination) {
           when (destination) {
             MainDestination.JOURNAL_HISTORY -> historyViewModel.onHistoryOpened()
+            MainDestination.ANALYSIS_HISTORY -> analysisHistoryViewModel.onAnalysisHistoryOpened()
             MainDestination.SETTINGS -> settingsViewModel.onSettingsOpened()
             else -> Unit
           }
@@ -142,7 +142,6 @@ class MainActivity : ComponentActivity() {
                   onHeaderRemove = settingsViewModel::removeWebhookHeader,
                   onHeaderNameChange = settingsViewModel::updateWebhookHeaderName,
                   onHeaderValueChange = settingsViewModel::updateWebhookHeaderValue,
-                  onBodyTemplateChange = settingsViewModel::updateWebhookBodyTemplate,
                   onSave = settingsViewModel::saveWebhookSettings,
                   onBack = {
                     settingsViewModel.onWebhookSettingsScreenClosed()
@@ -171,7 +170,15 @@ class MainActivity : ComponentActivity() {
 
                   MainDestination.ANALYSIS_HISTORY -> {
                     val analysisHistoryUiState by analysisHistoryViewModel.uiState.collectAsState()
-                    AnalysisHistoryScreen(uiState = analysisHistoryUiState)
+                    val canRunAnalysis by analysisHistoryViewModel.canRunAnalysis.collectAsState()
+                    val analysisRunState by analysisHistoryViewModel.analysisRunState.collectAsState()
+                    AnalysisHistoryScreen(
+                      uiState = analysisHistoryUiState,
+                      canRunAnalysis = canRunAnalysis,
+                      runState = analysisRunState,
+                      onAnalyze = analysisHistoryViewModel::analyze,
+                      onRunResultShown = analysisHistoryViewModel::consumeRunResult,
+                    )
                   }
 
                   MainDestination.SETTINGS -> {
@@ -226,10 +233,7 @@ class MainActivity : ComponentActivity() {
             )
 
             LaunchedEffect(uiState) {
-              // Webhook配送失敗は記録自体の失敗ではないため、SUCCESSと同じく閉じて完了を伝える。
-              if (uiState == MainViewModel.UiState.SUCCESS ||
-                uiState == MainViewModel.UiState.SUCCESS_DELIVERY_FAILED
-              ) {
+              if (uiState == MainViewModel.UiState.SUCCESS) {
                 selectedMood = null
                 viewModel.resetState()
                 Toast.makeText(context.applicationContext, successMessage, Toast.LENGTH_SHORT).show()

@@ -7,7 +7,7 @@ class LocalOnlyJournalRecorder(
   private val repository: JournalEntryRepository,
   private val now: () -> Instant = Instant::now,
 ) : JournalRecorder {
-  override suspend fun record(note: String, mood: MoodSnapshot?, source: JournalSource): DeliveryStatus {
+  override suspend fun record(note: String, mood: MoodSnapshot?, source: JournalSource) {
     repository.insert(
       JournalEntry(
         timestamp = now(),
@@ -16,9 +16,7 @@ class LocalOnlyJournalRecorder(
         moodLabel = mood?.label,
         note = note.ifBlank { null },
         source = source,
-        deliveryStatus = DeliveryStatus.NOT_REQUIRED,
       ),
     )
-    return DeliveryStatus.NOT_REQUIRED
   }
 }

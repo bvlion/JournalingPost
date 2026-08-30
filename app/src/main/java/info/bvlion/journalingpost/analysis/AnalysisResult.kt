@@ -10,7 +10,8 @@ import java.time.Instant
  * 残す。同じ対象期間に対する複数回の解析結果も、それぞれ独立した行として保持する。
  *
  * periodStart/periodEndは解析対象とした期間そのもの(UTC基準のInstant)を保存し、表示時に
- * 端末のタイムゾーンへ変換する。期間をどう決めて渡すかは #38 / #40 で実装する。
+ * 端末のタイムゾーンへ変換する。手動解析では利用者が選んだ1日を端末timezoneの `[00:00, 翌日00:00)`
+ * へ変換して渡す。
  */
 @Entity(tableName = "analysis_results")
 data class AnalysisResult(

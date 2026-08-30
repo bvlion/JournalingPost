@@ -1,6 +1,5 @@
 package info.bvlion.journalingpost
 
-import info.bvlion.journalingpost.journal.DeliveryStatus
 import info.bvlion.journalingpost.journal.JournalEntry
 import info.bvlion.journalingpost.journal.JournalEntryDeleter
 import info.bvlion.journalingpost.journal.JournalEntryReader
@@ -198,7 +197,6 @@ class JournalHistoryViewModelTest {
     timestamp = Instant.parse(at),
     note = note,
     source = JournalSource.APP,
-    deliveryStatus = DeliveryStatus.NOT_REQUIRED,
   )
 
   private fun launchCollection(viewModel: JournalHistoryViewModel) =
