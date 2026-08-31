@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
+import androidx.glance.appwidget.updateAll
 import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.analysis.AnalysisResultWriter
 import info.bvlion.journalingpost.analysis.PeriodAnalyzer
@@ -17,12 +18,16 @@ import info.bvlion.journalingpost.journal.LocalOnlyJournalRecorder
 import info.bvlion.journalingpost.journal.PeriodJournalEntryReader
 import info.bvlion.journalingpost.journal.db.JournalDatabase
 import info.bvlion.journalingpost.journal.db.RoomJournalEntryRepository
+import info.bvlion.journalingpost.mood.DataStoreMoodRepository
+import info.bvlion.journalingpost.mood.MoodRepository
+import info.bvlion.journalingpost.mood.createInitialMoodCatalog
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import info.bvlion.journalingpost.settings.DataStoreAnalysisIntegrationRepository
 import info.bvlion.journalingpost.settings.WebhookAwareAnalysisIntegrationRepository
 import info.bvlion.journalingpost.webhook.AndroidKeystoreWebhookSettingsCipher
 import info.bvlion.journalingpost.webhook.DataStoreWebhookSettingsRepository
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
+import info.bvlion.journalingpost.widget.MoodWidget
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -56,6 +61,13 @@ internal class AppContainer(context: Context) {
   }
 
   val journalRecorder: JournalRecorder by lazy { LocalOnlyJournalRecorder(journalEntryRepository) }
+
+  val moodRepository: MoodRepository by lazy {
+    DataStoreMoodRepository(
+      dataStore = createPreferenceDataStore(MOOD_SETTINGS_FILE_NAME),
+      initialMoods = createInitialMoodCatalog(context),
+    )
+  }
 
   val journalEntryReader: JournalEntryReader get() = journalEntryRepository
 
@@ -95,6 +107,10 @@ internal class AppContainer(context: Context) {
     )
   }
 
+  suspend fun refreshMoodWidgets() {
+    MoodWidget().updateAll(context)
+  }
+
   private fun createPreferenceDataStore(fileName: String): DataStore<Preferences> =
     PreferenceDataStoreFactory.create(produceFile = { context.preferencesDataStoreFile(fileName) })
 
@@ -107,5 +123,7 @@ internal class AppContainer(context: Context) {
     const val WEBHOOK_SETTINGS_FILE_NAME = "webhook_settings"
 
     const val ANALYSIS_INTEGRATION_FILE_NAME = "analysis_integration_settings"
+
+    const val MOOD_SETTINGS_FILE_NAME = "mood_settings"
   }
 }

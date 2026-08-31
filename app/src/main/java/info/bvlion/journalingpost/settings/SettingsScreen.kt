@@ -24,18 +24,28 @@ import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 
 /**
- * ここで利用者が決めるのは「解析・連携を何で行うか」だけ。JournalEntryが常にローカル保存される
- * ことや、DataStoreの内部状態はここへ説明として出さない。Custom Webhookの詳細(URL/ヘッダー/本文)は
+ * Moodと解析・連携の各設定への入口。JournalEntryが常にローカル保存されることや、DataStoreの
+ * 内部状態はここへ説明として出さない。Custom Webhookの詳細(URL/ヘッダー/本文)は
  * [WebhookSettingsScreen]側の責務で、この画面では現在の送信先を示す短い情報のみ扱う。
  */
 @Composable
 fun SettingsScreen(
   uiState: SettingsUiState,
   onAnalysisIntegrationChange: (AnalysisIntegration) -> Unit,
+  onMoodSettingsOpen: () -> Unit,
   onWebhookSettingsOpen: () -> Unit,
 ) {
   Column(modifier = Modifier.fillMaxWidth()) {
     ScreenTopAppBar(title = stringResource(R.string.tab_settings))
+
+    ListItem(
+      headlineContent = { Text(stringResource(R.string.settings_mood_item)) },
+      supportingContent = { Text(stringResource(R.string.settings_mood_item_description)) },
+      trailingContent = {
+        Icon(painter = painterResource(R.drawable.ic_chevron_right), contentDescription = null)
+      },
+      modifier = Modifier.clickable(onClick = onMoodSettingsOpen),
+    )
 
     Column(modifier = Modifier.padding(16.dp)) {
       Text(
@@ -97,6 +107,7 @@ fun SettingsScreenPreview() {
         webhookDestinationLabel = "https://hooks.example.com",
       ),
       onAnalysisIntegrationChange = {},
+      onMoodSettingsOpen = {},
       onWebhookSettingsOpen = {},
     )
   }

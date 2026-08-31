@@ -3,8 +3,8 @@
   Android 15未満(generated widget previewが使えない環境)向けの、Widget picker用
   静的fallback preview。MoodWidget.kt側のGlanceロジックをそのまま再現するもの
   ではなく、「Moodを横一列で選ぶWidget」であることが分かる程度の簡易な近似表現。
-  ここに並ぶ絵文字の並び順はmoodCatalogと合わせているが、
-  moodCatalogが変わった場合に自動追従するものではない(pickerのpreview用途のため)。
+  ここに並ぶ絵文字の並び順は初回Moodセットと合わせているが、利用者の設定へ
+  自動追従するものではない(pickerのpreview用途のため)。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -18,55 +18,7 @@
         android:layout_weight="1"
         android:gravity="center"
         android:textSize="20sp"
-        android:text="@string/mood_emoji_angry" />
-
-    <TextView
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:textSize="20sp"
-        android:text="@string/mood_emoji_very_sad" />
-
-    <TextView
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:textSize="20sp"
-        android:text="@string/mood_emoji_anxious" />
-
-    <TextView
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:textSize="20sp"
-        android:text="@string/mood_emoji_sad" />
-
-    <TextView
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:textSize="20sp"
-        android:text="@string/mood_emoji_tearful" />
-
-    <TextView
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:textSize="20sp"
-        android:text="@string/mood_emoji_neutral" />
-
-    <TextView
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:textSize="20sp"
-        android:text="@string/mood_emoji_calm" />
+        android:text="@string/mood_emoji_excited" />
 
     <TextView
         android:layout_width="0dp"
@@ -82,7 +34,7 @@
         android:layout_weight="1"
         android:gravity="center"
         android:textSize="20sp"
-        android:text="@string/mood_emoji_very_happy" />
+        android:text="@string/mood_emoji_calm" />
 
     <TextView
         android:layout_width="0dp"
@@ -90,6 +42,54 @@
         android:layout_weight="1"
         android:gravity="center"
         android:textSize="20sp"
-        android:text="@string/mood_emoji_elated" />
+        android:text="@string/mood_emoji_neutral" />
+
+    <TextView
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:textSize="20sp"
+        android:text="@string/mood_emoji_tired" />
+
+    <TextView
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:textSize="20sp"
+        android:text="@string/mood_emoji_uncertain" />
+
+    <TextView
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:textSize="20sp"
+        android:text="@string/mood_emoji_anxious" />
+
+    <TextView
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:textSize="20sp"
+        android:text="@string/mood_emoji_irritated" />
+
+    <TextView
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:textSize="20sp"
+        android:text="@string/mood_emoji_sad" />
+
+    <TextView
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:textSize="20sp"
+        android:text="@string/mood_emoji_distressed" />
 
 </LinearLayout>

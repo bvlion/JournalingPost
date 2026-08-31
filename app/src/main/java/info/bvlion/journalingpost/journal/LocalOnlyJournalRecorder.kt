@@ -8,6 +8,9 @@ class LocalOnlyJournalRecorder(
   private val now: () -> Instant = Instant::now,
 ) : JournalRecorder {
   override suspend fun record(note: String, mood: MoodSnapshot?, source: JournalSource) {
+    require(mood != null || note.isNotBlank())
+    require(mood == null || mood.id.isNotBlank())
+    require(mood == null || mood.emoji.isNotBlank() || mood.label.isNotBlank())
     repository.insert(
       JournalEntry(
         timestamp = now(),

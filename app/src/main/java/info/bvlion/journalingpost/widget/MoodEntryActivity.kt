@@ -27,6 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import info.bvlion.journalingpost.MainViewModel
+import info.bvlion.journalingpost.MoodViewModel
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.di.appViewModelFactory
 import info.bvlion.journalingpost.journal.JournalSource
@@ -39,7 +40,8 @@ import kotlinx.coroutines.launch
 /** 既存MainViewModel/JournalRecorderを再利用する。 */
 class MoodEntryActivity : ComponentActivity() {
   private val viewModel: MainViewModel by viewModels { appViewModelFactory }
-  private var mood by mutableStateOf<Mood?>(null)
+  private val moodViewModel: MoodViewModel by viewModels { appViewModelFactory }
+  private var moodId by mutableStateOf<String?>(null)
 
   // Widgetのタップ1回を1つの入力sessionとして識別する。同じMoodを続けてタップした場合でも
   // 前回のnote/メモ展開状態を引き継がないよう、Moodではなくこの値をComposeのkeyにする。
@@ -48,31 +50,38 @@ class MoodEntryActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
-    val initialMood = Mood.fromExtraValue(intent.getStringExtra(EXTRA_MOOD))
-    if (initialMood == null) {
+    val initialMoodId = intent.getStringExtra(EXTRA_MOOD)?.takeIf { it.isNotBlank() }
+    if (initialMoodId == null) {
       finish()
       return
     }
-    mood = initialMood
+    moodId = initialMoodId
     sessionId = savedInstanceState?.getInt(STATE_SESSION_ID) ?: 0
     // scrimをsystem bar領域まで途切れなく描くため、translucent windowでもcontentを全画面へ広げる。
     enableEdgeToEdge()
 
     setContent {
       JournalingPostTheme {
-        mood?.let { currentMood ->
+        val moods by moodViewModel.moods.collectAsStateWithLifecycle()
+        val currentMoodId = moodId
+        val currentMood = moods?.firstOrNull { it.id == currentMoodId }
+
+        LaunchedEffect(moods, currentMoodId) {
+          if (moods != null && currentMood == null) finish()
+        }
+
+        currentMood?.let { mood ->
           val currentSessionId = sessionId
           val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-          val moodLabel = stringResource(currentMood.labelRes)
 
           key(currentSessionId) {
             MoodEntryScreen(
-              mood = currentMood,
+              mood = mood,
               uiState = uiState,
               onRecord = { note ->
                 viewModel.record(
                   note = note,
-                  mood = MoodSnapshot(id = currentMood.name, emoji = currentMood.emoji, label = moodLabel),
+                  mood = MoodSnapshot(id = mood.id, emoji = mood.emoji, label = mood.label),
                   source = JournalSource.WIDGET,
                 )
               },
@@ -94,10 +103,10 @@ class MoodEntryActivity : ComponentActivity() {
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     if (!viewModel.uiState.value.acceptsNewMoodEntry()) return
-    val newMood = Mood.fromExtraValue(intent.getStringExtra(EXTRA_MOOD)) ?: return
+    val newMoodId = intent.getStringExtra(EXTRA_MOOD)?.takeIf { it.isNotBlank() } ?: return
     // 構成変更でActivityが作り直されたときも新しいMoodを読めるようにIntentごと差し替える。
     setIntent(intent)
-    mood = newMood
+    moodId = newMoodId
     sessionId++
     viewModel.resetState()
   }
@@ -185,7 +194,7 @@ fun MoodEntryScreen(
 
   MoodRecordOverlay(
     moodEmoji = mood.emoji,
-    moodLabel = stringResource(mood.labelRes),
+    moodLabel = mood.label,
     isInteractionLocked = isInteractionLocked,
     hasFailure = hasFailure,
     onRecord = { note ->
@@ -202,7 +211,7 @@ fun MoodEntryScreen(
 fun MoodEntryScreenPreview() {
   JournalingPostTheme {
     MoodEntryScreen(
-      mood = Mood.HAPPY,
+      mood = Mood(id = "1", emoji = "😄", label = "嬉しい"),
       uiState = MainViewModel.UiState.INIT,
       onRecord = {},
       onClose = {},

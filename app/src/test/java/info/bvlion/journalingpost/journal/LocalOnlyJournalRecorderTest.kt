@@ -5,6 +5,7 @@ import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LocalOnlyJournalRecorderTest {
@@ -51,6 +52,42 @@ class LocalOnlyJournalRecorderTest {
     }
 
     assertEquals("db boom", thrown?.message)
+  }
+
+  @Test
+  fun `Moodもnoteもない記録は保存しない`() = runTest {
+    val repository = FakeJournalEntryRepository()
+    val recorder = LocalOnlyJournalRecorder(repository, now = { fixedNow })
+
+    var failed = false
+    try {
+      recorder.record("  ", mood = null, source = JournalSource.APP)
+    } catch (e: IllegalArgumentException) {
+      failed = true
+    }
+
+    assertTrue(failed)
+    assertTrue(repository.entries.isEmpty())
+  }
+
+  @Test
+  fun `絵文字と名称が空白相当のMoodは保存しない`() = runTest {
+    val repository = FakeJournalEntryRepository()
+    val recorder = LocalOnlyJournalRecorder(repository, now = { fixedNow })
+
+    var failed = false
+    try {
+      recorder.record(
+        "",
+        mood = MoodSnapshot(id = "mood-id", emoji = " ", label = "\n"),
+        source = JournalSource.APP,
+      )
+    } catch (e: IllegalArgumentException) {
+      failed = true
+    }
+
+    assertTrue(failed)
+    assertTrue(repository.entries.isEmpty())
   }
 
   private class FakeJournalEntryRepository : JournalEntryRepository {

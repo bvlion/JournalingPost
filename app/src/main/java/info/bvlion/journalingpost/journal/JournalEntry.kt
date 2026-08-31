@@ -8,8 +8,8 @@ import java.time.Instant
  * Mood付き記録では、moodIdに加えて記録時点のmoodEmoji/moodLabelをsnapshotとして
  * 保存する。将来Mood定義(名称・絵文字・個数等)が変更・削除されても、保存済みの
  * moodEmoji/moodLabelはそのまま残るため、過去の記録の表示内容は変わらない。
- * moodIdは現時点ではMood enumの名称(安定した識別子)を保存するが、Mood定義が
- * 別途永続化された場合もそちらを参照できる形を想定している。
+ * moodIdにはユーザー設定のMoodが持つ永続IDを保存し、名称や絵文字の一致では
+ * Moodの同一性を判定しない。
  */
 @Entity(tableName = "journal_entries")
 data class JournalEntry(

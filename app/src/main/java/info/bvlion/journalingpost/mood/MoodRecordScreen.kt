@@ -46,7 +46,7 @@ fun MoodRecordScreen(
         modifier = Modifier.padding(bottom = 8.dp),
       )
     }
-    items(moods, key = { it.name }) { mood ->
+    items(moods, key = { it.id }) { mood ->
       MoodRow(mood = mood, onClick = { onMoodClick(mood) })
     }
   }
@@ -57,7 +57,7 @@ private fun MoodRow(
   mood: Mood,
   onClick: () -> Unit,
 ) {
-  val description = stringResource(mood.descriptionRes)
+  val description = stringResource(R.string.mood_accessibility_description, mood.displayText)
   Row(
     modifier = Modifier
       .fillMaxWidth()
@@ -66,9 +66,15 @@ private fun MoodRow(
       .padding(horizontal = 8.dp, vertical = 14.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    Text(text = mood.emoji, style = MaterialTheme.typography.headlineSmall)
-    Spacer(Modifier.width(16.dp))
-    Text(text = stringResource(mood.labelRes), style = MaterialTheme.typography.bodyLarge)
+    if (mood.emoji.isNotBlank()) {
+      Text(text = mood.emoji, style = MaterialTheme.typography.headlineSmall)
+    }
+    if (mood.emoji.isNotBlank() && mood.label.isNotBlank()) {
+      Spacer(Modifier.width(16.dp))
+    }
+    if (mood.label.isNotBlank()) {
+      Text(text = mood.label, style = MaterialTheme.typography.bodyLarge)
+    }
   }
 }
 
@@ -76,6 +82,12 @@ private fun MoodRow(
 @Composable
 fun MoodRecordScreenPreview() {
   JournalingPostTheme {
-    MoodRecordScreen(moods = moodCatalog, onMoodClick = {})
+    MoodRecordScreen(
+      moods = listOf(
+        Mood(id = "1", emoji = "🤩", label = "ワクワク"),
+        Mood(id = "2", emoji = "", label = "集中"),
+      ),
+      onMoodClick = {},
+    )
   }
 }

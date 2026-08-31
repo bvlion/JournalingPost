@@ -36,24 +36,27 @@ import androidx.glance.semantics.contentDescription
 import androidx.glance.semantics.semantics
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
+import info.bvlion.journalingpost.JournalingPostApplication
+import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.mood.Mood
-import info.bvlion.journalingpost.mood.moodCatalog
+import kotlinx.coroutines.flow.first
 
 /**
  * SizeMode.Exact + LocalSize.currentで実際のWidgetサイズを取得し、縦方向に
  * 十分な高さがあるときだけ絵文字+ラベルのexpanded表示へ切り替える。それ以外
- * (compact)では絵文字のみを横一列に表示する。横方向へ広げた場合は、compact/
+ * (compact)では絵文字を横一列に表示し、名称のみのMoodは名称を表示する。横方向へ広げた場合は、compact/
  * expandedいずれもdefaultWeight()により各Mood領域がそのまま広がる。
  *
- * 表示するMoodと並びは記録画面と共有する[moodCatalog]を正とする。
+ * 表示するMoodと並びは記録画面と同じMoodRepositoryを正とする。
  */
 class MoodWidget : GlanceAppWidget() {
   override val sizeMode: SizeMode = SizeMode.Exact
 
   override suspend fun provideGlance(context: Context, id: GlanceId) {
+    val moods = context.moodRepository().moods.first()
     provideContent {
       GlanceTheme {
-        MoodWidgetContent()
+        MoodWidgetContent(moods)
       }
     }
   }
@@ -66,16 +69,17 @@ class MoodWidget : GlanceAppWidget() {
    * preview専用のUIは持たず、実Widgetと同じcomposableをそのまま再利用する。
    */
   override suspend fun providePreview(context: Context, widgetCategory: Int) {
+    val moods = context.moodRepository().moods.first()
     provideContent {
       GlanceTheme {
-        MoodWidgetContent()
+        MoodWidgetContent(moods)
       }
     }
   }
 }
 
 @Composable
-private fun MoodWidgetContent() {
+private fun MoodWidgetContent(moods: List<Mood>) {
   val size = LocalSize.current
   val isExpanded = size.height >= LABELED_MIN_HEIGHT_DP.dp
 
@@ -85,9 +89,9 @@ private fun MoodWidgetContent() {
     horizontalPadding = 0.dp,
   ) {
     if (isExpanded) {
-      ExpandedMoodList()
+      ExpandedMoodList(moods)
     } else {
-      CompactMoodRow()
+      CompactMoodRow(moods)
     }
   }
 }
@@ -97,28 +101,38 @@ private fun MoodWidgetContent() {
  * どのMoodか判別できなくなる問題があったため、emoji文字列をBitmapへ
  * レンダリングし[Image] + [ContentScale.Fit]で表示する。Textレイアウトの
  * 省略挙動を受けないため、セルがどれだけ狭くても縮小されるだけで
- * emoji自体は常に識別できる。
+ * emoji自体は常に識別できる。名称のみのMoodは同じセルへ名称を表示する。
  */
 @Composable
-private fun CompactMoodRow() {
+private fun CompactMoodRow(moods: List<Mood>) {
   val context = LocalContext.current
   Row(modifier = GlanceModifier.fillMaxSize().padding(2.dp)) {
-    moodCatalog.forEach { mood ->
-      val emojiBitmap = remember(mood) { renderEmojiBitmap(mood.emoji) }
+    moods.forEach { mood ->
       Box(
         modifier = GlanceModifier
           .defaultWeight()
           .fillMaxHeight()
           .clickable(moodAction(mood))
-          .semantics { contentDescription = context.getString(mood.descriptionRes) },
+          .semantics {
+            contentDescription = context.getString(R.string.mood_accessibility_description, mood.displayText)
+          },
         contentAlignment = Alignment.Center,
       ) {
-        Image(
-          provider = ImageProvider(emojiBitmap),
-          contentDescription = null,
-          modifier = GlanceModifier.fillMaxSize(),
-          contentScale = ContentScale.Fit,
-        )
+        if (mood.emoji.isNotBlank()) {
+          val emojiBitmap = remember(mood.emoji) { renderEmojiBitmap(mood.emoji) }
+          Image(
+            provider = ImageProvider(emojiBitmap),
+            contentDescription = null,
+            modifier = GlanceModifier.fillMaxSize(),
+            contentScale = ContentScale.Fit,
+          )
+        } else {
+          Text(
+            text = mood.label,
+            maxLines = 1,
+            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 12.sp),
+          )
+        }
       }
     }
   }
@@ -146,39 +160,52 @@ private fun renderEmojiBitmap(emoji: String): Bitmap {
 private const val EMOJI_BITMAP_SIZE_PX = 128
 
 @Composable
-private fun ExpandedMoodList() {
+private fun ExpandedMoodList(moods: List<Mood>) {
   val context = LocalContext.current
   Column(modifier = GlanceModifier.fillMaxSize().padding(4.dp)) {
-    moodCatalog.forEach { mood ->
+    moods.forEach { mood ->
       Row(
         modifier = GlanceModifier
           .defaultWeight()
           .fillMaxWidth()
           .padding(horizontal = 8.dp)
           .clickable(moodAction(mood))
-          .semantics { contentDescription = context.getString(mood.descriptionRes) },
+          .semantics {
+            contentDescription = context.getString(R.string.mood_accessibility_description, mood.displayText)
+          },
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        Text(
-          text = mood.emoji,
-          style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 18.sp),
-        )
-        Text(
-          text = context.getString(mood.labelRes),
-          maxLines = 1,
-          modifier = GlanceModifier.defaultWeight().padding(start = 8.dp),
-          style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 13.sp),
-        )
+        if (mood.emoji.isNotBlank()) {
+          Text(
+            text = mood.emoji,
+            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 18.sp),
+          )
+        }
+        if (mood.label.isNotBlank()) {
+          Text(
+            text = mood.label,
+            maxLines = 1,
+            modifier = if (mood.emoji.isNotBlank()) {
+              GlanceModifier.defaultWeight().padding(start = 8.dp)
+            } else {
+              GlanceModifier.defaultWeight()
+            },
+            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 13.sp),
+          )
+        }
       }
     }
   }
 }
 
 private fun moodAction(mood: Mood) =
-  actionStartActivity<MoodEntryActivity>(actionParametersOf(MOOD_KEY to mood.name))
+  actionStartActivity<MoodEntryActivity>(actionParametersOf(MOOD_KEY to mood.id))
 
 private val MOOD_KEY = ActionParameters.Key<String>(MoodEntryActivity.EXTRA_MOOD)
 
 // Androidのセルサイズ計算式(70dp×セル数-30dp)で3セル分の高さ。
 // compactの横一列だけでは手狭なラベルを、縦3セル以上に広げたときに表示する。
 private const val LABELED_MIN_HEIGHT_DP = 180
+
+private fun Context.moodRepository() =
+  (applicationContext as JournalingPostApplication).container.moodRepository
