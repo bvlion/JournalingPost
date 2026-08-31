@@ -45,7 +45,6 @@ import java.util.Locale
 // 期間は時間帯まで指定され得るため(#40)、日付だけでなく時刻も表示する。
 private val analysisDateTimeFormatter = DateTimeFormatter.ofPattern("yyyy/M/d HH:mm", Locale.JAPAN)
 
-// 実行結果Snackbarで対象日を示すときの表示。
 private val analysisDayFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日", Locale.JAPAN)
 
 /**
