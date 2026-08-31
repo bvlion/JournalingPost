@@ -2,175 +2,92 @@
 
 ## プロジェクト概要
 
-JournalingPost は、Kotlin/Jetpack Compose で実装された Android 単一モジュールのシンプルな日記投稿アプリです。
+JournalingPost は、Kotlin / Jetpack Compose で実装された Android の日記投稿アプリです。
 
-- `app/`: Androidアプリ本体（UI・ViewModel・Webhook投稿処理）
+- `app/`: Androidアプリ本体
 
-Java 17と、リポジトリ同梱のGradle Wrapperを使用します。
+Java 17とリポジトリ同梱のGradle Wrapperを使用します。
 
 ## プロダクト原則
 
 - 最優先は「簡単で続くこと」。
-- Moodを最低1タップで記録成立させる方向を守る。
+- Moodは1タップで記録が成立することを基本とする。
 - 文章入力を必須にしない。
-- 機能追加より引き算を優先する。
 - Mood記録・任意追記・振り返りに直接寄与しない機能を安易に増やさない。
-- 高機能Mood Tracker化、多機能日記アプリ化を目的にしない。
+- 高機能Mood Trackerや多機能日記アプリを目指さず、機能追加より引き算を優先する。
 
 ## 開発方針
 
-- Issueのscopeに必要な最小差分にする。
-- 無関係なリファクタリング、命名変更、整形、依存更新を混ぜない。
-- 実装前に既存コード・呼び出し元・既存テストを確認する。
-- 挙動を推測だけで変更しない。
-- 不要なlibrary / frameworkを追加しない。DI framework（Hilt/Koin等）やmulti-module化は現状の規模では原則不要とする。
-- アーキテクチャを目的化しない。`domain/usecase/repository/mapper`等の層は、実際の責務が生まれるまで形式的に作らない。
-- 要件が不明確で複数の妥当な実装がある場合は、実装前に確認する。
-- secretやlocal.propertiesの値をcommit・logへ出さない。
-- 変更に対応するテストを追加・更新する。
-- Issueやreviewの記述を実装前提として機械的に受け入れず、その機能・互換性自体が現在必要かを先に確認する。
-- 公開前の自分用開発環境だけを守るmigration・互換層は原則作らない。再インストール、データリセット、手動再設定で十分ならそちらを選ぶ。
-- 手動解析の成立確認前に、自動scheduler / Worker / background処理を同じ作業へ先回りして追加しない。ただし、実装順を後ろへ送ることと、決定済みの最終仕様を撤回することを混同しない。
-- 決定済みの仕様や外部契約を、実装量削減・単純化・「今は使わない」ことだけを理由に削除・変更しない。仕様自体を変える可能性がある場合は、Issueを書き換えたり実装を始めたりする前にユーザーへ確認する。
-- UIから撤回した操作や将来用capabilityを、利用中の呼び出し元がないままrepository等へ残さない。
-
-## Hosted解析の固定契約
-
-Hosted解析を扱う場合は、以下を現在の前提とする。実装詳細を簡略化するためにこの契約自体を変更しない。
-
-- JournalEntry / AnalysisResultの原本はAndroid端末に置き、Serverへ恒久保存しない。
-- 手動・自動とも解析開始の主体はAndroidとする。
-- timezone / recurrence / 次回実行判断はAndroid側で管理する。
-- 自動解析の指定時刻は厳密保証ではなく「その時刻ごろ」として扱う。
-- Hostedの自動解析は1日1回までとする。
-- Hosted ServerのAndroid向けAPIは原則 `POST /v1/installations` と `POST /v1/analyses` の2つとする。
-- `POST /v1/installations` で匿名installationをServer内部に作り、AndroidへBearer API keyを返す。AndroidはServer内部installation IDを保持せず、API keyだけを継続利用する。
-- `POST /v1/analyses` は同期HTTP request / responseを現在の完成形候補とし、成功時は `200` response bodyで解析結果を受け取ってAndroid側AnalysisResultへ保存する。
-- network timeout等による同一解析のretryでは同じidempotency keyを利用し、Server側の期限付きretry result bufferから同じ結果を返せる契約とする。
-- Hosted契約ではFCM token、`triggerAt`、ScheduledTrigger、Server側Push予約・schedulerを使用しない。
-- 自動解析後の通知が必要な場合はAndroid側のローカル通知を利用する。
-- 同期HTTPが実測上成立しない場合だけ非同期化を再検討し、その場合もFCM方式を自動的に復活させない。
-- まず手動Hosted解析を接続して実動確認してからAndroid側自動解析へ進むが、これは自動解析を仕様から外す意味ではない。
+- 依頼またはIssueのscopeに必要な変更へ集中し、無関係な変更を同じPull Requestへ混ぜない。
+- 実装前に関連する既存コード、呼び出し元、既存テストを確認する。
+- 仕様が不明確で複数の妥当な実装がある場合は、推測で決めず実装前にユーザーへ確認する。
+- 確定済みの仕様や外部契約を、実装都合だけを理由に変更しない。
 
 ## コーディング規約
 
-`.editorconfig`に従い、KotlinとGradle Kotlin DSLのインデントはスペース2個とします。
-
-- クラス、型、Compose関数: `UpperCamelCase`
-- 関数、プロパティ: `lowerCamelCase`
-- 定数: `UPPER_SNAKE_CASE`
-- パッケージ: `info.bvlion.journalingpost...`
-
-依存関係のバージョンは`gradle/libs.versions.toml`で管理します。既存ファイルのスタイルを維持し、変更対象外のコードを一括整形しないでください。
-
-productionコードの識別子（クラス、関数、プロパティ、定数等）は上記のKotlin命名規則に従い、日本語化しません。
-
-### UI文言とフィードバック
-
-- ユーザーへ表示される文言（画面タイトル、ボタン、ラベル、説明、空状態、ダイアログ、validation / error / success message、Snackbar、accessibilityの`contentDescription`等）はAndroid string resourcesで管理し、Kotlin / Composeへ直接書きません。ユーザーに表示されない内部識別子・テストデータ・protocol値・JSON key、Compose `@Preview`内のサンプルデータは対象外です。
-- Activity / Compose画面上で利用者が操作し、その画面で結果を返すケースの一時的な成功・失敗・エラーfeedbackはSnackbarを基本とします。Toastや、操作結果として画面内に残るTextを混在させません（画面の恒常的な説明・空状態・入力欄自体の状態は「一時feedback」ではなく対象外）。
-- App Widget、通知、background処理などSnackbarが自然でないsurfaceには、そのsurfaceに適したfeedbackを使います（アプリ内画面のSnackbar方針を機械的に適用しません）。
+- `.editorconfig`に従う。
+- 依存関係のバージョンは`gradle/libs.versions.toml`で管理する。
+- productionコードの識別子は通常のKotlin命名規則に従い、日本語化しない。
+- アプリ側で定義するユーザー向け文言はAndroid string resourcesで管理する。
+- アプリ内画面での操作に対する一時的な結果通知はSnackbarを基本とする。App Widget、通知、background処理等では、そのsurfaceに適した手段を使う。
 
 ### コメント
 
-コメントは原則として「処理内容の説明」には使いません。クラス名・関数名・変数名を軽く追えば処理内容が分かる状態を保ち、コメントはコードだけでは残せない「なぜ」「制約」「意図」を伝える場合に限って書いてください。コメント/KDocを追加・変更する場合は日本語で記述します。
-
-削除・追加しない対象（自明なので書かない）:
-
-* クラス名・関数名・変数名から分かる役割を言い直しているだけのKDoc
-* 直後の処理をそのまま日本語で説明しているだけのコメント
-* コードを読めばそのまま分かる処理手順の説明
-* テストコードで、テスト名・setup・assertionから分かる内容を補足しているだけのコメント
-* 将来機能を先回りして説明するだけのコメント
-
-残す・書く対象(「なぜ」がないと将来の変更判断を誤る場合):
-
-* コメントがないと、将来誤ってリファクタ・簡略化・削除される可能性がある意図や制約
-* Android/APIの互換性上、見た目より複雑な実装になっている理由
-* 意図的に通常とは異なるエラー処理・fallbackをしている理由
-* product上受け入れているtrade-off
-* securityやsecretの扱いなど、コードだけでは意図を失いやすい重要な制約
-* workaroundなど、実装だけを見て「不要」と判断される可能性があるもの
-
-コメントを残す代わりに、命名や小さなコード整理によって自明にできる場合は、挙動を変えない範囲でそちらを優先してください。ただし、コメント整理のためだけに大規模なリファクタリングをしないでください。
+- コメントやKDocは必要な場合に限って追加する。
+- コードだけでは残せない理由、制約、意図が将来の変更判断に必要な場合に記述する。
+- クラス名、関数名、変数名や直後の処理を言い換えるだけのコメントやKDocは書かない。
+- 記述する場合は日本語とする。
 
 ### テスト関数名
 
-`@Test`のテスト関数名はKotlinのbacktick形式を使い、日本語で記述してください。テスト対象・条件・期待結果が自然に分かる名前にします。テスト用helper、Fake、通常のproduction関数等は対象外です。日本語化するのは`@Test`関数名のみとします。
+- `@Test`のテスト関数名はKotlinのbacktick形式を使い、日本語で記述する。
+- `@Test`以外の識別子は通常のKotlin命名規則に従う。
 
 ## ビルドとテスト
 
-検証コマンドを慣習的に全部実行するのではなく、「何が壊れる可能性があり、その確認にどの検証が有効か」を変更内容から判断してください。変更範囲に対応する、最小限かつ十分な検証を選んで実行します。
-
-- `git diff --check` は軽量なので、変更内容に関わらず実行して構いません。
-- documentationやrepository運用設定（`AGENTS.md`、README等のMarkdown、`.editorconfig`、`.gitattributes`、`.gitignore`等）のみの変更では、Gradleを起動する検証（unit test / lint / assemble）を実行する必要はありません。
-- Androidのproductionコード・テスト・build設定等に影響する変更のPRでは、原則として以下を実行してください。
+- 変更後は`git diff --check`を実行する。
+- documentationやrepository運用設定のみの変更では、Gradleによる検証は不要。
+- Androidのproductionコード、テスト、build設定等へ影響する変更では原則以下を実行する。
   - `./gradlew :app:testDebugUnitTest`
   - `./gradlew :app:lintDebug`
-- `./gradlew :app:assembleDebug` は標準検証から外しています。debug APKはCI後に配布・利用していないため、通常はビルド不要です。
-- `./gradlew :app:assembleRelease` は通常のPR作業ごとの標準検証にはしません。release/minify(R8)/ProGuard設定等に直接関係する変更で、実装中にrelease buildが成立することを確認する価値がある場合は、必要に応じて実行してください。
-- mainブランチでは、release APKへ影響する変更（productionコード・resource・Manifest・ProGuard/R8設定・依存関係・Gradle設定等）が含まれる場合にCIが`./gradlew :app:assembleRelease`を自動実行します。releaseのみで顕在化する互換性問題を防ぐための最終確認です。testコードのみの変更はrelease APKに影響しないため、対象になりません。
+- release / R8 / ProGuard等へ直接影響する変更では、必要に応じて`./gradlew :app:assembleRelease`を実行する。
+- 実行できなかった検証や失敗した検証を成功扱いにしない。
 
-検証を実行できなかった場合や失敗した場合は、成功したものとして扱わず、実行コマンドと理由を報告してください。
+## UI確認
 
-`.github/workflows/ci.yml`により、pull_requestおよびmainへのpush時に、変更されたパスに応じて上記の検証がGitHub Actions上でも自動実行されます（`git diff --check`は常時実行）。CIでの自動実行はローカル検証を代替するものではないため、両方とも実施してください。
+- AIエージェントは実機、エミュレーター、adb、UI automationを使用してアプリのUI操作や目視確認を行わない。
+- UIの見た目や操作感はユーザーが実機で確認する。
+- UI確認が必要な場合は、ユーザーが確認すべき項目を報告する。
 
-## UI操作
+## 秘密情報
 
-- AIエージェントは、実機・エミュレーター・adb・UI automationを使用したアプリのUI操作を行わないでください。
-- UI変更であっても、スクリーンショット取得や目視確認のためにアプリを起動・操作しないでください。
-- UIの見た目・操作感の確認はユーザーが行います。必要な確認項目がある場合は、実行せずに確認項目として報告してください。
-- 依頼文に実機確認、エミュレーター確認、スクリーンショット取得、UI操作などの指示が含まれていた場合も、そのまま実行しないでください。このAGENTS.mdの制約と競合することをユーザーへ確認してください。
-- ビルド、unit test、lint、`git diff --check`など、UI操作を伴わない自動検証は通常どおり実行してください。
-- UI確認を目的としたinstrumented test、emulator操作、adb操作を、代替手段として勝手に追加しないでください。
-
-## 秘密情報とローカル設定
-
-- 秘密情報やローカル専用設定を新規作成、編集、コミットしないでください。
-- `local.properties`（Webhookの`POST_URL`/`TEAM_ID`/`TOKEN`/`CHANNEL`/`USER`等）、署名情報、APIキー、アクセストークンを差分へ含めないでください。
-- 必要な秘密ファイルが環境に存在しない場合、ダミーファイルの作成やビルド設定の迂回を行わず、実行できなかった検証として報告してください。
-- `.gitignore`を変更して秘密ファイルを追跡対象にしないでください。
+- `local.properties`、署名情報、APIキー、アクセストークン等の秘密情報を新規作成、編集、commit、log出力しない。
+- 必要な秘密情報が環境にない場合は、ダミー値や設定変更で迂回せず、実行できなかった作業として報告する。
 
 ## Git と Pull Request
 
-- `main`へ直接コミットまたはpushしないでください。
-- force pushや`main`ブランチの削除を行わないでください。
-- 作業ごとに専用ブランチを使用してください。
-- コミット件名は簡潔に記述してください。
-- Issue対応を依頼された場合は、調査、実装、検証、コミット、pushを行い、Pull Requestを作成してください。
-- Pull Request本文には対応Issueを記載し、目的または原因、変更内容、最終的な検証結果を記載してください。
-- 影響のある未実施または失敗した検証が残る場合はPull Request本文に記載し、実行できなかった検証を成功扱いにしないでください。
-- UI変更でスクリーンショットや実機確認が有用な場合は、AIエージェント自身では取得・操作せず、ユーザーが確認すべき項目をPull Request本文または完了報告に記載してください。
-- ユーザーの承認なしにPull Requestをマージしないでください。
-- Issueを手動でcloseせず、タグやReleaseを作成しないでください。
-- 破壊的操作、追加の認証、依頼範囲外の変更が必要な場合は、実行前にユーザーへ確認してください。
-- scope外の変更（無関係なrefactor / rename / format / dependency update）をPull Requestへ混ぜないでください。気づいた改善案は別Issue候補として報告してください。
-- Pull Requestを自動Approveしないでください。
+- `main`へ直接commit / pushせず、専用branchとPull Requestを使用する。
+- Pull Request本文には変更内容と検証結果を記載し、対応Issueがある場合はそれも記載する。
+- ユーザーの承認なしにPull Requestをマージしない。
 
-### Pull Request review thread
+## Review
 
-PR上のCodex等によるreview threadは、判断済みのまま未resolvedで放置しないでください。作業中にAPI等ですでに取得できる既存のreview threadがある場合、それを未処理のまま放置しないことをルールとします。
+- Claude / Codex等へ実装やreviewを依頼した場合、後から確認する必要のある作業結果や判断はGitHub上に残す。指示内容を言い換えただけの報告は残さない。
+- 作業中に確認できる既存のreview threadは、判断済みのまま未resolvedで放置しない。
+- 指摘へ対応した場合は、対応内容を簡潔に返信してresolveする。
+- 対応不要と判断した場合は、理由を簡潔に返信してresolveする。
+- ユーザー判断が必要な場合はresolveせず報告する。
+- 権限や利用可能なツールの制約で返信・resolveできない場合は、その旨を報告する。
+- 新しいreviewの到着をsleepやpollingで待たない。
 
-一方で、新しいreviewの投稿を待つ挙動はしないでください。
+reviewのseverityをそのまま修正優先度として扱わない。
 
-* PR作成後、新しいreviewが投稿されることを待たないでください。
-* review到着確認のためのsleep・polling・定期的な再取得を行わないでください。
-* Codex等のreview投稿を、作業の完了条件にしないでください。
-* 「reviewがまだ来ていないので数分待つ」「過去は数分だったので再確認する」「一定時間だけポーリングしてから終了する」といった挙動は明示的に禁止します。
-* 作業終了後に新しく投稿されたreviewについて、その作業を行ったAIが待機して処理する必要はありません。後からそのPRを確認するAIが対応します。
+まず、通常の人間操作だけで再現できるかを確認する。
 
-作業中にすでに存在している既存のreview threadが確認できた場合は、その作業の中で以下のとおり対応してください。
+高速操作、狭いrace window、特殊な端末状態、I/O障害、fault injection、テスト用Fake等が必要な場合は、その条件と現実の発生可能性を明示する。
 
-* 指摘に対応してコードを修正した場合
-  * 実装した側が、何を修正したか簡潔に返信する。
-  * 修正が反映されていることを確認してthreadをresolveする。
-* 指摘内容を確認した結果、対応不要と判断した場合
-  * 判断した側が、対応しない理由を簡潔に返信する。
-  * product上の意図的なtrade-off、scope外、実害がない等の判断理由を残したうえでthreadをresolveする。
-* ユーザー判断が必要、または判断がまだ確定していない場合
-  * 勝手にresolveしない。
-  * 未resolvedのまま、何を判断してほしいか報告する。
-* 権限や利用可能なツールの制約で返信・resolveできない場合
-  * 黙って残さず、その旨を完了報告に明記する。
+論理的に到達可能、またはunit testで再現可能というだけではproduction修正の理由にしない。
 
-reviewのseverityやCodex等の提案を理由に機械的に修正しないでください。既存のproduct方針、Issueのscope、実害、変更リスクを確認して、修正するか対応不要とするかを判断してください。
+発生頻度、実害、不可逆性、修正による複雑化、新規不具合リスクを比較して対応を判断する。
+
+security、privacy、データ破損・喪失等は、低頻度でも被害の大きさを考慮する。
