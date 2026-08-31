@@ -14,7 +14,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -28,6 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.R
+import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import java.time.LocalDate
@@ -52,9 +52,7 @@ fun JournalHistoryScreen(
   var pendingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
 
   val deleteFailedMessage = stringResource(R.string.journal_history_delete_failed)
-  LaunchedEffect(deleteFailures) {
-    deleteFailures.collect { onShowMessage(deleteFailedMessage) }
-  }
+  EventEffect(deleteFailures) { onShowMessage(deleteFailedMessage) }
 
   Column(modifier = Modifier.fillMaxSize()) {
     ScreenTopAppBar(title = stringResource(R.string.tab_journal_history))

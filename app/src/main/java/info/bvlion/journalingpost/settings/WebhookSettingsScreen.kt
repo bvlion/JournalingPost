@@ -13,7 +13,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +31,7 @@ import info.bvlion.journalingpost.WebhookSaveResult
 import info.bvlion.journalingpost.WebhookSettingsLoadState
 import info.bvlion.journalingpost.WebhookSettingsUiState
 import info.bvlion.journalingpost.WebhookValidationState
+import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.webhook.WebhookBodyTemplateRenderer
@@ -61,9 +61,7 @@ fun WebhookSettingsScreen(
   onBack: () -> Unit,
 ) {
   val resources = LocalResources.current
-  LaunchedEffect(saveResults) {
-    saveResults.collect { result -> onShowMessage(resources.getString(result.messageRes())) }
-  }
+  EventEffect(saveResults) { result -> onShowMessage(resources.getString(result.messageRes())) }
 
   Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
     ScreenTopAppBar(title = stringResource(R.string.settings_webhook_item), onBack = onBack)

@@ -290,6 +290,30 @@ class AnalysisHistoryViewModelTest {
     )
   }
 
+  @Test
+  fun `購読が途切れている間に完了した結果は再購読時に受け取れる`() = runTest(testDispatcher) {
+    // 画面がSTOPPEDの間はeventを購読しないため、その間に完了した結果を再開時に受け取れることを固定する。
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.NETWORK }
+    val viewModel = createViewModel(analyzer = analyzer)
+    val whileStopped = mutableListOf<AnalysisRunResult>()
+    val collectJob = collectorScope.launch { viewModel.runResults.collect { whileStopped += it } }
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    collectJob.cancel()
+    testDispatcher.scheduler.advanceUntilIdle()
+    viewModel.analyze(LocalDate.of(2026, 8, 30))
+    testDispatcher.scheduler.advanceUntilIdle()
+    assertTrue(whileStopped.isEmpty())
+
+    val afterRestart = collectRunResults(viewModel)
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(
+      listOf(AnalysisRunResult.Failed(PeriodAnalysisOutcome.Failure.NETWORK, LocalDate.of(2026, 8, 30))),
+      afterRestart,
+    )
+  }
+
   private fun createViewModel(
     reader: AnalysisResultReader = FakeAnalysisResultReader(),
     integrationRepository: AnalysisIntegrationRepository =

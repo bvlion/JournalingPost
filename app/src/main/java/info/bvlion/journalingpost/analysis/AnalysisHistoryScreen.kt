@@ -21,7 +21,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,6 +33,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.AnalysisRunResult
 import info.bvlion.journalingpost.R
+import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import java.time.Instant
@@ -69,12 +69,10 @@ fun AnalysisHistoryScreen(
 ) {
   val resources = LocalResources.current
   val completedMessage = stringResource(R.string.analysis_completed)
-  LaunchedEffect(runResults) {
-    runResults.collect { result ->
-      when (result) {
-        AnalysisRunResult.Succeeded -> onShowMessage(completedMessage)
-        is AnalysisRunResult.Failed -> onShowMessage(resources.failureMessage(result))
-      }
+  EventEffect(runResults) { result ->
+    when (result) {
+      AnalysisRunResult.Succeeded -> onShowMessage(completedMessage)
+      is AnalysisRunResult.Failed -> onShowMessage(resources.failureMessage(result))
     }
   }
 

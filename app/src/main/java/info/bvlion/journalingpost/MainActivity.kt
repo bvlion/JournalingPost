@@ -47,6 +47,7 @@ import info.bvlion.journalingpost.mood.MoodSnapshot
 import info.bvlion.journalingpost.mood.moodCatalog
 import info.bvlion.journalingpost.settings.SettingsScreen
 import info.bvlion.journalingpost.settings.WebhookSettingsScreen
+import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
 import kotlinx.coroutines.launch
@@ -215,12 +216,10 @@ class MainActivity : ComponentActivity() {
 
                     // Snackbar表示と下位画面への遷移はこの画面の外側が持つため、Settingsの
                     // 一時的な結果はここで受け取る。
-                    LaunchedEffect(Unit) {
-                      settingsViewModel.events.collect { event ->
-                        when (event) {
-                          SettingsEvent.IntegrationSaveFailed -> showMessage(integrationSaveFailedMessage)
-                          SettingsEvent.WebhookSetupRequested -> openWebhookSettings(true)
-                        }
+                    EventEffect(settingsViewModel.events) { event ->
+                      when (event) {
+                        SettingsEvent.IntegrationSaveFailed -> showMessage(integrationSaveFailedMessage)
+                        SettingsEvent.WebhookSetupRequested -> openWebhookSettings(true)
                       }
                     }
 
