@@ -115,9 +115,15 @@ private fun MoodRecordCard(
   ) {
     Column(modifier = Modifier.padding(24.dp)) {
       Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(text = moodEmoji, style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.width(8.dp))
-        Text(text = moodLabel, style = MaterialTheme.typography.titleMedium)
+        if (moodEmoji.isNotBlank()) {
+          Text(text = moodEmoji, style = MaterialTheme.typography.headlineSmall)
+        }
+        if (moodEmoji.isNotBlank() && moodLabel.isNotBlank()) {
+          Spacer(Modifier.width(8.dp))
+        }
+        if (moodLabel.isNotBlank()) {
+          Text(text = moodLabel, style = MaterialTheme.typography.titleMedium)
+        }
       }
 
       if (isNoteVisible) {

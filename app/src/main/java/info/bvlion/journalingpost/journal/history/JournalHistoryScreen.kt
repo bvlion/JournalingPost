@@ -113,7 +113,11 @@ private fun JournalHistoryDeleteConfirmDialog(
             append(item.date.format(historyDateFormatter))
             append(" ")
             append(item.time.format(historyTimeFormatter))
-            item.moodLabel?.let {
+            listOfNotNull(item.moodEmoji, item.moodLabel)
+              .filter { it.isNotBlank() }
+              .joinToString(" ")
+              .takeIf { it.isNotEmpty() }
+              ?.let {
               append(" ")
               append(it)
             }
@@ -173,12 +177,14 @@ private fun JournalHistoryRow(
           text = item.time.format(historyTimeFormatter),
           style = MaterialTheme.typography.bodyMedium,
         )
-        if (item.moodEmoji != null) {
+        val moodText = listOfNotNull(item.moodEmoji, item.moodLabel)
+          .filter { it.isNotBlank() }
+          .joinToString(" ")
+        if (moodText.isNotEmpty()) {
           Text(
-            text = item.moodEmoji,
+            text = moodText,
             style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(start = 8.dp)
-              .semantics { item.moodLabel?.let { contentDescription = it } },
+            modifier = Modifier.padding(start = 8.dp),
           )
         }
       }

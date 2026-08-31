@@ -54,6 +54,8 @@
   <string name="settings_integration_save_failed">解析・連携の設定を保存できませんでした</string>
   <string name="settings_integration_none">使用しない</string>
   <string name="settings_integration_custom_webhook">Custom Webhook</string>
+  <string name="settings_mood_item">Mood設定</string>
+  <string name="settings_mood_item_description">表示内容・順序・件数を変更</string>
   <string name="settings_webhook_item">Webhook設定</string>
   <string name="settings_webhook_destination_unknown">設定済み</string>
 
@@ -93,46 +95,41 @@
   <string name="webhook_settings_entries_example">"[\n  {\n    \"recordedAt\": \"2026-08-29T09:15:00Z\",\n    \"mood\": { \"emoji\": \"🙂\", \"label\": \"嬉しい\" }\n  },\n  {\n    \"recordedAt\": \"2026-08-29T21:40:00Z\",\n    \"note\": \"メモ本文\"\n  }\n]"</string>
   <string name="webhook_settings_success_response_example">"{\n  \"analysis\": {\n    \"period\": {\n      \"start\": \"2026-08-29T00:00:00Z\",\n      \"end\": \"2026-08-30T00:00:00Z\"\n    },\n    \"analyzedAt\": \"2026-08-30T07:30:00Z\",\n    \"entryCount\": 2,\n    \"model\": \"example/analysis-model\",\n    \"text\": \"…\"\n  }\n}"</string>
 
-  <string name="mood_emoji_very_sad">😭</string>
-  <string name="mood_emoji_sad">😞</string>
-  <string name="mood_emoji_neutral">😐</string>
-  <string name="mood_emoji_happy">🙂</string>
-  <string name="mood_emoji_very_happy">😆</string>
+  <!-- ==== Mood設定 ==== -->
+  <string name="mood_settings_title">Mood設定</string>
+  <string name="mood_settings_description">絵文字と名称はどちらか一方だけでも使えます。絵文字には1つの絵文字を入力してください。</string>
+  <string name="mood_settings_item">Mood %1$d</string>
+  <string name="mood_settings_emoji_label">絵文字（任意）</string>
+  <string name="mood_settings_name_label">名称（任意）</string>
+  <string name="mood_settings_emoji_error">1つの絵文字を入力してください</string>
+  <string name="mood_settings_content_error">絵文字または名称を入力してください</string>
+  <string name="mood_settings_move_up">上へ</string>
+  <string name="mood_settings_move_down">下へ</string>
+  <string name="mood_settings_add">Moodを追加</string>
+  <string name="mood_settings_count">%1$d / %2$d件</string>
+  <string name="mood_settings_save_succeeded">Mood設定を保存しました</string>
+  <string name="mood_settings_save_failed">Mood設定を保存できませんでした</string>
+  <string name="mood_accessibility_description">気分：%1$s</string>
 
-  <string name="mood_description_very_sad">気分：とても悲しい</string>
-  <string name="mood_description_sad">気分：悲しい</string>
-  <string name="mood_description_neutral">気分：普通</string>
-  <string name="mood_description_happy">気分：嬉しい</string>
-  <string name="mood_description_very_happy">気分：とても嬉しい</string>
-
-  <string name="mood_label_very_sad">とても悲しい</string>
-  <string name="mood_label_sad">悲しい</string>
-  <string name="mood_label_neutral">普通</string>
+  <!-- 初回Moodセット。emoji resourceはAndroid 15未満のWidget previewでも共用する。 -->
+  <string name="mood_emoji_excited">🤩</string>
+  <string name="mood_label_excited">ワクワク</string>
+  <string name="mood_emoji_happy">😄</string>
   <string name="mood_label_happy">嬉しい</string>
-  <string name="mood_label_very_happy">とても嬉しい</string>
-
-  <!--
-    #42のMoodカスタマイズまで固定で使うMoodセットの追加分。件数・並び・文言は
-    暫定で、ユーザーが変更できるようにするのは #42。mood_emoji_* はWidget picker用の
-    静的fallback layout(widget_mood_preview_fallback.xml)からのみ参照する。
-  -->
-  <string name="mood_emoji_angry">😡</string>
-  <string name="mood_emoji_anxious">😰</string>
-  <string name="mood_emoji_tearful">😢</string>
   <string name="mood_emoji_calm">😌</string>
-  <string name="mood_emoji_elated">🤩</string>
-
-  <string name="mood_description_angry">気分：怒り</string>
-  <string name="mood_description_anxious">気分：不安</string>
-  <string name="mood_description_tearful">気分：泣きたい</string>
-  <string name="mood_description_calm">気分：穏やか</string>
-  <string name="mood_description_elated">気分：高揚</string>
-
-  <string name="mood_label_angry">怒り</string>
-  <!-- 意図的に長い日本語ラベル。expanded表示で長いMood名称を入れたときの折り返し/見切れ/
-       他行との重なりを実機確認するための一時的な評価用文言で、最終文言ではない。 -->
-  <string name="mood_label_anxious">気持ちが落ち着かなくて不安</string>
-  <string name="mood_label_tearful">泣きたい</string>
   <string name="mood_label_calm">穏やか</string>
-  <string name="mood_label_elated">高揚</string>
+  <string name="mood_emoji_neutral">😐</string>
+  <string name="mood_label_neutral">普通</string>
+  <string name="mood_emoji_tired">😮‍💨</string>
+  <string name="mood_label_tired">疲れた</string>
+  <string name="mood_emoji_uncertain">😕</string>
+  <string name="mood_label_uncertain">もやもや</string>
+  <string name="mood_emoji_anxious">😰</string>
+  <string name="mood_label_anxious">不安</string>
+  <string name="mood_emoji_irritated">😡</string>
+  <string name="mood_label_irritated">イライラ</string>
+  <string name="mood_emoji_sad">😭</string>
+  <string name="mood_label_sad">悲しい</string>
+  <string name="mood_emoji_distressed">😣</string>
+  <string name="mood_label_distressed">つらい</string>
 </resources>

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -22,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -40,11 +42,10 @@ import info.bvlion.journalingpost.analysis.AnalysisHistoryScreen
 import info.bvlion.journalingpost.di.appViewModelFactory
 import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.history.JournalHistoryScreen
-import info.bvlion.journalingpost.mood.Mood
 import info.bvlion.journalingpost.mood.MoodRecordOverlay
 import info.bvlion.journalingpost.mood.MoodRecordScreen
+import info.bvlion.journalingpost.mood.MoodSettingsScreen
 import info.bvlion.journalingpost.mood.MoodSnapshot
-import info.bvlion.journalingpost.mood.moodCatalog
 import info.bvlion.journalingpost.settings.SettingsScreen
 import info.bvlion.journalingpost.settings.WebhookSettingsScreen
 import info.bvlion.journalingpost.ui.EventEffect
@@ -57,6 +58,8 @@ class MainActivity : ComponentActivity() {
   private val historyViewModel: JournalHistoryViewModel by viewModels { appViewModelFactory }
   private val analysisHistoryViewModel: AnalysisHistoryViewModel by viewModels { appViewModelFactory }
   private val settingsViewModel: SettingsViewModel by viewModels { appViewModelFactory }
+  private val moodViewModel: MoodViewModel by viewModels { appViewModelFactory }
+  private val moodSettingsViewModel: MoodSettingsViewModel by viewModels { appViewModelFactory }
   private val webhookSettingsViewModel: WebhookSettingsViewModel by viewModels { appViewModelFactory }
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,13 +72,17 @@ class MainActivity : ComponentActivity() {
     setContent {
       JournalingPostTheme {
         val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+        val moods by moodViewModel.moods.collectAsStateWithLifecycle()
 
         var destination by rememberSaveable { mutableStateOf(MainDestination.RECORD) }
         var showWebhookSettings by rememberSaveable { mutableStateOf(false) }
+        var showMoodSettings by rememberSaveable { mutableStateOf(false) }
+        var moodSettingsScreenSessionId by rememberSaveable { mutableIntStateOf(0) }
         // Settingsで保存済み設定が無いままCustom Webhookを選んで来た場合、Webhook設定画面で既存設定が
         // 見つかればその場で有効化する。利用者が自分で設定項目を開いた場合は有効化しない。
         var webhookSetupPending by rememberSaveable { mutableStateOf(false) }
-        var selectedMood by rememberSaveable { mutableStateOf<Mood?>(null) }
+        var selectedMoodId by rememberSaveable { mutableStateOf<String?>(null) }
+        val selectedMood = moods?.firstOrNull { it.id == selectedMoodId }
 
         val snackbarHostState = remember { SnackbarHostState() }
         val scope = rememberCoroutineScope()
@@ -108,21 +115,28 @@ class MainActivity : ComponentActivity() {
           webhookSetupPending = false
           showWebhookSettings = false
         }
+        val closeMoodSettings: () -> Unit = { showMoodSettings = false }
+        val openMoodSettings: () -> Unit = {
+          moodSettingsScreenSessionId++
+          showMoodSettings = true
+        }
 
         LaunchedEffect(destination) {
           if (destination == MainDestination.SETTINGS) settingsViewModel.onSettingsOpened()
         }
 
         BackHandler(
-          enabled = selectedMood != null || showWebhookSettings || destination != MainDestination.RECORD,
+          enabled = selectedMoodId != null || showWebhookSettings || showMoodSettings ||
+            destination != MainDestination.RECORD,
         ) {
           when {
-            selectedMood != null -> if (!recordInProgress) {
-              selectedMood = null
+            selectedMoodId != null -> if (!recordInProgress) {
+              selectedMoodId = null
               viewModel.resetState()
             }
             // Webhook設定はSettingsの下位画面のため、Backは1段階だけ戻す。
             showWebhookSettings -> closeWebhookSettings()
+            showMoodSettings -> closeMoodSettings()
             else -> destination = MainDestination.RECORD
           }
         }
@@ -131,7 +145,7 @@ class MainActivity : ComponentActivity() {
           Scaffold(
             modifier = Modifier.fillMaxSize().imePadding(),
             bottomBar = {
-              if (!showWebhookSettings) {
+              if (!showWebhookSettings && !showMoodSettings) {
                 NavigationBar(
                   modifier = Modifier.onGloballyPositioned {
                     navigationBarHeight = with(density) { it.size.height.toDp() }
@@ -142,7 +156,7 @@ class MainActivity : ComponentActivity() {
                       selected = destination == item,
                       onClick = {
                         if (item != destination) {
-                          selectedMood = null
+                          selectedMoodId = null
                           destination = item
                         }
                       },
@@ -155,7 +169,31 @@ class MainActivity : ComponentActivity() {
             },
           ) { innerPadding ->
             Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-              if (showWebhookSettings) {
+              if (showMoodSettings) {
+                LaunchedEffect(Unit) { moodSettingsViewModel.onScreenOpened(moodSettingsScreenSessionId) }
+                val moodSettingsUiState by moodSettingsViewModel.uiState.collectAsStateWithLifecycle()
+                val savedMessage = stringResource(R.string.mood_settings_save_succeeded)
+                val saveFailedMessage = stringResource(R.string.mood_settings_save_failed)
+
+                EventEffect(moodSettingsViewModel.events) { event ->
+                  when (event) {
+                    MoodSettingsEvent.Saved -> showMessage(savedMessage)
+                    MoodSettingsEvent.SaveFailed -> showMessage(saveFailedMessage)
+                  }
+                }
+
+                MoodSettingsScreen(
+                  uiState = moodSettingsUiState,
+                  onEmojiChange = moodSettingsViewModel::updateEmoji,
+                  onLabelChange = moodSettingsViewModel::updateLabel,
+                  onMoveUp = moodSettingsViewModel::moveUp,
+                  onMoveDown = moodSettingsViewModel::moveDown,
+                  onAdd = moodSettingsViewModel::addMood,
+                  onRemove = moodSettingsViewModel::removeMood,
+                  onSave = moodSettingsViewModel::save,
+                  onBack = closeMoodSettings,
+                )
+              } else if (showWebhookSettings) {
                 // process recreationでこの画面がそのまま復元された場合に備えたフォールバック。
                 LaunchedEffect(Unit) {
                   webhookSettingsViewModel.ensureScreenOpened(webhookSetupPending)
@@ -177,13 +215,19 @@ class MainActivity : ComponentActivity() {
                 )
               } else {
                 when (destination) {
-                  MainDestination.RECORD -> MoodRecordScreen(
-                    moods = moodCatalog,
-                    onMoodClick = { mood ->
-                      viewModel.resetState()
-                      selectedMood = mood
-                    },
-                  )
+                  MainDestination.RECORD -> if (moods == null) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                      CircularProgressIndicator()
+                    }
+                  } else {
+                    MoodRecordScreen(
+                      moods = requireNotNull(moods),
+                      onMoodClick = { mood ->
+                        viewModel.resetState()
+                        selectedMoodId = mood.id
+                      },
+                    )
+                  }
 
                   MainDestination.JOURNAL_HISTORY -> {
                     val historyUiState by historyViewModel.uiState.collectAsStateWithLifecycle()
@@ -226,6 +270,7 @@ class MainActivity : ComponentActivity() {
                     SettingsScreen(
                       uiState = settingsUiState,
                       onAnalysisIntegrationChange = settingsViewModel::setAnalysisIntegration,
+                      onMoodSettingsOpen = openMoodSettings,
                       onWebhookSettingsOpen = { openWebhookSettings(false) },
                     )
                   }
@@ -235,12 +280,11 @@ class MainActivity : ComponentActivity() {
           }
 
           selectedMood?.let { mood ->
-            val moodLabel = stringResource(mood.labelRes)
             val successMessage = stringResource(R.string.record_success)
             val failureMessage = stringResource(R.string.record_failure)
             MoodRecordOverlay(
               moodEmoji = mood.emoji,
-              moodLabel = moodLabel,
+              moodLabel = mood.label,
               isInteractionLocked = recordInProgress,
               // アプリ内では失敗もSnackbarで伝えるため、ダイアログ内のinline表示は使わない
               // (dialogは開いたままで、入力内容を保持して再試行できる)。
@@ -248,12 +292,12 @@ class MainActivity : ComponentActivity() {
               onRecord = { note ->
                 viewModel.record(
                   note = note,
-                  mood = MoodSnapshot(id = mood.name, emoji = mood.emoji, label = moodLabel),
+                  mood = MoodSnapshot(id = mood.id, emoji = mood.emoji, label = mood.label),
                   source = JournalSource.APP,
                 )
               },
               onDismiss = {
-                selectedMood = null
+                selectedMoodId = null
                 viewModel.resetState()
               },
             )
@@ -261,7 +305,7 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(uiState) {
               when (uiState) {
                 MainViewModel.UiState.SUCCESS -> {
-                  selectedMood = null
+                  selectedMoodId = null
                   viewModel.resetState()
                   showMessage(successMessage)
                 }
@@ -277,14 +321,14 @@ class MainActivity : ComponentActivity() {
           }
 
           // Snackbarは記録ダイアログより手前へ描く。通常時は下部ナビの上へ、
-          // ダイアログ表示中やWebhook設定画面ではナビが無い/隠れているので底へ寄せる。
+          // ダイアログ表示中や下位設定画面ではナビが無い/隠れているので底へ寄せる。
           SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
               .align(Alignment.BottomCenter)
               .imePadding()
               .then(
-                if (showWebhookSettings || selectedMood != null) {
+                if (showWebhookSettings || showMoodSettings || selectedMood != null) {
                   Modifier.navigationBarsPadding()
                 } else {
                   Modifier.padding(bottom = navigationBarHeight)

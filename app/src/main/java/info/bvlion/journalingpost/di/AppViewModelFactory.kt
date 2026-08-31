@@ -9,6 +9,8 @@ import info.bvlion.journalingpost.AnalysisHistoryViewModel
 import info.bvlion.journalingpost.JournalHistoryViewModel
 import info.bvlion.journalingpost.JournalingPostApplication
 import info.bvlion.journalingpost.MainViewModel
+import info.bvlion.journalingpost.MoodSettingsViewModel
+import info.bvlion.journalingpost.MoodViewModel
 import info.bvlion.journalingpost.SettingsViewModel
 import info.bvlion.journalingpost.WebhookSettingsViewModel
 
@@ -16,6 +18,15 @@ import info.bvlion.journalingpost.WebhookSettingsViewModel
 val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
   initializer {
     MainViewModel(journalRecorder = container.journalRecorder)
+  }
+  initializer {
+    MoodViewModel(repository = container.moodRepository)
+  }
+  initializer {
+    MoodSettingsViewModel(
+      repository = container.moodRepository,
+      refreshWidgets = container::refreshMoodWidgets,
+    )
   }
   initializer {
     JournalHistoryViewModel(
