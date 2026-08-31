@@ -199,16 +199,12 @@ class MainActivity : ComponentActivity() {
                     val analysisHistoryUiState by analysisHistoryViewModel.uiState.collectAsState()
                     val canRunAnalysis by analysisHistoryViewModel.canRunAnalysis.collectAsState()
                     val analysisRunState by analysisHistoryViewModel.analysisRunState.collectAsState()
-                    val candidateDay by analysisHistoryViewModel.candidateDay.collectAsState()
                     AnalysisHistoryScreen(
                       uiState = analysisHistoryUiState,
                       canRunAnalysis = canRunAnalysis,
                       runState = analysisRunState,
-                      candidateDay = candidateDay,
                       onShowMessage = showMessage,
                       onRunResultShown = analysisHistoryViewModel::consumeRunResult,
-                      onCandidateDayChange = analysisHistoryViewModel::checkCandidateDay,
-                      onCandidateDayClear = analysisHistoryViewModel::clearCandidateDay,
                       onAnalyze = analysisHistoryViewModel::analyze,
                     )
                   }

@@ -7,14 +7,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -29,13 +27,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.isSpecified
 import info.bvlion.journalingpost.AnalysisRunState
-import info.bvlion.journalingpost.CandidateDayState
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
@@ -54,19 +49,16 @@ private val analysisDateTimeFormatter = DateTimeFormatter.ofPattern("yyyy/M/d HH
  * 解析履歴の遷移先。#37で保存したAnalysisResultを新しい順の一覧で表示する。
  *
  * Custom Webhookが解析先として有効な場合([canRunAnalysis])だけ、上部に「解析する」導線を出し、
- * 対象日を1日選んで手動解析を実行できる。日付を選んだ段階でその日に記録があるか調べ、0件の日は
- * 実行を確定できないようにする。実行結果はSnackbarで伝える。
+ * 対象日を1日選んで手動解析を実行できる。実行結果はSnackbarで伝える。対象日の記録が0件かどうかは
+ * 実行後の解析処理側で判定する。
  */
 @Composable
 fun AnalysisHistoryScreen(
   uiState: AnalysisHistoryUiState,
   canRunAnalysis: Boolean,
   runState: AnalysisRunState,
-  candidateDay: CandidateDayState,
   onShowMessage: (String) -> Unit,
   onRunResultShown: () -> Unit,
-  onCandidateDayChange: (LocalDate) -> Unit,
-  onCandidateDayClear: () -> Unit,
   onAnalyze: (LocalDate) -> Unit,
 ) {
   val completedMessage = stringResource(R.string.analysis_completed)
@@ -94,9 +86,6 @@ fun AnalysisHistoryScreen(
       AnalysisTrigger(
         canRunAnalysis = canRunAnalysis,
         isRunning = runState is AnalysisRunState.Running,
-        candidateDay = candidateDay,
-        onCandidateDayChange = onCandidateDayChange,
-        onCandidateDayClear = onCandidateDayClear,
         onAnalyze = onAnalyze,
       )
     }
@@ -131,9 +120,6 @@ fun AnalysisHistoryScreen(
 private fun AnalysisTrigger(
   canRunAnalysis: Boolean,
   isRunning: Boolean,
-  candidateDay: CandidateDayState,
-  onCandidateDayChange: (LocalDate) -> Unit,
-  onCandidateDayClear: () -> Unit,
   onAnalyze: (LocalDate) -> Unit,
 ) {
   var showDatePicker by remember { mutableStateOf(false) }
@@ -165,24 +151,15 @@ private fun AnalysisTrigger(
     )
     val pickedDay = datePickerState.selectedDateMillis?.toLocalDateFromUtc()
 
-    LaunchedEffect(pickedDay) {
-      if (pickedDay != null) onCandidateDayChange(pickedDay)
-    }
-
     fun close() {
       showDatePicker = false
-      onCandidateDayClear()
     }
-
-    val checked = candidateDay as? CandidateDayState.Checked
-    val selectedDayHasNoEntries = checked != null && checked.day == pickedDay && !checked.hasEntries
-    val canConfirm = pickedDay != null && checked?.day == pickedDay && checked.hasEntries
 
     DatePickerDialog(
       onDismissRequest = { close() },
       confirmButton = {
         TextButton(
-          enabled = canConfirm,
+          enabled = pickedDay != null,
           onClick = {
             if (pickedDay != null) onAnalyze(pickedDay)
             close()
@@ -197,40 +174,7 @@ private fun AnalysisTrigger(
         }
       },
     ) {
-      val dateFormatter = remember { DatePickerDefaults.dateFormatter() }
-      val supplementStyle = MaterialTheme.typography.bodyMedium
-      // 補足の表示・非表示で headline の高さが変わると月表示・曜日・カレンダー・action領域が上下へ
-      // 跳ねるため、補足は常に1行ぶんの領域を確保する。0件でないときは領域だけ残して文言は置かない。
-      val supplementHeight = with(LocalDensity.current) {
-        if (supplementStyle.lineHeight.isSpecified) supplementStyle.lineHeight.toDp() else 20.dp
-      }
-      DatePicker(
-        state = datePickerState,
-        dateFormatter = dateFormatter,
-        headline = {
-          // 0件かどうかは「選択した日の状態」なので、DatePickerが選択日を見せるheadline領域へ含める。
-          // エラーではなく実行条件の事前提示なので、色は通常のsupporting text色にする。
-          Column(
-            modifier = Modifier.padding(start = 24.dp, end = 12.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-          ) {
-            DatePickerDefaults.DatePickerHeadline(
-              selectedDateMillis = datePickerState.selectedDateMillis,
-              displayMode = datePickerState.displayMode,
-              dateFormatter = dateFormatter,
-            )
-            Box(modifier = Modifier.height(supplementHeight)) {
-              if (selectedDayHasNoEntries) {
-                Text(
-                  text = stringResource(R.string.analysis_pick_day_no_entries),
-                  style = supplementStyle,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-            }
-          }
-        },
-      )
+      DatePicker(state = datePickerState)
     }
   }
 }
@@ -294,11 +238,8 @@ fun AnalysisHistoryScreenPreview() {
       ),
       canRunAnalysis = true,
       runState = AnalysisRunState.Idle,
-      candidateDay = CandidateDayState.None,
       onShowMessage = {},
       onRunResultShown = {},
-      onCandidateDayChange = {},
-      onCandidateDayClear = {},
       onAnalyze = {},
     )
   }

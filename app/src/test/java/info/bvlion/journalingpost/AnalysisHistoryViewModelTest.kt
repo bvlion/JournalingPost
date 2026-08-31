@@ -134,46 +134,6 @@ class AnalysisHistoryViewModelTest {
   }
 
   @Test
-  fun `checkCandidateDayは記録がある日をhasEntries=trueで返す`() = runTest(testDispatcher) {
-    val reader = FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z")))
-    val viewModel = createViewModel(entryReader = reader, currentZoneId = { ZoneOffset.UTC })
-
-    viewModel.checkCandidateDay(LocalDate.of(2026, 8, 30))
-    testDispatcher.scheduler.advanceUntilIdle()
-
-    assertEquals(
-      CandidateDayState.Checked(LocalDate.of(2026, 8, 30), hasEntries = true),
-      viewModel.candidateDay.value,
-    )
-    assertEquals(Instant.parse("2026-08-30T00:00:00Z"), reader.lastPeriodStart)
-    assertEquals(Instant.parse("2026-08-31T00:00:00Z"), reader.lastPeriodEnd)
-  }
-
-  @Test
-  fun `checkCandidateDayは記録が無い日をhasEntries=falseで返す`() = runTest(testDispatcher) {
-    val viewModel = createViewModel(entryReader = FakePeriodJournalEntryReader(emptyList()))
-
-    viewModel.checkCandidateDay(LocalDate.of(2026, 8, 30))
-    testDispatcher.scheduler.advanceUntilIdle()
-
-    assertEquals(
-      CandidateDayState.Checked(LocalDate.of(2026, 8, 30), hasEntries = false),
-      viewModel.candidateDay.value,
-    )
-  }
-
-  @Test
-  fun `clearCandidateDayでNoneへ戻る`() = runTest(testDispatcher) {
-    val viewModel = createViewModel(entryReader = FakePeriodJournalEntryReader(emptyList()))
-    viewModel.checkCandidateDay(LocalDate.of(2026, 8, 30))
-    testDispatcher.scheduler.advanceUntilIdle()
-
-    viewModel.clearCandidateDay()
-
-    assertEquals(CandidateDayState.None, viewModel.candidateDay.value)
-  }
-
-  @Test
   fun `対象期間にentryが無ければ送信せずNO_ENTRIESのFailedになる`() = runTest(testDispatcher) {
     val analyzer = FakePeriodAnalyzer { success() }
     val viewModel = createViewModel(analyzer = analyzer, entryReader = FakePeriodJournalEntryReader(emptyList()))
