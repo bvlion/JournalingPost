@@ -270,7 +270,61 @@ class SettingsViewModelTest {
     advanceUntilIdle()
 
     assertEquals(0, webhookRepository.saveCallCount)
-    assertTrue(viewModel.webhookValidationErrors.value.isNotEmpty())
+    assertFalse(viewModel.webhookValidation.value.isEmpty)
+  }
+
+  @Test
+  fun `URLを直すと保存前でもURLのvalidation errorだけ消える`() = runTest(dispatcher) {
+    val viewModel = SettingsViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+    viewModel.updateWebhookUrl("not a url")
+    viewModel.updateWebhookBodyTemplate("{ not json")
+    viewModel.saveWebhookSettings()
+    advanceUntilIdle()
+    assertTrue(viewModel.webhookValidation.value.all.contains(WebhookSettingsValidator.ValidationError.INVALID_URL))
+
+    viewModel.updateWebhookUrl("https://hooks.example.com/webhook")
+
+    assertFalse(viewModel.webhookValidation.value.all.contains(WebhookSettingsValidator.ValidationError.INVALID_URL))
+    assertTrue(viewModel.webhookValidation.value.all.contains(WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE))
+  }
+
+  @Test
+  fun `ヘッダーを直すとヘッダーのvalidation errorがindexごと消える`() = runTest(dispatcher) {
+    val viewModel = SettingsViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+    viewModel.updateWebhookUrl("https://hooks.example.com/webhook")
+    viewModel.addWebhookHeader()
+    viewModel.saveWebhookSettings()
+    advanceUntilIdle()
+    assertEquals(setOf(0), viewModel.webhookValidation.value.headerErrors.keys)
+    assertTrue(viewModel.webhookValidation.value.all.contains(WebhookSettingsValidator.ValidationError.BLANK_HEADER_NAME))
+
+    viewModel.updateWebhookHeaderName(0, "Authorization")
+
+    assertTrue(viewModel.webhookValidation.value.isEmpty)
+    assertTrue(viewModel.webhookValidation.value.headerErrors.isEmpty())
+  }
+
+  @Test
+  fun `リクエスト本文を直すと本文のvalidation errorが消える`() = runTest(dispatcher) {
+    val viewModel = SettingsViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+    viewModel.updateWebhookUrl("https://hooks.example.com/webhook")
+    viewModel.updateWebhookBodyTemplate("{ not json")
+    viewModel.saveWebhookSettings()
+    advanceUntilIdle()
+    assertTrue(viewModel.webhookValidation.value.all.contains(WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE))
+
+    viewModel.resetWebhookBodyTemplate()
+
+    assertTrue(viewModel.webhookValidation.value.isEmpty)
   }
 
   @Test
@@ -313,7 +367,7 @@ class SettingsViewModelTest {
 
     assertEquals(0, webhookRepository.saveCallCount)
     assertTrue(
-      viewModel.webhookValidationErrors.value.contains(
+      viewModel.webhookValidation.value.all.contains(
         WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE,
       ),
     )

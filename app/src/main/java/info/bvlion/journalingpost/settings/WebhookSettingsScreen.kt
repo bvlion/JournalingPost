@@ -29,6 +29,7 @@ import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.WebhookFormState
 import info.bvlion.journalingpost.WebhookSaveResult
 import info.bvlion.journalingpost.WebhookSettingsLoadState
+import info.bvlion.journalingpost.WebhookValidationState
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.webhook.WebhookBodyTemplateRenderer
@@ -44,7 +45,7 @@ import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
 fun WebhookSettingsScreen(
   loadState: WebhookSettingsLoadState,
   formState: WebhookFormState,
-  validationErrors: List<WebhookSettingsValidator.ValidationError>,
+  validation: WebhookValidationState,
   saveResult: WebhookSaveResult?,
   onShowMessage: (String) -> Unit,
   onSaveResultShown: () -> Unit,
@@ -85,7 +86,7 @@ fun WebhookSettingsScreen(
 
         WebhookSettingsLoadState.READY -> WebhookSettingsForm(
           formState = formState,
-          validationErrors = validationErrors,
+          validation = validation,
           onUrlChange = onUrlChange,
           onHeaderAdd = onHeaderAdd,
           onHeaderRemove = onHeaderRemove,
@@ -103,7 +104,7 @@ fun WebhookSettingsScreen(
 @Composable
 private fun WebhookSettingsForm(
   formState: WebhookFormState,
-  validationErrors: List<WebhookSettingsValidator.ValidationError>,
+  validation: WebhookValidationState,
   onUrlChange: (String) -> Unit,
   onHeaderAdd: () -> Unit,
   onHeaderRemove: (Int) -> Unit,
@@ -113,9 +114,8 @@ private fun WebhookSettingsForm(
   onBodyTemplateReset: () -> Unit,
   onSave: () -> Unit,
 ) {
-  val urlErrors = validationErrors.filter { it == WebhookSettingsValidator.ValidationError.INVALID_URL }
-  val headerErrors = validationErrors.filter { it in HEADER_VALIDATION_ERRORS }
-  val bodyErrors = validationErrors.filter { it == WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE }
+  val urlErrors = validation.all.filter { it == WebhookSettingsValidator.ValidationError.INVALID_URL }
+  val bodyErrors = validation.all.filter { it == WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE }
 
   Column {
     OutlinedTextField(
@@ -132,6 +132,7 @@ private fun WebhookSettingsForm(
     formState.headers.forEachIndexed { index, header ->
       WebhookHeaderRow(
         header = header,
+        errors = validation.headerErrors[index].orEmpty(),
         onNameChange = { onHeaderNameChange(index, it) },
         onValueChange = { onHeaderValueChange(index, it) },
         onRemove = { onHeaderRemove(index) },
@@ -140,7 +141,6 @@ private fun WebhookSettingsForm(
     TextButton(onClick = onHeaderAdd, modifier = Modifier.padding(top = 4.dp)) {
       Text(stringResource(R.string.webhook_settings_header_add))
     }
-    FieldErrors(headerErrors)
 
     WebhookBodyTemplateField(
       bodyTemplate = formState.bodyTemplate,
@@ -149,12 +149,11 @@ private fun WebhookSettingsForm(
       onBodyTemplateReset = onBodyTemplateReset,
     )
 
-    // 入力欄と保存を1つのまとまりとして扱い、保存は画面の主操作として明示する。
     Button(onClick = onSave, modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
       Text(stringResource(R.string.action_save))
     }
 
-    // 保存後の入力とは別の参照情報として、期待する成功レスポンスを常時表示する。
+    // 成功レスポンスの見本は編集対象ではない参照情報。折りたたまず常時表示にする。
     SectionHeading(stringResource(R.string.webhook_settings_response_heading))
     MonospaceBlock(stringResource(R.string.webhook_settings_success_response_example))
   }
@@ -180,7 +179,9 @@ private fun WebhookBodyTemplateField(
     PlaceholderLine(
       stringResource(R.string.webhook_settings_placeholder_period_start, WebhookBodyTemplateRenderer.PERIOD_EXAMPLE),
     )
-    PlaceholderLine(stringResource(R.string.webhook_settings_placeholder_period_end))
+    PlaceholderLine(
+      stringResource(R.string.webhook_settings_placeholder_period_end, WebhookBodyTemplateRenderer.PERIOD_END_EXAMPLE),
+    )
     PlaceholderLine(stringResource(R.string.webhook_settings_placeholder_entries))
     Text(
       text = stringResource(R.string.webhook_settings_entries_example_heading),
@@ -270,43 +271,38 @@ private fun MonospaceBlock(text: String) {
 @Composable
 private fun WebhookHeaderRow(
   header: WebhookHeader,
+  errors: List<WebhookSettingsValidator.ValidationError>,
   onNameChange: (String) -> Unit,
   onValueChange: (String) -> Unit,
   onRemove: () -> Unit,
 ) {
-  Row(
-    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    OutlinedTextField(
-      value = header.name,
-      onValueChange = onNameChange,
-      label = { Text(stringResource(R.string.webhook_settings_header_name_label)) },
-      modifier = Modifier.weight(1f),
-      singleLine = true,
-    )
-    OutlinedTextField(
-      value = header.value,
-      onValueChange = onValueChange,
-      label = { Text(stringResource(R.string.webhook_settings_header_value_label)) },
-      modifier = Modifier.weight(1f).padding(start = 8.dp),
-      singleLine = true,
-      // secretを含み得るためヘッダー値は常時平文表示しない。
-      visualTransformation = PasswordVisualTransformation(),
-    )
-    TextButton(onClick = onRemove) {
-      Text(stringResource(R.string.action_delete))
+  Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      OutlinedTextField(
+        value = header.name,
+        onValueChange = onNameChange,
+        label = { Text(stringResource(R.string.webhook_settings_header_name_label)) },
+        isError = errors.isNotEmpty(),
+        modifier = Modifier.weight(1f),
+        singleLine = true,
+      )
+      OutlinedTextField(
+        value = header.value,
+        onValueChange = onValueChange,
+        label = { Text(stringResource(R.string.webhook_settings_header_value_label)) },
+        isError = errors.isNotEmpty(),
+        modifier = Modifier.weight(1f).padding(start = 8.dp),
+        singleLine = true,
+        // secretを含み得るためヘッダー値は常時平文表示しない。
+        visualTransformation = PasswordVisualTransformation(),
+      )
+      TextButton(onClick = onRemove) {
+        Text(stringResource(R.string.action_delete))
+      }
     }
+    FieldErrors(errors)
   }
 }
-
-// URLでも本文でもない、ヘッダー欄に紐づくvalidation。ヘッダーセクションの下へまとめて出す。
-private val HEADER_VALIDATION_ERRORS = setOf(
-  WebhookSettingsValidator.ValidationError.BLANK_HEADER_NAME,
-  WebhookSettingsValidator.ValidationError.DUPLICATE_HEADER_NAME,
-  WebhookSettingsValidator.ValidationError.RESERVED_CONTENT_TYPE_HEADER,
-  WebhookSettingsValidator.ValidationError.INVALID_HEADER_SYNTAX,
-)
 
 private fun WebhookSaveResult.messageRes(): Int = when (this) {
   WebhookSaveResult.SUCCEEDED -> R.string.webhook_settings_save_succeeded
@@ -334,7 +330,7 @@ fun WebhookSettingsScreenPreview() {
         url = "https://hooks.example.com/services/xxx",
         headers = listOf(WebhookHeader("Authorization", "Bearer xxxxx")),
       ),
-      validationErrors = emptyList(),
+      validation = WebhookValidationState(),
       saveResult = null,
       onShowMessage = {},
       onSaveResultShown = {},

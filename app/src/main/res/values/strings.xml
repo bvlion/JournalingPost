@@ -66,8 +66,9 @@
   <string name="webhook_settings_body_heading">リクエスト本文</string>
   <string name="webhook_settings_body_hint">解析リクエストは JSON 形式（Content-Type: application/json）で POST します。本文中の次のプレースホルダーが展開されます。</string>
   <!-- %1$s は展開後の日時の例 -->
-  <string name="webhook_settings_placeholder_period_start">{{periodStart}}：対象期間の開始。秒までのUTC表記（RFC 3339、例 %1$s）</string>
-  <string name="webhook_settings_placeholder_period_end">{{periodEnd}}：対象期間の終了。開始と同じ秒までのUTC表記で、この時刻は含みません</string>
+  <string name="webhook_settings_placeholder_period_start">{{periodStart}}：対象期間の開始日時。秒までのUTC表記（例 %1$s）</string>
+  <!-- %1$s は展開後の日時の例 -->
+  <string name="webhook_settings_placeholder_period_end">{{periodEnd}}：対象期間の終了日時。指定した時刻は含みません。秒までのUTC表記（例 %1$s）</string>
   <string name="webhook_settings_placeholder_entries">{{entries}}：対象期間の記録。次の例の形のJSON配列に展開されます</string>
   <string name="webhook_settings_entries_example_heading">{{entries}} の展開例</string>
   <string name="webhook_settings_body_reset">初期値に戻す</string>
@@ -89,7 +90,7 @@
     画面に表示する見本のJSON。改行とインデントを残すため全体を引用符で囲む。日時・件数・moodラベルは
     スキーマを説明するための例で、同じ画面のresponse例と同じ1日・同じ件数に揃えてある。
   -->
-  <string name="webhook_settings_entries_example">"[\n  {\n    \"recordedAt\": \"2026-08-29T09:15:00Z\",\n    \"mood\": { \"emoji\": \"🙂\", \"label\": \"気分ラベル\" }\n  },\n  {\n    \"recordedAt\": \"2026-08-29T21:40:00Z\",\n    \"note\": \"メモ本文\"\n  }\n]"</string>
+  <string name="webhook_settings_entries_example">"[\n  {\n    \"recordedAt\": \"2026-08-29T09:15:00Z\",\n    \"mood\": { \"emoji\": \"🙂\", \"label\": \"嬉しい\" }\n  },\n  {\n    \"recordedAt\": \"2026-08-29T21:40:00Z\",\n    \"note\": \"メモ本文\"\n  }\n]"</string>
   <string name="webhook_settings_success_response_example">"{\n  \"analysis\": {\n    \"period\": {\n      \"start\": \"2026-08-29T00:00:00Z\",\n      \"end\": \"2026-08-30T00:00:00Z\"\n    },\n    \"analyzedAt\": \"2026-08-30T07:30:00Z\",\n    \"entryCount\": 2,\n    \"model\": \"example/analysis-model\",\n    \"text\": \"…\"\n  }\n}"</string>
 
   <string name="mood_emoji_very_sad">😭</string>

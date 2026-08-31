@@ -141,8 +141,19 @@ class SettingsViewModel(
     }
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WebhookSettingsLoadState.LOADING)
 
-  private val _webhookValidationErrors = MutableStateFlow<List<WebhookSettingsValidator.ValidationError>>(emptyList())
-  val webhookValidationErrors: StateFlow<List<WebhookSettingsValidator.ValidationError>> = _webhookValidationErrors.asStateFlow()
+  private val _webhookValidation = MutableStateFlow(WebhookValidationState())
+  val webhookValidation: StateFlow<WebhookValidationState> = _webhookValidation.asStateFlow()
+
+  // 利用者が該当欄を編集したら、その欄由来のvalidation errorだけ消す(次の保存までerrorを残さない)。
+  private fun dropWebhookValidation(vararg kinds: WebhookSettingsValidator.ValidationError) {
+    _webhookValidation.update { it.copy(all = it.all - kinds.toSet()) }
+  }
+
+  private fun clearHeaderValidation() {
+    _webhookValidation.update {
+      it.copy(all = it.all - WebhookSettingsValidator.HEADER_ERRORS, headerErrors = emptyMap())
+    }
+  }
 
   // Webhook設定の保存操作の結果を1度だけ画面へ伝える(画面はSnackbarで見せてから[consumeWebhookSaveResult])。
   private val _webhookSaveResult = MutableStateFlow<WebhookSaveResult?>(null)
@@ -168,7 +179,7 @@ class SettingsViewModel(
   fun onWebhookSettingsScreenOpened() {
     webhookSettingsScreenInitialized = true
     val generation = webhookRequestGeneration.incrementAndGet()
-    _webhookValidationErrors.value = emptyList()
+    _webhookValidation.value = WebhookValidationState()
     _webhookSaveResult.value = null
     _webhookFormLoaded.value = false
     _webhookFormState.value = WebhookFormState()
@@ -198,7 +209,7 @@ class SettingsViewModel(
   fun onWebhookSettingsScreenClosed() {
     webhookSettingsScreenInitialized = false
     webhookRequestGeneration.incrementAndGet()
-    _webhookValidationErrors.value = emptyList()
+    _webhookValidation.value = WebhookValidationState()
     _webhookSaveResult.value = null
     _webhookFormLoaded.value = false
     _webhookFormState.value = WebhookFormState()
@@ -215,35 +226,42 @@ class SettingsViewModel(
 
   fun updateWebhookUrl(url: String) {
     updateWebhookForm { it.copy(url = url) }
+    dropWebhookValidation(WebhookSettingsValidator.ValidationError.INVALID_URL)
   }
 
   fun addWebhookHeader() {
     updateWebhookForm { it.copy(headers = it.headers + WebhookHeader(name = "", value = "")) }
+    clearHeaderValidation()
   }
 
   fun removeWebhookHeader(index: Int) {
     updateWebhookForm { state -> state.copy(headers = state.headers.filterIndexed { i, _ -> i != index }) }
+    clearHeaderValidation()
   }
 
   fun updateWebhookHeaderName(index: Int, name: String) {
     updateWebhookForm { state ->
       state.copy(headers = state.headers.mapIndexed { i, header -> if (i == index) header.copy(name = name) else header })
     }
+    clearHeaderValidation()
   }
 
   fun updateWebhookHeaderValue(index: Int, value: String) {
     updateWebhookForm { state ->
       state.copy(headers = state.headers.mapIndexed { i, header -> if (i == index) header.copy(value = value) else header })
     }
+    clearHeaderValidation()
   }
 
   fun updateWebhookBodyTemplate(bodyTemplate: String) {
     updateWebhookForm { it.copy(bodyTemplate = bodyTemplate) }
+    dropWebhookValidation(WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE)
   }
 
   /** Body templateを初期値へ戻す。呼び出し側(画面)が確認を取ってから呼ぶ。 */
   fun resetWebhookBodyTemplate() {
     updateWebhookForm { it.copy(bodyTemplate = WebhookBodyTemplateRenderer.DEFAULT_TEMPLATE) }
+    dropWebhookValidation(WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE)
   }
 
   private fun updateWebhookForm(transform: (WebhookFormState) -> WebhookFormState) {
@@ -259,10 +277,10 @@ class SettingsViewModel(
     val form = _webhookFormState.value
     val validation = WebhookSettingsValidator.validate(form.url, form.headers, form.bodyTemplate)
     if (validation.errors.isNotEmpty()) {
-      _webhookValidationErrors.value = validation.errors
+      _webhookValidation.value = WebhookValidationState(validation.errors, validation.headerErrors)
       return
     }
-    _webhookValidationErrors.value = emptyList()
+    _webhookValidation.value = WebhookValidationState()
     _webhookSaveResult.value = null
     viewModelScope.launch {
       try {
@@ -308,6 +326,17 @@ data class WebhookFormState(
   // 新規設定は初期templateから始める。保存済み設定を開いたときは[toFormState]で上書きする。
   val bodyTemplate: String = WebhookBodyTemplateRenderer.DEFAULT_TEMPLATE,
 )
+
+/**
+ * 直近の保存で出たvalidation結果。[all] は保存可否判定にも使う全error、[headerErrors] はどのheader行の
+ * 問題かのindex別内訳。利用者が該当欄を編集したら、その欄由来のerrorだけ消して残さない。
+ */
+data class WebhookValidationState(
+  val all: List<WebhookSettingsValidator.ValidationError> = emptyList(),
+  val headerErrors: Map<Int, List<WebhookSettingsValidator.ValidationError>> = emptyMap(),
+) {
+  val isEmpty: Boolean get() = all.isEmpty()
+}
 
 private fun WebhookSettings.toFormState() =
   WebhookFormState(url = url, headers = headers, bodyTemplate = bodyTemplate)

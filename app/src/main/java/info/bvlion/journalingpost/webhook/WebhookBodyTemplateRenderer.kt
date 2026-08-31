@@ -7,8 +7,8 @@ import kotlinx.serialization.json.Json
  * Custom WebhookのBody template。利用者がrequest body全体をJSONで編集し、送信時に次のplaceholderを
  * 展開する。
  *
- * - [PERIOD_START] / [PERIOD_END]: 対象期間の境界を、そのままRFC 3339のUTC文字列として差し込む
- *   (例: `2026-08-30T00:00:00Z`)。template側で引用符に囲んで使う想定。
+ * - [PERIOD_START] / [PERIOD_END]: 対象期間の境界を、そのまま秒精度のUTC文字列として差し込む
+ *   (例: `2026-08-29T00:00:00Z`)。template側で引用符に囲んで使う想定。
  * - [ENTRIES]: 唯一のraw JSON placeholder。JournalEntryのJSON arrayとして、引用符なしで差し込む
  *   (`"entries": {{entries}}`)。
  * - 上記以外の `{{...}}` は置換せず、そのまま文字列として送信する。
@@ -22,13 +22,14 @@ object WebhookBodyTemplateRenderer {
   const val PERIOD_END = "{{periodEnd}}"
   const val ENTRIES = "{{entries}}"
 
-  /** 展開後の形式を説明・検証で示すための見本値。 */
-  const val PERIOD_EXAMPLE = "2026-08-30T00:00:00Z"
-  private const val SAMPLE_PERIOD_END = "2026-08-31T00:00:00Z"
+  // 展開後の形式を説明・検証で示すための見本値。画面のplaceholder説明・entries例・response例と
+  // 同じ1日(2026-08-29)へ揃えてある。
+  const val PERIOD_EXAMPLE = "2026-08-29T00:00:00Z"
+  const val PERIOD_END_EXAMPLE = "2026-08-30T00:00:00Z"
 
   // 空arrayではなく1件入りにするのは、{{entries}}を引用符で囲むと展開結果のJSONが壊れることを
   // 保存時に検出できるようにするため(空arrayだと `"{{entries}}"` → `"[]"` が有効なJSONになってしまう)。
-  private const val SAMPLE_ENTRIES_JSON = """[{"recordedAt":"2026-08-30T01:00:00Z","note":"sample"}]"""
+  private const val SAMPLE_ENTRIES_JSON = """[{"recordedAt":"2026-08-29T09:15:00Z","note":"sample"}]"""
 
   /** 新規設定時の初期Body template。Hostedと共通のrequest schemaに合わせている。 */
   val DEFAULT_TEMPLATE: String = """
@@ -49,7 +50,7 @@ object WebhookBodyTemplateRenderer {
 
   /** [ENTRIES]をraw JSON値、期間placeholderを見本文字列として展開した結果が有効なJSONか。 */
   fun rendersValidJson(template: String): Boolean {
-    val rendered = render(template, PERIOD_EXAMPLE, SAMPLE_PERIOD_END, SAMPLE_ENTRIES_JSON)
+    val rendered = render(template, PERIOD_EXAMPLE, PERIOD_END_EXAMPLE, SAMPLE_ENTRIES_JSON)
     return try {
       Json.parseToJsonElement(rendered)
       true

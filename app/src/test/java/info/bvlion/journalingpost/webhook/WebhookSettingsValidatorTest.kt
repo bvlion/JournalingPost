@@ -154,6 +154,26 @@ class WebhookSettingsValidatorTest {
   }
 
   @Test
+  fun `headerErrorsは違反した行のindexだけを内訳として返す`() {
+    val result = validate(
+      headers = listOf(
+        WebhookHeader("Authorization", "Bearer x"),
+        WebhookHeader("", "v"),
+      ),
+    )
+
+    assertEquals(setOf(1), result.headerErrors.keys)
+    assertEquals(listOf(WebhookSettingsValidator.ValidationError.BLANK_HEADER_NAME), result.headerErrors.getValue(1))
+  }
+
+  @Test
+  fun `重複したheaderはどちらの行もheaderErrorsに載る`() {
+    val result = validate(headers = listOf(WebhookHeader("X-Key", "a"), WebhookHeader("x-key", "b")))
+
+    assertEquals(setOf(0, 1), result.headerErrors.keys)
+  }
+
+  @Test
   fun `複数の違反がある場合は全てのvalidation errorを返す`() {
     val result = validate(
       url = "not a url",

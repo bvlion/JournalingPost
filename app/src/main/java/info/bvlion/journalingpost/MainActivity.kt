@@ -151,12 +151,12 @@ class MainActivity : ComponentActivity() {
                 }
                 val webhookSettingsLoadState by settingsViewModel.webhookSettingsLoadState.collectAsState()
                 val webhookFormState by settingsViewModel.webhookFormState.collectAsState()
-                val webhookValidationErrors by settingsViewModel.webhookValidationErrors.collectAsState()
+                val webhookValidation by settingsViewModel.webhookValidation.collectAsState()
                 val webhookSaveResult by settingsViewModel.webhookSaveResult.collectAsState()
                 WebhookSettingsScreen(
                   loadState = webhookSettingsLoadState,
                   formState = webhookFormState,
-                  validationErrors = webhookValidationErrors,
+                  validation = webhookValidation,
                   saveResult = webhookSaveResult,
                   onShowMessage = showMessage,
                   onSaveResultShown = settingsViewModel::consumeWebhookSaveResult,

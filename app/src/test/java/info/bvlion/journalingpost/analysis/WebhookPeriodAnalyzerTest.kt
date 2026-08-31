@@ -175,9 +175,7 @@ class WebhookPeriodAnalyzerTest {
   fun `entryのmoodはmoodIdではなくemoji_labelのsnapshotで決まる`() = runTest {
     var body: String? = null
     val entries = listOf(
-      // moodIdが無くてもemoji/labelが揃っていればmoodを載せる
       entry(at = "2026-08-30T01:00:00Z", moodId = null, moodEmoji = "🙂", moodLabel = "嬉しい"),
-      // emoji/labelが欠けていればmoodIdの有無に関わらずmoodは載せない
       entry(at = "2026-08-30T02:00:00Z", moodId = "HAPPY", moodEmoji = "🙂", moodLabel = null),
     )
     val analyzer = analyzer(handler = { request -> body = String(request.body.toByteArray()); respondText("ok") })
