@@ -3,6 +3,7 @@ package info.bvlion.journalingpost
 import info.bvlion.journalingpost.mood.Mood
 import info.bvlion.journalingpost.mood.MoodRepository
 import java.io.IOException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -13,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -139,6 +141,34 @@ class MoodSettingsViewModelTest {
     assertEquals("変更中", viewModel.uiState.value.moods.single().label)
     assertFalse(viewModel.uiState.value.isSaving)
     assertEquals(listOf(MoodSettingsEvent.SaveFailed), events)
+  }
+
+  @Test
+  fun `前の画面sessionで開始した保存完了は新しいsessionを更新しない`() = runTest(dispatcher) {
+    val repository = FakeMoodRepository(listOf(mood("first", "😄", "嬉しい")))
+    val refreshStarted = CompletableDeferred<Unit>()
+    val releaseRefresh = CompletableDeferred<Unit>()
+    val viewModel = MoodSettingsViewModel(repository) {
+      refreshStarted.complete(Unit)
+      releaseRefresh.await()
+    }
+    val events = collectEvents(viewModel)
+    viewModel.onScreenOpened(screenSessionId = 1)
+    advanceUntilIdle()
+    viewModel.updateLabel("first", "保存する名称")
+
+    viewModel.save()
+    runCurrent()
+    refreshStarted.await()
+
+    viewModel.onScreenOpened(screenSessionId = 2)
+    runCurrent()
+    viewModel.updateLabel("first", "新しいsessionの編集")
+    releaseRefresh.complete(Unit)
+    advanceUntilIdle()
+
+    assertEquals("新しいsessionの編集", viewModel.uiState.value.moods.single().label)
+    assertTrue(events.isEmpty())
   }
 
   @Test

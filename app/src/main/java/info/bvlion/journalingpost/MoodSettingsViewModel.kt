@@ -78,6 +78,7 @@ class MoodSettingsViewModel(
   fun save() {
     val current = _uiState.value
     if (!current.canSave) return
+    val savingScreenSessionId = openedScreenSessionId
     val normalized = current.moods.map { draft ->
       Mood(id = draft.id, emoji = draft.emoji.trim(), label = draft.label.trim())
     }
@@ -94,6 +95,7 @@ class MoodSettingsViewModel(
         } catch (e: Exception) {
           // 設定自体は保存済みで、Widgetは次回のsystem updateでも同じRepositoryから再描画される。
         }
+        if (openedScreenSessionId != savingScreenSessionId) return@launch
         _uiState.value = MoodSettingsUiState(
           moods = normalized.map { it.toDraft() },
           isLoading = false,
@@ -102,6 +104,7 @@ class MoodSettingsViewModel(
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {
+        if (openedScreenSessionId != savingScreenSessionId) return@launch
         _uiState.value = current
         _events.send(MoodSettingsEvent.SaveFailed)
       }
