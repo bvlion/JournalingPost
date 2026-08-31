@@ -531,7 +531,6 @@ class SettingsViewModelTest {
     launch { viewModel.webhookSettingsLoadState.collect {} }
   }
 
-  // 与えたheaderを入力して保存し、header validation errorが表示された状態のViewModelを返す。
   private fun TestScope.newViewModelWithHeaderErrors(vararg headers: WebhookHeader): SettingsViewModel {
     val viewModel = SettingsViewModel(
       FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),

@@ -35,7 +35,7 @@
   <string name="analysis_history_empty">まだ解析結果がありません</string>
   <string name="analysis_run_button">解析する</string>
   <string name="analysis_running">解析中…</string>
-  <string name="analysis_pick_day_no_entries">選んだ日には記録がないため解析できません</string>
+  <string name="analysis_pick_day_no_entries">この日は記録がありません</string>
   <string name="analysis_completed">解析が完了しました</string>
   <!-- %1$s 対象期間の開始、%2$s 対象期間の終了 -->
   <string name="analysis_card_period">対象期間：%1$s 〜 %2$s</string>

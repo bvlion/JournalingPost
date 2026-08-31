@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -171,6 +172,7 @@ private fun AnalysisTrigger(
     }
 
     val checked = candidateDay as? CandidateDayState.Checked
+    val selectedDayHasNoEntries = checked != null && checked.day == pickedDay && !checked.hasEntries
     val canConfirm = pickedDay != null && checked?.day == pickedDay && checked.hasEntries
 
     DatePickerDialog(
@@ -192,20 +194,32 @@ private fun AnalysisTrigger(
         }
       },
     ) {
-      DatePicker(state = datePickerState)
-      // 「解析する」が押せない理由を、確定ボタンのすぐ上・同じ端側に supporting text として出す。
-      // エラーではなく実行条件を満たしていないことの事前提示なので、色は通常のsupporting text色にする。
-      if (checked != null && checked.day == pickedDay && !checked.hasEntries) {
-        Text(
-          text = stringResource(R.string.analysis_pick_day_no_entries),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-          modifier = Modifier
-            .align(Alignment.End)
-            .padding(horizontal = 24.dp)
-            .padding(top = 8.dp),
-        )
-      }
+      val dateFormatter = remember { DatePickerDefaults.dateFormatter() }
+      DatePicker(
+        state = datePickerState,
+        dateFormatter = dateFormatter,
+        headline = {
+          // 0件かどうかは「選択した日の状態」なので、DatePickerが選択日を見せるheadline領域へ含める。
+          // エラーではなく実行条件の事前提示なので、色は通常のsupporting text色にする。
+          Column(
+            modifier = Modifier.padding(start = 24.dp, end = 12.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            DatePickerDefaults.DatePickerHeadline(
+              selectedDateMillis = datePickerState.selectedDateMillis,
+              displayMode = datePickerState.displayMode,
+              dateFormatter = dateFormatter,
+            )
+            if (selectedDayHasNoEntries) {
+              Text(
+                text = stringResource(R.string.analysis_pick_day_no_entries),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+          }
+        },
+      )
     }
   }
 }
