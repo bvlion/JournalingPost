@@ -149,9 +149,23 @@ class SettingsViewModel(
     _webhookValidation.update { it.copy(all = it.all - kinds.toSet()) }
   }
 
-  private fun clearHeaderValidation() {
-    _webhookValidation.update {
-      it.copy(all = it.all - WebhookSettingsValidator.HEADER_ERRORS, headerErrors = emptyMap())
+  /**
+   * 表示中のheader errorを現在の入力へ追随させる。header errorがまだ1つも出ていない状態では、
+   * 保存前に先回りしてerrorを出さないため何もしない。1行だけ直しても未修正行のerrorは残り、
+   * 重複解消やindexのずれは再検証で現在の入力に合う内訳へ更新される。
+   */
+  private fun refreshHeaderValidation() {
+    _webhookValidation.update { current ->
+      val headerErrorShown = current.headerErrors.isNotEmpty() ||
+        current.all.any { it in WebhookSettingsValidator.HEADER_ERRORS }
+      if (!headerErrorShown) return@update current
+
+      val headerErrors = WebhookSettingsValidator.validateHeaders(_webhookFormState.value.headers)
+      current.copy(
+        all = current.all.filterNot { it in WebhookSettingsValidator.HEADER_ERRORS } +
+          WebhookSettingsValidator.HEADER_ERRORS.filter { kind -> headerErrors.values.any { kind in it } },
+        headerErrors = headerErrors,
+      )
     }
   }
 
@@ -231,26 +245,26 @@ class SettingsViewModel(
 
   fun addWebhookHeader() {
     updateWebhookForm { it.copy(headers = it.headers + WebhookHeader(name = "", value = "")) }
-    clearHeaderValidation()
+    refreshHeaderValidation()
   }
 
   fun removeWebhookHeader(index: Int) {
     updateWebhookForm { state -> state.copy(headers = state.headers.filterIndexed { i, _ -> i != index }) }
-    clearHeaderValidation()
+    refreshHeaderValidation()
   }
 
   fun updateWebhookHeaderName(index: Int, name: String) {
     updateWebhookForm { state ->
       state.copy(headers = state.headers.mapIndexed { i, header -> if (i == index) header.copy(name = name) else header })
     }
-    clearHeaderValidation()
+    refreshHeaderValidation()
   }
 
   fun updateWebhookHeaderValue(index: Int, value: String) {
     updateWebhookForm { state ->
       state.copy(headers = state.headers.mapIndexed { i, header -> if (i == index) header.copy(value = value) else header })
     }
-    clearHeaderValidation()
+    refreshHeaderValidation()
   }
 
   fun updateWebhookBodyTemplate(bodyTemplate: String) {

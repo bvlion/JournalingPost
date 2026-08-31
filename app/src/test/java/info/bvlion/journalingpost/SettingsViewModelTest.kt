@@ -292,7 +292,7 @@ class SettingsViewModelTest {
   }
 
   @Test
-  fun `ヘッダーを直すとヘッダーのvalidation errorがindexごと消える`() = runTest(dispatcher) {
+  fun `ヘッダーを直すとその行のvalidation errorだけ消える`() = runTest(dispatcher) {
     val viewModel = SettingsViewModel(
       FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
       FakeWebhookSettingsRepository(),
@@ -305,6 +305,89 @@ class SettingsViewModelTest {
     assertTrue(viewModel.webhookValidation.value.all.contains(WebhookSettingsValidator.ValidationError.BLANK_HEADER_NAME))
 
     viewModel.updateWebhookHeaderName(0, "Authorization")
+
+    assertTrue(viewModel.webhookValidation.value.isEmpty)
+    assertTrue(viewModel.webhookValidation.value.headerErrors.isEmpty())
+  }
+
+  @Test
+  fun `複数ヘッダーで別々のerrorがある状態で1行だけ直すと未修正行のerrorは残る`() = runTest(dispatcher) {
+    val viewModel = newViewModelWithHeaderErrors(
+      WebhookHeader("", "v"),
+      WebhookHeader("X:bad", "v"),
+    )
+
+    assertEquals(
+      mapOf(
+        0 to listOf(WebhookSettingsValidator.ValidationError.BLANK_HEADER_NAME),
+        1 to listOf(WebhookSettingsValidator.ValidationError.INVALID_HEADER_SYNTAX),
+      ),
+      viewModel.webhookValidation.value.headerErrors,
+    )
+
+    viewModel.updateWebhookHeaderName(0, "Authorization")
+
+    assertEquals(
+      mapOf(1 to listOf(WebhookSettingsValidator.ValidationError.INVALID_HEADER_SYNTAX)),
+      viewModel.webhookValidation.value.headerErrors,
+    )
+  }
+
+  @Test
+  fun `Header名の重複errorが出ている状態でvalueだけ変えても重複errorは消えない`() = runTest(dispatcher) {
+    val viewModel = newViewModelWithHeaderErrors(
+      WebhookHeader("X-Key", "a"),
+      WebhookHeader("x-key", "b"),
+    )
+    assertEquals(setOf(0, 1), viewModel.webhookValidation.value.headerErrors.keys)
+
+    viewModel.updateWebhookHeaderValue(0, "changed")
+
+    assertEquals(setOf(0, 1), viewModel.webhookValidation.value.headerErrors.keys)
+    assertTrue(
+      viewModel.webhookValidation.value.all.contains(WebhookSettingsValidator.ValidationError.DUPLICATE_HEADER_NAME),
+    )
+  }
+
+  @Test
+  fun `Header名を直して重複が解消されると関係した各行の重複errorも解消される`() = runTest(dispatcher) {
+    val viewModel = newViewModelWithHeaderErrors(
+      WebhookHeader("X-Key", "a"),
+      WebhookHeader("x-key", "b"),
+    )
+
+    viewModel.updateWebhookHeaderName(1, "X-Other")
+
+    assertTrue(viewModel.webhookValidation.value.isEmpty)
+    assertTrue(viewModel.webhookValidation.value.headerErrors.isEmpty())
+  }
+
+  @Test
+  fun `Headerを削除しても残った行のvalidation表示が別行へずれない`() = runTest(dispatcher) {
+    val viewModel = newViewModelWithHeaderErrors(
+      WebhookHeader("Authorization", "v"),
+      WebhookHeader("", "v"),
+    )
+    assertEquals(setOf(1), viewModel.webhookValidation.value.headerErrors.keys)
+
+    viewModel.removeWebhookHeader(0)
+
+    assertEquals(
+      mapOf(0 to listOf(WebhookSettingsValidator.ValidationError.BLANK_HEADER_NAME)),
+      viewModel.webhookValidation.value.headerErrors,
+    )
+  }
+
+  @Test
+  fun `header errorが出ていない状態でヘッダーを編集しても先回りでerrorを出さない`() = runTest(dispatcher) {
+    val viewModel = SettingsViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+
+    viewModel.addWebhookHeader()
+    viewModel.updateWebhookHeaderName(0, "")
+    viewModel.updateWebhookHeaderValue(0, "v")
 
     assertTrue(viewModel.webhookValidation.value.isEmpty)
     assertTrue(viewModel.webhookValidation.value.headerErrors.isEmpty())
@@ -446,6 +529,23 @@ class SettingsViewModelTest {
     launch { viewModel.selectedAnalysisIntegration.collect {} }
     launch { viewModel.webhookDestinationLabel.collect {} }
     launch { viewModel.webhookSettingsLoadState.collect {} }
+  }
+
+  // 与えたheaderを入力して保存し、header validation errorが表示された状態のViewModelを返す。
+  private fun TestScope.newViewModelWithHeaderErrors(vararg headers: WebhookHeader): SettingsViewModel {
+    val viewModel = SettingsViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+    viewModel.updateWebhookUrl("https://hooks.example.com/webhook")
+    headers.forEachIndexed { index, header ->
+      viewModel.addWebhookHeader()
+      viewModel.updateWebhookHeaderName(index, header.name)
+      viewModel.updateWebhookHeaderValue(index, header.value)
+    }
+    viewModel.saveWebhookSettings()
+    advanceUntilIdle()
+    return viewModel
   }
 
   private fun fillValidForm(viewModel: SettingsViewModel) {

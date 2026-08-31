@@ -61,6 +61,13 @@ object WebhookSettingsValidator {
     return Result(errors, normalizedHeaders, headerErrors)
   }
 
+  /**
+   * header入力だけを再検証してindex別内訳を返す。保存前でも、表示済みのheader errorを現在の入力へ
+   * 追随させる(1行直しても未修正行のerrorは残す / 重複解消は関係行へ反映)ために使う。
+   */
+  fun validateHeaders(headers: List<WebhookHeader>): Map<Int, List<ValidationError>> =
+    headerErrors(headers.map { it.copy(name = it.name.trim()) })
+
   private fun headerErrors(normalizedHeaders: List<WebhookHeader>): Map<Int, List<ValidationError>> {
     val lowerNames = normalizedHeaders.map { it.name.lowercase() }
     val duplicatedLowerNames = lowerNames
