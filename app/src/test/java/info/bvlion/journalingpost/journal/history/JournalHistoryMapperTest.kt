@@ -1,6 +1,5 @@
 package info.bvlion.journalingpost.journal.history
 
-import info.bvlion.journalingpost.journal.DeliveryStatus
 import info.bvlion.journalingpost.journal.JournalEntry
 import info.bvlion.journalingpost.journal.JournalSource
 import java.time.Instant
@@ -28,7 +27,6 @@ class JournalHistoryMapperTest {
     moodLabel = moodLabel,
     note = note,
     source = JournalSource.APP,
-    deliveryStatus = DeliveryStatus.NOT_REQUIRED,
   )
 
   @Test

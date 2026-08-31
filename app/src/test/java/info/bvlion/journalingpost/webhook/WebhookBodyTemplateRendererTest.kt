@@ -5,176 +5,85 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WebhookBodyTemplateRendererTest {
+  private val entriesJson = """[{"recordedAt":"2026-08-30T01:00:00Z","note":"メモ"}]"""
+
   @Test
-  fun `messageのplaceholderが置換される`() {
-    val result = WebhookBodyTemplateRenderer.render(
-      template = """{"text": "{{message}}"}""",
-      message = "today was good",
-      timestamp = "1700000000.000000",
+  fun `periodとentriesのplaceholderを展開する`() {
+    val rendered = WebhookBodyTemplateRenderer.render(
+      template = WebhookBodyTemplateRenderer.DEFAULT_TEMPLATE,
+      periodStart = "2026-08-30T00:00:00Z",
+      periodEnd = "2026-08-31T00:00:00Z",
+      entriesJson = entriesJson,
     )
 
-    val json = (result as WebhookBodyTemplateRenderer.Result.Success).json
-    assertEquals("today was good", Json.parseToJsonElement(json).jsonObject["text"]?.jsonPrimitive?.content)
+    val json = Json.parseToJsonElement(rendered).jsonObject
+    assertEquals("2026-08-30T00:00:00Z", json.getValue("period").jsonObject.getValue("start").jsonPrimitive.content)
+    assertEquals("2026-08-31T00:00:00Z", json.getValue("period").jsonObject.getValue("end").jsonPrimitive.content)
+    val entries = json.getValue("entries").jsonArray
+    assertEquals(1, entries.size)
+    assertEquals("メモ", entries[0].jsonObject.getValue("note").jsonPrimitive.content)
   }
 
   @Test
-  fun `timestampのplaceholderが置換される`() {
-    val result = WebhookBodyTemplateRenderer.render(
-      template = """{"ts": "{{timestamp}}"}""",
-      message = "today was good",
-      timestamp = "1700000000.123000",
+  fun `entriesはraw JSON値として引用符なしで差し込まれる`() {
+    val rendered = WebhookBodyTemplateRenderer.render(
+      template = """{"entries": {{entries}}}""",
+      periodStart = "s",
+      periodEnd = "e",
+      entriesJson = "[]",
     )
 
-    val json = (result as WebhookBodyTemplateRenderer.Result.Success).json
-    assertEquals("1700000000.123000", Json.parseToJsonElement(json).jsonObject["ts"]?.jsonPrimitive?.content)
+    assertEquals("""{"entries": []}""", rendered)
   }
 
   @Test
-  fun `quoteを含むmessageでも有効なJSONになる`() {
-    val result = WebhookBodyTemplateRenderer.render(
-      template = """{"text": "{{message}}"}""",
-      message = """今日は"良かった"""",
-      timestamp = "0",
+  fun `未知のplaceholderは置換されずそのまま残る`() {
+    val rendered = WebhookBodyTemplateRenderer.render(
+      template = """{"a": "{{unknown}}", "b": "{{periodStart}}"}""",
+      periodStart = "2026-08-30T00:00:00Z",
+      periodEnd = "2026-08-31T00:00:00Z",
+      entriesJson = "[]",
     )
 
-    val json = (result as WebhookBodyTemplateRenderer.Result.Success).json
-    assertEquals("""今日は"良かった"""", Json.parseToJsonElement(json).jsonObject["text"]?.jsonPrimitive?.content)
+    assertEquals("""{"a": "{{unknown}}", "b": "2026-08-30T00:00:00Z"}""", rendered)
   }
 
   @Test
-  fun `backslashを含むmessageでも有効なJSONになる`() {
-    val result = WebhookBodyTemplateRenderer.render(
-      template = """{"text": "{{message}}"}""",
-      message = """C:\path\to\file""",
-      timestamp = "0",
+  fun `entries内に現れるplaceholder風の文字列は置換対象にならない`() {
+    // periodStart/periodEndを先に置換し、そのあとentriesを差し込むため、entryのnote等に
+    // {{periodStart}} が入っていてもそのまま送られる。
+    val rendered = WebhookBodyTemplateRenderer.render(
+      template = """{"entries": {{entries}}}""",
+      periodStart = "REPLACED",
+      periodEnd = "e",
+      entriesJson = """[{"note":"{{periodStart}}"}]""",
     )
 
-    val json = (result as WebhookBodyTemplateRenderer.Result.Success).json
-    assertEquals("""C:\path\to\file""", Json.parseToJsonElement(json).jsonObject["text"]?.jsonPrimitive?.content)
+    assertEquals("""{"entries": [{"note":"{{periodStart}}"}]}""", rendered)
   }
 
   @Test
-  fun `改行を含むmessageでも有効なJSONになる`() {
-    val result = WebhookBodyTemplateRenderer.render(
-      template = """{"text": "{{message}}"}""",
-      message = "今日は\"良かった\"\n次も頑張る",
-      timestamp = "0",
-    )
-
-    val json = (result as WebhookBodyTemplateRenderer.Result.Success).json
-    assertEquals("今日は\"良かった\"\n次も頑張る", Json.parseToJsonElement(json).jsonObject["text"]?.jsonPrimitive?.content)
+  fun `初期templateはrendersValidJsonを満たす`() {
+    assertTrue(WebhookBodyTemplateRenderer.rendersValidJson(WebhookBodyTemplateRenderer.DEFAULT_TEMPLATE))
   }
 
   @Test
-  fun `placeholderが文字列の一部として利用できる場合も安全に置換される`() {
-    val result = WebhookBodyTemplateRenderer.render(
-      template = """{"text": "message: {{message}} at {{timestamp}}"}""",
-      message = "today was good",
-      timestamp = "1700000000.000000",
-    )
-
-    val json = (result as WebhookBodyTemplateRenderer.Result.Success).json
-    assertEquals(
-      "message: today was good at 1700000000.000000",
-      Json.parseToJsonElement(json).jsonObject["text"]?.jsonPrimitive?.content,
-    )
+  fun `entriesを引用符で囲むとrendersValidJsonがfalse`() {
+    assertFalse(WebhookBodyTemplateRenderer.rendersValidJson("""{"entries": "{{entries}}"}"""))
   }
 
   @Test
-  fun `ネストしたobjectやarray内のplaceholderも置換される`() {
-    val result = WebhookBodyTemplateRenderer.render(
-      template = """{"event": {"items": ["{{message}}"], "ts": "{{timestamp}}"}}""",
-      message = "today was good",
-      timestamp = "1700000000.000000",
-    )
-
-    val json = (result as WebhookBodyTemplateRenderer.Result.Success).json
-    val event = Json.parseToJsonElement(json).jsonObject["event"]!!.jsonObject
-    assertEquals("today was good", event["items"]!!.jsonArray.single().jsonPrimitive.content)
-    assertEquals("1700000000.000000", event["ts"]?.jsonPrimitive?.content)
+  fun `未知placeholderがJSON構造を壊すとrendersValidJsonがfalse`() {
+    assertFalse(WebhookBodyTemplateRenderer.rendersValidJson("""{"x": {{unknown}}}"""))
   }
 
   @Test
-  fun `unsupportedなplaceholderは拒否される`() {
-    val result = WebhookBodyTemplateRenderer.render(
-      template = """{"text": "{{mood}}"}""",
-      message = "today was good",
-      timestamp = "0",
-    )
-
-    assertTrue(result is WebhookBodyTemplateRenderer.Result.Failure.UnsupportedPlaceholder)
-    assertEquals("mood", (result as WebhookBodyTemplateRenderer.Result.Failure.UnsupportedPlaceholder).name)
-  }
-
-  @Test
-  fun `raw JSON fragmentとしてのplaceholder利用は不正JSONとして拒否される`() {
-    val result = WebhookBodyTemplateRenderer.render(
-      template = """{"value": {{message}}}""",
-      message = "today was good",
-      timestamp = "0",
-    )
-
-    assertTrue(result is WebhookBodyTemplateRenderer.Result.Failure.InvalidJson)
-  }
-
-  @Test
-  fun `不正なJSONは拒否される`() {
-    val result = WebhookBodyTemplateRenderer.render(
-      template = "{not valid json",
-      message = "today was good",
-      timestamp = "0",
-    )
-
-    assertTrue(result is WebhookBodyTemplateRenderer.Result.Failure.InvalidJson)
-  }
-
-  @Test
-  fun `object key上のplaceholderは名前がmessageと一致していても拒否される`() {
-    val result = WebhookBodyTemplateRenderer.render(
-      template = """{"{{message}}": "value"}""",
-      message = "today was good",
-      timestamp = "0",
-    )
-
-    assertTrue(result is WebhookBodyTemplateRenderer.Result.Failure.UnsupportedPlaceholder)
-  }
-
-  @Test
-  fun `hyphenを含むplaceholder記法は拒否される`() {
-    val result = WebhookBodyTemplateRenderer.render(
-      template = """{"text": "{{foo-bar}}"}""",
-      message = "today was good",
-      timestamp = "0",
-    )
-
-    assertTrue(result is WebhookBodyTemplateRenderer.Result.Failure.UnsupportedPlaceholder)
-    assertEquals("foo-bar", (result as WebhookBodyTemplateRenderer.Result.Failure.UnsupportedPlaceholder).name)
-  }
-
-  @Test
-  fun `内側に空白を含むplaceholder記法は拒否される`() {
-    val result = WebhookBodyTemplateRenderer.render(
-      template = """{"text": "{{ message }}"}""",
-      message = "today was good",
-      timestamp = "0",
-    )
-
-    assertTrue(result is WebhookBodyTemplateRenderer.Result.Failure.UnsupportedPlaceholder)
-    assertEquals(" message ", (result as WebhookBodyTemplateRenderer.Result.Failure.UnsupportedPlaceholder).name)
-  }
-
-  @Test
-  fun `厳密な記法のplaceholderを含むtemplateは成功する`() {
-    val result = WebhookBodyTemplateRenderer.render(
-      template = """{"text":"{{message}}"}""",
-      message = "today was good",
-      timestamp = "0",
-    )
-
-    assertTrue(result is WebhookBodyTemplateRenderer.Result.Success)
+  fun `未知placeholderが文字列内ならrendersValidJsonはtrue`() {
+    assertTrue(WebhookBodyTemplateRenderer.rendersValidJson("""{"x": "{{unknown}}", "entries": {{entries}}}"""))
   }
 }

@@ -11,16 +11,14 @@ class LocalOnlyJournalRecorderTest {
   private val fixedNow = Instant.ofEpochSecond(1_700_000_000L)
 
   @Test
-  fun `記録はNOT_REQUIREDで保存され戻り値もNOT_REQUIREDになる`() = runTest {
+  fun `記録は端末へローカル保存される`() = runTest {
     val repository = FakeJournalEntryRepository()
     val recorder = LocalOnlyJournalRecorder(repository, now = { fixedNow })
 
-    val result = recorder.record("today was good", mood = null, source = JournalSource.APP)
+    recorder.record("today was good", mood = null, source = JournalSource.APP)
 
-    assertEquals(DeliveryStatus.NOT_REQUIRED, result)
     val entry = repository.entries.values.single()
     assertEquals("today was good", entry.note)
-    assertEquals(DeliveryStatus.NOT_REQUIRED, entry.deliveryStatus)
     assertEquals(fixedNow, entry.timestamp)
   }
 
@@ -42,13 +40,7 @@ class LocalOnlyJournalRecorderTest {
 
   @Test
   fun `ローカル保存自体が失敗した場合は例外がそのまま伝播する`() = runTest {
-    val repository = object : JournalEntryRepository {
-      override suspend fun insert(entry: JournalEntry): Long = throw RuntimeException("db boom")
-
-      override suspend fun updateDeliveryStatus(id: Long, status: DeliveryStatus) {
-        error("must not be called")
-      }
-    }
+    val repository = JournalEntryRepository { throw RuntimeException("db boom") }
     val recorder = LocalOnlyJournalRecorder(repository, now = { fixedNow })
 
     var thrown: Throwable? = null
@@ -69,10 +61,6 @@ class LocalOnlyJournalRecorderTest {
       val id = nextId++
       entries[id] = entry.copy(id = id)
       return id
-    }
-
-    override suspend fun updateDeliveryStatus(id: Long, status: DeliveryStatus) {
-      error("Local onlyではdeliveryStatus更新は行われない")
     }
   }
 }

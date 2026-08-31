@@ -11,7 +11,6 @@ class MoodEntryUiStateTest {
     assertTrue(MainViewModel.UiState.INIT.acceptsNewMoodEntry())
     assertTrue(MainViewModel.UiState.FAILURE.acceptsNewMoodEntry())
     assertTrue(MainViewModel.UiState.SUCCESS.acceptsNewMoodEntry())
-    assertTrue(MainViewModel.UiState.SUCCESS_DELIVERY_FAILED.acceptsNewMoodEntry())
   }
 
   @Test

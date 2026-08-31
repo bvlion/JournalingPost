@@ -2,10 +2,12 @@ package info.bvlion.journalingpost
 
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
+import info.bvlion.journalingpost.webhook.WebhookBodyTemplateRenderer
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettings
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
 import info.bvlion.journalingpost.webhook.WebhookSettingsState
+import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -108,7 +110,7 @@ class SettingsViewModelTest {
       WebhookSettings(
         url = "https://hooks.example.com/path?token=secret",
         headers = emptyList(),
-        bodyTemplate = validBody,
+        bodyTemplate = "{}",
       ),
     )
     val viewModel = SettingsViewModel(integrationRepository, webhookRepository)
@@ -168,7 +170,80 @@ class SettingsViewModelTest {
 
     assertEquals(1, webhookRepository.saveCallCount)
     assertEquals(AnalysisIntegration.CUSTOM_WEBHOOK, integrationRepository.current)
-    assertFalse(viewModel.webhookSaveFailed.value)
+    assertEquals(WebhookSaveResult.SUCCEEDED, viewModel.webhookSaveResult.value)
+  }
+
+  @Test
+  fun `Webhook設定の保存に成功するとSUCCEEDEDになりconsumeでnullへ戻る`() = runTest(dispatcher) {
+    val viewModel = SettingsViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+    fillValidForm(viewModel)
+
+    viewModel.saveWebhookSettings()
+    advanceUntilIdle()
+
+    assertEquals(WebhookSaveResult.SUCCEEDED, viewModel.webhookSaveResult.value)
+
+    viewModel.consumeWebhookSaveResult()
+
+    assertNull(viewModel.webhookSaveResult.value)
+  }
+
+  @Test
+  fun `Webhook設定は保存できてもCustom Webhook有効化に失敗したらACTIVATION_FAILEDにする`() = runTest(dispatcher) {
+    val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE, failNextSets = 1)
+    val webhookRepository = FakeWebhookSettingsRepository()
+    val viewModel = SettingsViewModel(integrationRepository, webhookRepository)
+    fillValidForm(viewModel)
+
+    viewModel.saveWebhookSettings()
+    advanceUntilIdle()
+
+    assertEquals(1, webhookRepository.saveCallCount)
+    assertEquals(AnalysisIntegration.NONE, integrationRepository.current)
+    assertEquals(WebhookSaveResult.ACTIVATION_FAILED, viewModel.webhookSaveResult.value)
+    // Webhook画面のSnackbarで伝えるので、親Settingsのエラー表示は二重に出さない。
+    assertFalse(viewModel.integrationSaveFailed.value)
+  }
+
+  @Test
+  fun `Unavailableから復旧して既存設定を読み込んでも有効化に失敗したらACTIVATION_FAILEDにする`() = runTest(dispatcher) {
+    val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE, failNextSets = 1)
+    val webhookRepository = FakeWebhookSettingsRepository(initialState = WebhookSettingsState.Unavailable)
+    val viewModel = SettingsViewModel(integrationRepository, webhookRepository)
+    val collection = collectState(viewModel)
+
+    viewModel.setAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK)
+    advanceUntilIdle()
+    assertTrue(viewModel.webhookSetupRequested.value)
+
+    webhookRepository.emit(WebhookSettingsState.Configured(configuredSettings()))
+    viewModel.onWebhookSettingsScreenOpened()
+    advanceUntilIdle()
+
+    assertEquals(AnalysisIntegration.NONE, integrationRepository.current)
+    assertEquals(WebhookSaveResult.ACTIVATION_FAILED, viewModel.webhookSaveResult.value)
+    assertFalse(viewModel.integrationSaveFailed.value)
+
+    viewModel.consumeWebhookSaveResult()
+    assertNull(viewModel.webhookSaveResult.value)
+    collection.cancel()
+  }
+
+  @Test
+  fun `Webhook設定の保存失敗時はFAILEDになる`() = runTest(dispatcher) {
+    val viewModel = SettingsViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(failNextSaves = 1),
+    )
+    fillValidForm(viewModel)
+
+    viewModel.saveWebhookSettings()
+    advanceUntilIdle()
+
+    assertEquals(WebhookSaveResult.FAILED, viewModel.webhookSaveResult.value)
   }
 
   @Test
@@ -182,7 +257,7 @@ class SettingsViewModelTest {
     advanceUntilIdle()
 
     assertEquals(AnalysisIntegration.NONE, integrationRepository.current)
-    assertTrue(viewModel.webhookSaveFailed.value)
+    assertEquals(WebhookSaveResult.FAILED, viewModel.webhookSaveResult.value)
   }
 
   @Test
@@ -190,13 +265,195 @@ class SettingsViewModelTest {
     val webhookRepository = FakeWebhookSettingsRepository()
     val viewModel = SettingsViewModel(FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE), webhookRepository)
     viewModel.updateWebhookUrl("not a url")
-    viewModel.updateWebhookBodyTemplate(validBody)
 
     viewModel.saveWebhookSettings()
     advanceUntilIdle()
 
     assertEquals(0, webhookRepository.saveCallCount)
-    assertTrue(viewModel.webhookValidationErrors.value.isNotEmpty())
+    assertFalse(viewModel.webhookValidation.value.isEmpty)
+  }
+
+  @Test
+  fun `URLを直すと保存前でもURLのvalidation errorだけ消える`() = runTest(dispatcher) {
+    val viewModel = SettingsViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+    viewModel.updateWebhookUrl("not a url")
+    viewModel.updateWebhookBodyTemplate("{ not json")
+    viewModel.saveWebhookSettings()
+    advanceUntilIdle()
+    assertTrue(viewModel.webhookValidation.value.all.contains(WebhookSettingsValidator.ValidationError.INVALID_URL))
+
+    viewModel.updateWebhookUrl("https://hooks.example.com/webhook")
+
+    assertFalse(viewModel.webhookValidation.value.all.contains(WebhookSettingsValidator.ValidationError.INVALID_URL))
+    assertTrue(viewModel.webhookValidation.value.all.contains(WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE))
+  }
+
+  @Test
+  fun `ヘッダーを直すとその行のvalidation errorだけ消える`() = runTest(dispatcher) {
+    val viewModel = SettingsViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+    viewModel.updateWebhookUrl("https://hooks.example.com/webhook")
+    viewModel.addWebhookHeader()
+    viewModel.saveWebhookSettings()
+    advanceUntilIdle()
+    assertEquals(setOf(0), viewModel.webhookValidation.value.headerErrors.keys)
+    assertTrue(viewModel.webhookValidation.value.all.contains(WebhookSettingsValidator.ValidationError.BLANK_HEADER_NAME))
+
+    viewModel.updateWebhookHeaderName(0, "Authorization")
+
+    assertTrue(viewModel.webhookValidation.value.isEmpty)
+    assertTrue(viewModel.webhookValidation.value.headerErrors.isEmpty())
+  }
+
+  @Test
+  fun `複数ヘッダーで別々のerrorがある状態で1行だけ直すと未修正行のerrorは残る`() = runTest(dispatcher) {
+    val viewModel = newViewModelWithHeaderErrors(
+      WebhookHeader("", "v"),
+      WebhookHeader("X:bad", "v"),
+    )
+
+    assertEquals(
+      mapOf(
+        0 to listOf(WebhookSettingsValidator.ValidationError.BLANK_HEADER_NAME),
+        1 to listOf(WebhookSettingsValidator.ValidationError.INVALID_HEADER_SYNTAX),
+      ),
+      viewModel.webhookValidation.value.headerErrors,
+    )
+
+    viewModel.updateWebhookHeaderName(0, "Authorization")
+
+    assertEquals(
+      mapOf(1 to listOf(WebhookSettingsValidator.ValidationError.INVALID_HEADER_SYNTAX)),
+      viewModel.webhookValidation.value.headerErrors,
+    )
+  }
+
+  @Test
+  fun `Header名の重複errorが出ている状態でvalueだけ変えても重複errorは消えない`() = runTest(dispatcher) {
+    val viewModel = newViewModelWithHeaderErrors(
+      WebhookHeader("X-Key", "a"),
+      WebhookHeader("x-key", "b"),
+    )
+    assertEquals(setOf(0, 1), viewModel.webhookValidation.value.headerErrors.keys)
+
+    viewModel.updateWebhookHeaderValue(0, "changed")
+
+    assertEquals(setOf(0, 1), viewModel.webhookValidation.value.headerErrors.keys)
+    assertTrue(
+      viewModel.webhookValidation.value.all.contains(WebhookSettingsValidator.ValidationError.DUPLICATE_HEADER_NAME),
+    )
+  }
+
+  @Test
+  fun `Header名を直して重複が解消されると関係した各行の重複errorも解消される`() = runTest(dispatcher) {
+    val viewModel = newViewModelWithHeaderErrors(
+      WebhookHeader("X-Key", "a"),
+      WebhookHeader("x-key", "b"),
+    )
+
+    viewModel.updateWebhookHeaderName(1, "X-Other")
+
+    assertTrue(viewModel.webhookValidation.value.isEmpty)
+    assertTrue(viewModel.webhookValidation.value.headerErrors.isEmpty())
+  }
+
+  @Test
+  fun `Headerを削除しても残った行のvalidation表示が別行へずれない`() = runTest(dispatcher) {
+    val viewModel = newViewModelWithHeaderErrors(
+      WebhookHeader("Authorization", "v"),
+      WebhookHeader("", "v"),
+    )
+    assertEquals(setOf(1), viewModel.webhookValidation.value.headerErrors.keys)
+
+    viewModel.removeWebhookHeader(0)
+
+    assertEquals(
+      mapOf(0 to listOf(WebhookSettingsValidator.ValidationError.BLANK_HEADER_NAME)),
+      viewModel.webhookValidation.value.headerErrors,
+    )
+  }
+
+  @Test
+  fun `header errorが出ていない状態でヘッダーを編集しても先回りでerrorを出さない`() = runTest(dispatcher) {
+    val viewModel = SettingsViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+
+    viewModel.addWebhookHeader()
+    viewModel.updateWebhookHeaderName(0, "")
+    viewModel.updateWebhookHeaderValue(0, "v")
+
+    assertTrue(viewModel.webhookValidation.value.isEmpty)
+    assertTrue(viewModel.webhookValidation.value.headerErrors.isEmpty())
+  }
+
+  @Test
+  fun `リクエスト本文を直すと本文のvalidation errorが消える`() = runTest(dispatcher) {
+    val viewModel = SettingsViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+    viewModel.updateWebhookUrl("https://hooks.example.com/webhook")
+    viewModel.updateWebhookBodyTemplate("{ not json")
+    viewModel.saveWebhookSettings()
+    advanceUntilIdle()
+    assertTrue(viewModel.webhookValidation.value.all.contains(WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE))
+
+    viewModel.resetWebhookBodyTemplate()
+
+    assertTrue(viewModel.webhookValidation.value.isEmpty)
+  }
+
+  @Test
+  fun `新規設定フォームは初期Body templateから始まる`() = runTest(dispatcher) {
+    val viewModel = SettingsViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+    val collection = collectState(viewModel)
+
+    viewModel.onWebhookSettingsScreenOpened()
+    advanceUntilIdle()
+
+    assertEquals(WebhookBodyTemplateRenderer.DEFAULT_TEMPLATE, viewModel.webhookFormState.value.bodyTemplate)
+    collection.cancel()
+  }
+
+  @Test
+  fun `resetWebhookBodyTemplateで初期値へ戻る`() = runTest(dispatcher) {
+    val viewModel = SettingsViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+    viewModel.updateWebhookBodyTemplate("編集中のテンプレート")
+
+    viewModel.resetWebhookBodyTemplate()
+
+    assertEquals(WebhookBodyTemplateRenderer.DEFAULT_TEMPLATE, viewModel.webhookFormState.value.bodyTemplate)
+  }
+
+  @Test
+  fun `Body templateが有効なJSONにならないと保存しない`() = runTest(dispatcher) {
+    val webhookRepository = FakeWebhookSettingsRepository()
+    val viewModel = SettingsViewModel(FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE), webhookRepository)
+    viewModel.updateWebhookUrl("https://hooks.example.com/webhook")
+    viewModel.updateWebhookBodyTemplate("{ not json")
+
+    viewModel.saveWebhookSettings()
+    advanceUntilIdle()
+
+    assertEquals(0, webhookRepository.saveCallCount)
+    assertTrue(
+      viewModel.webhookValidation.value.all.contains(
+        WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE,
+      ),
+    )
   }
 
   @Test
@@ -274,26 +531,48 @@ class SettingsViewModelTest {
     launch { viewModel.webhookSettingsLoadState.collect {} }
   }
 
+  private fun TestScope.newViewModelWithHeaderErrors(vararg headers: WebhookHeader): SettingsViewModel {
+    val viewModel = SettingsViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+    viewModel.updateWebhookUrl("https://hooks.example.com/webhook")
+    headers.forEachIndexed { index, header ->
+      viewModel.addWebhookHeader()
+      viewModel.updateWebhookHeaderName(index, header.name)
+      viewModel.updateWebhookHeaderValue(index, header.value)
+    }
+    viewModel.saveWebhookSettings()
+    advanceUntilIdle()
+    return viewModel
+  }
+
   private fun fillValidForm(viewModel: SettingsViewModel) {
     viewModel.updateWebhookUrl("https://hooks.example.com/webhook")
     viewModel.addWebhookHeader()
     viewModel.updateWebhookHeaderName(0, "Authorization")
     viewModel.updateWebhookHeaderValue(0, "Bearer secret")
-    viewModel.updateWebhookBodyTemplate(validBody)
   }
 
   private fun configuredSettings() = WebhookSettings(
     url = "https://hooks.example.com/webhook",
     headers = listOf(WebhookHeader("Authorization", "Bearer secret")),
-    bodyTemplate = validBody,
+    bodyTemplate = """{"period":{"start":"{{periodStart}}","end":"{{periodEnd}}"},"entries":{{entries}}}""",
   )
 
-  private class FakeAnalysisIntegrationRepository(initial: AnalysisIntegration) : AnalysisIntegrationRepository {
+  private class FakeAnalysisIntegrationRepository(
+    initial: AnalysisIntegration,
+    private var failNextSets: Int = 0,
+  ) : AnalysisIntegrationRepository {
     private val state = MutableStateFlow(initial)
     override val analysisIntegration: Flow<AnalysisIntegration> = state
     val current: AnalysisIntegration get() = state.value
 
     override suspend fun setAnalysisIntegration(integration: AnalysisIntegration) {
+      if (failNextSets > 0) {
+        failNextSets--
+        throw IOException("analysis integration write failed")
+      }
       state.value = integration
     }
   }
@@ -325,6 +604,10 @@ class SettingsViewModelTest {
       private set
     var savedSettings: WebhookSettings? = initial
       private set
+
+    fun emit(newState: WebhookSettingsState) {
+      state.value = newState
+    }
 
     override suspend fun save(settings: WebhookSettings) {
       saveCallCount++
@@ -366,7 +649,4 @@ class SettingsViewModelTest {
     }
   }
 
-  private companion object {
-    const val validBody = """{"text":"{{message}}","ts":"{{timestamp}}"}"""
-  }
 }
