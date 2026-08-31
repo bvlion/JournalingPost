@@ -67,18 +67,20 @@ fun MoodSettingsScreen(
         )
       }
       itemsIndexed(uiState.moods, key = { _, mood -> mood.id }) { index, mood ->
-        MoodEditor(
-          mood = mood,
-          index = index,
-          count = uiState.moods.size,
-          isEnabled = !uiState.isSaving,
-          onEmojiChange = { onEmojiChange(mood.id, it) },
-          onLabelChange = { onLabelChange(mood.id, it) },
-          onMoveUp = { onMoveUp(mood.id) },
-          onMoveDown = { onMoveDown(mood.id) },
-          onRemove = { onRemove(mood.id) },
-        )
-        HorizontalDivider(modifier = Modifier.padding(top = 12.dp))
+        Column(modifier = Modifier.animateItem()) {
+          MoodEditor(
+            mood = mood,
+            index = index,
+            count = uiState.moods.size,
+            isEnabled = !uiState.isSaving,
+            onEmojiChange = { onEmojiChange(mood.id, it) },
+            onLabelChange = { onLabelChange(mood.id, it) },
+            onMoveUp = { onMoveUp(mood.id) },
+            onMoveDown = { onMoveDown(mood.id) },
+            onRemove = { onRemove(mood.id) },
+          )
+          HorizontalDivider(modifier = Modifier.padding(top = 12.dp))
+        }
       }
     }
 
