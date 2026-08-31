@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -28,9 +29,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import info.bvlion.journalingpost.AnalysisRunState
 import info.bvlion.journalingpost.CandidateDayState
 import info.bvlion.journalingpost.R
@@ -195,6 +198,12 @@ private fun AnalysisTrigger(
       },
     ) {
       val dateFormatter = remember { DatePickerDefaults.dateFormatter() }
+      val supplementStyle = MaterialTheme.typography.bodyMedium
+      // 補足の表示・非表示で headline の高さが変わると月表示・曜日・カレンダー・action領域が上下へ
+      // 跳ねるため、補足は常に1行ぶんの領域を確保する。0件でないときは領域だけ残して文言は置かない。
+      val supplementHeight = with(LocalDensity.current) {
+        if (supplementStyle.lineHeight.isSpecified) supplementStyle.lineHeight.toDp() else 20.dp
+      }
       DatePicker(
         state = datePickerState,
         dateFormatter = dateFormatter,
@@ -210,12 +219,14 @@ private fun AnalysisTrigger(
               displayMode = datePickerState.displayMode,
               dateFormatter = dateFormatter,
             )
-            if (selectedDayHasNoEntries) {
-              Text(
-                text = stringResource(R.string.analysis_pick_day_no_entries),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
+            Box(modifier = Modifier.height(supplementHeight)) {
+              if (selectedDayHasNoEntries) {
+                Text(
+                  text = stringResource(R.string.analysis_pick_day_no_entries),
+                  style = supplementStyle,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
             }
           }
         },
