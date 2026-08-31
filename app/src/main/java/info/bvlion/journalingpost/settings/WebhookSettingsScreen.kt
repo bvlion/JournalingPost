@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -29,12 +30,15 @@ import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.WebhookFormState
 import info.bvlion.journalingpost.WebhookSaveResult
 import info.bvlion.journalingpost.WebhookSettingsLoadState
+import info.bvlion.journalingpost.WebhookSettingsUiState
 import info.bvlion.journalingpost.WebhookValidationState
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.webhook.WebhookBodyTemplateRenderer
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /**
  * Custom Webhookを設定する画面。この画面だけで、送信先・ヘッダー・リクエスト本文・期待する成功
@@ -43,12 +47,9 @@ import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
  */
 @Composable
 fun WebhookSettingsScreen(
-  loadState: WebhookSettingsLoadState,
-  formState: WebhookFormState,
-  validation: WebhookValidationState,
-  saveResult: WebhookSaveResult?,
+  uiState: WebhookSettingsUiState,
+  saveResults: Flow<WebhookSaveResult>,
   onShowMessage: (String) -> Unit,
-  onSaveResultShown: () -> Unit,
   onUrlChange: (String) -> Unit,
   onHeaderAdd: () -> Unit,
   onHeaderRemove: (Int) -> Unit,
@@ -59,19 +60,16 @@ fun WebhookSettingsScreen(
   onSave: () -> Unit,
   onBack: () -> Unit,
 ) {
-  val saveResultMessage = saveResult?.let { stringResource(it.messageRes()) }
-  LaunchedEffect(saveResult) {
-    if (saveResultMessage != null) {
-      onShowMessage(saveResultMessage)
-      onSaveResultShown()
-    }
+  val resources = LocalResources.current
+  LaunchedEffect(saveResults) {
+    saveResults.collect { result -> onShowMessage(resources.getString(result.messageRes())) }
   }
 
   Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
     ScreenTopAppBar(title = stringResource(R.string.settings_webhook_item), onBack = onBack)
 
     Column(modifier = Modifier.padding(16.dp)) {
-      when (loadState) {
+      when (uiState.loadState) {
         // authoritativeな状態が分かるまではフォームを表示しない
         // (既存設定を誤って空フォームで上書きしないため)。
         WebhookSettingsLoadState.LOADING -> Text(
@@ -85,8 +83,8 @@ fun WebhookSettingsScreen(
         )
 
         WebhookSettingsLoadState.READY -> WebhookSettingsForm(
-          formState = formState,
-          validation = validation,
+          formState = uiState.form,
+          validation = uiState.validation,
           onUrlChange = onUrlChange,
           onHeaderAdd = onHeaderAdd,
           onHeaderRemove = onHeaderRemove,
@@ -325,15 +323,15 @@ private fun WebhookSettingsValidator.ValidationError.messageRes(): Int = when (t
 fun WebhookSettingsScreenPreview() {
   JournalingPostTheme {
     WebhookSettingsScreen(
-      loadState = WebhookSettingsLoadState.READY,
-      formState = WebhookFormState(
-        url = "https://hooks.example.com/services/xxx",
-        headers = listOf(WebhookHeader("Authorization", "Bearer xxxxx")),
+      uiState = WebhookSettingsUiState(
+        loadState = WebhookSettingsLoadState.READY,
+        form = WebhookFormState(
+          url = "https://hooks.example.com/services/xxx",
+          headers = listOf(WebhookHeader("Authorization", "Bearer xxxxx")),
+        ),
       ),
-      validation = WebhookValidationState(),
-      saveResult = null,
+      saveResults = emptyFlow(),
       onShowMessage = {},
-      onSaveResultShown = {},
       onUrlChange = {},
       onHeaderAdd = {},
       onHeaderRemove = {},

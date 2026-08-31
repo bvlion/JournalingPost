@@ -12,7 +12,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -20,6 +19,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.R
+import info.bvlion.journalingpost.SettingsUiState
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 
@@ -30,23 +30,10 @@ import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
  */
 @Composable
 fun SettingsScreen(
-  selectedIntegration: AnalysisIntegration?,
-  integrationSaveFailed: Boolean,
-  onShowMessage: (String) -> Unit,
-  onIntegrationSaveFailedShown: () -> Unit,
+  uiState: SettingsUiState,
   onAnalysisIntegrationChange: (AnalysisIntegration) -> Unit,
-  webhookConfigured: Boolean,
-  webhookDestinationLabel: String?,
   onWebhookSettingsOpen: () -> Unit,
 ) {
-  val integrationSaveFailedMessage = stringResource(R.string.settings_integration_save_failed)
-  LaunchedEffect(integrationSaveFailed) {
-    if (integrationSaveFailed) {
-      onShowMessage(integrationSaveFailedMessage)
-      onIntegrationSaveFailedShown()
-    }
-  }
-
   Column(modifier = Modifier.fillMaxWidth()) {
     ScreenTopAppBar(title = stringResource(R.string.tab_settings))
 
@@ -59,23 +46,23 @@ fun SettingsScreen(
       Column(modifier = Modifier.padding(top = 8.dp).selectableGroup()) {
         AnalysisIntegrationOption(
           title = stringResource(R.string.settings_integration_none),
-          selected = selectedIntegration == AnalysisIntegration.NONE,
+          selected = uiState.selectedIntegration == AnalysisIntegration.NONE,
           onClick = { onAnalysisIntegrationChange(AnalysisIntegration.NONE) },
         )
         AnalysisIntegrationOption(
           title = stringResource(R.string.settings_integration_custom_webhook),
-          selected = selectedIntegration == AnalysisIntegration.CUSTOM_WEBHOOK,
+          selected = uiState.selectedIntegration == AnalysisIntegration.CUSTOM_WEBHOOK,
           onClick = { onAnalysisIntegrationChange(AnalysisIntegration.CUSTOM_WEBHOOK) },
         )
       }
     }
 
     // Custom Webhookが実際に有効(保存済み設定が存在する)な場合のみ、その設定項目を出す。
-    if (webhookConfigured) {
+    if (uiState.webhookConfigured) {
       ListItem(
         headlineContent = { Text(stringResource(R.string.settings_webhook_item)) },
         supportingContent = {
-          Text(webhookDestinationLabel ?: stringResource(R.string.settings_webhook_destination_unknown))
+          Text(uiState.webhookDestinationLabel ?: stringResource(R.string.settings_webhook_destination_unknown))
         },
         trailingContent = {
           Icon(painter = painterResource(R.drawable.ic_chevron_right), contentDescription = null)
@@ -104,13 +91,12 @@ private fun AnalysisIntegrationOption(
 fun SettingsScreenPreview() {
   JournalingPostTheme {
     SettingsScreen(
-      selectedIntegration = AnalysisIntegration.CUSTOM_WEBHOOK,
-      integrationSaveFailed = false,
-      onShowMessage = {},
-      onIntegrationSaveFailedShown = {},
+      uiState = SettingsUiState(
+        selectedIntegration = AnalysisIntegration.CUSTOM_WEBHOOK,
+        webhookConfigured = true,
+        webhookDestinationLabel = "https://hooks.example.com",
+      ),
       onAnalysisIntegrationChange = {},
-      webhookConfigured = true,
-      webhookDestinationLabel = "https://hooks.example.com",
       onWebhookSettingsOpen = {},
     )
   }
