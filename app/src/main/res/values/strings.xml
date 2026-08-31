@@ -41,7 +41,8 @@
   <!-- %1$s 解析日時 -->
   <string name="analysis_card_analyzed_at">解析日時：%1$s</string>
   <string name="analysis_failure_webhook_unavailable">Custom Webhookの設定を確認できませんでした</string>
-  <string name="analysis_failure_no_entries">選んだ日の記録がないため解析できませんでした</string>
+  <!-- %1$s は解析対象に選んだ日 -->
+  <string name="analysis_failure_no_entries">%1$s には記録がないため解析できませんでした</string>
   <string name="analysis_failure_local_read">端末内の記録を読み込めませんでした</string>
   <string name="analysis_failure_network">解析先と通信できませんでした</string>
   <string name="analysis_failure_server_error">解析先からエラーが返されました</string>

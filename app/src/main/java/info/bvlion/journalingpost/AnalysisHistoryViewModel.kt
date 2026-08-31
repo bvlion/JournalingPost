@@ -75,11 +75,11 @@ class AnalysisHistoryViewModel(
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {
-        _analysisRunState.value = AnalysisRunState.Failed(PeriodAnalysisOutcome.Failure.LOCAL_READ)
+        _analysisRunState.value = AnalysisRunState.Failed(PeriodAnalysisOutcome.Failure.LOCAL_READ, day)
         return@launch
       }
       if (entries.isEmpty()) {
-        _analysisRunState.value = AnalysisRunState.Failed(PeriodAnalysisOutcome.Failure.NO_ENTRIES)
+        _analysisRunState.value = AnalysisRunState.Failed(PeriodAnalysisOutcome.Failure.NO_ENTRIES, day)
         return@launch
       }
 
@@ -98,13 +98,13 @@ class AnalysisHistoryViewModel(
             AnalysisRunState.Succeeded
           }
 
-          is PeriodAnalysisOutcome.Failure -> AnalysisRunState.Failed(outcome)
+          is PeriodAnalysisOutcome.Failure -> AnalysisRunState.Failed(outcome, day)
         }
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {
         // AnalysisResult保存の失敗。JournalEntryには触れていないため、同じ日を再実行できる。
-        AnalysisRunState.Failed(null)
+        AnalysisRunState.Failed(null, day)
       }
     }
   }
@@ -115,6 +115,10 @@ sealed interface AnalysisRunState {
   data object Running : AnalysisRunState
   data object Succeeded : AnalysisRunState
 
-  /** [failure]がnullなのは、解析自体は成功したがAnalysisResultの端末保存に失敗した場合。 */
-  data class Failed(val failure: PeriodAnalysisOutcome.Failure?) : AnalysisRunState
+  /**
+   * 失敗した解析実行。[day]は実行対象に選んだ日で、対象日を含むメッセージ(NO_ENTRIES等)を
+   * 失敗理由と同じ結果から組み立てられるように持つ。[failure]がnullなのは、解析自体は成功したが
+   * AnalysisResultの端末保存に失敗した場合。
+   */
+  data class Failed(val failure: PeriodAnalysisOutcome.Failure?, val day: LocalDate) : AnalysisRunState
 }

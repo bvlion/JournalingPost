@@ -45,6 +45,9 @@ import java.util.Locale
 // 期間は時間帯まで指定され得るため(#40)、日付だけでなく時刻も表示する。
 private val analysisDateTimeFormatter = DateTimeFormatter.ofPattern("yyyy/M/d HH:mm", Locale.JAPAN)
 
+// 実行結果Snackbarで対象日を示すときの表示。
+private val analysisDayFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日", Locale.JAPAN)
+
 /**
  * 解析履歴の遷移先。#37で保存したAnalysisResultを新しい順の一覧で表示する。
  *
@@ -62,7 +65,15 @@ fun AnalysisHistoryScreen(
   onAnalyze: (LocalDate) -> Unit,
 ) {
   val completedMessage = stringResource(R.string.analysis_completed)
-  val failureMessage = (runState as? AnalysisRunState.Failed)?.let { stringResource(it.messageRes()) }
+  val failureMessage = (runState as? AnalysisRunState.Failed)?.let { failed ->
+    when (failed.failure) {
+      // 対象日をSnackbar側で持ち直さず、失敗結果に含まれる日をそのまま文言へ入れる。
+      PeriodAnalysisOutcome.Failure.NO_ENTRIES ->
+        stringResource(failed.messageRes(), failed.day.format(analysisDayFormatter))
+
+      else -> stringResource(failed.messageRes())
+    }
+  }
   LaunchedEffect(runState) {
     when (runState) {
       is AnalysisRunState.Succeeded -> {

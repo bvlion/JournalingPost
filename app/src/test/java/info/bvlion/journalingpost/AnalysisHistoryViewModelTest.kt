@@ -143,8 +143,21 @@ class AnalysisHistoryViewModelTest {
 
     assertEquals(0, analyzer.callCount)
     assertEquals(
-      AnalysisRunState.Failed(PeriodAnalysisOutcome.Failure.NO_ENTRIES),
+      AnalysisRunState.Failed(PeriodAnalysisOutcome.Failure.NO_ENTRIES, LocalDate.of(2026, 8, 30)),
       viewModel.analysisRunState.value,
+    )
+  }
+
+  @Test
+  fun `NO_ENTRIESのFailedは解析対象に選んだ日を保持する`() = runTest(testDispatcher) {
+    val viewModel = createViewModel(entryReader = FakePeriodJournalEntryReader(emptyList()))
+
+    viewModel.analyze(LocalDate.of(2026, 8, 30))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(
+      LocalDate.of(2026, 8, 30),
+      (viewModel.analysisRunState.value as AnalysisRunState.Failed).day,
     )
   }
 
@@ -161,7 +174,7 @@ class AnalysisHistoryViewModelTest {
 
     assertEquals(0, analyzer.callCount)
     assertEquals(
-      AnalysisRunState.Failed(PeriodAnalysisOutcome.Failure.LOCAL_READ),
+      AnalysisRunState.Failed(PeriodAnalysisOutcome.Failure.LOCAL_READ, LocalDate.of(2026, 8, 30)),
       viewModel.analysisRunState.value,
     )
   }
@@ -209,7 +222,7 @@ class AnalysisHistoryViewModelTest {
 
     assertTrue(writer.saved.isEmpty())
     assertEquals(
-      AnalysisRunState.Failed(PeriodAnalysisOutcome.Failure.SERVER_ERROR),
+      AnalysisRunState.Failed(PeriodAnalysisOutcome.Failure.SERVER_ERROR, LocalDate.of(2026, 8, 30)),
       viewModel.analysisRunState.value,
     )
   }
@@ -223,7 +236,7 @@ class AnalysisHistoryViewModelTest {
     viewModel.analyze(LocalDate.of(2026, 8, 30))
     testDispatcher.scheduler.advanceUntilIdle()
 
-    assertEquals(AnalysisRunState.Failed(null), viewModel.analysisRunState.value)
+    assertEquals(AnalysisRunState.Failed(null, LocalDate.of(2026, 8, 30)), viewModel.analysisRunState.value)
   }
 
   @Test
@@ -262,7 +275,7 @@ class AnalysisHistoryViewModelTest {
     testDispatcher.scheduler.advanceUntilIdle()
 
     assertEquals(
-      AnalysisRunState.Failed(PeriodAnalysisOutcome.Failure.NETWORK),
+      AnalysisRunState.Failed(PeriodAnalysisOutcome.Failure.NETWORK, LocalDate.of(2026, 8, 30)),
       viewModel.analysisRunState.value,
     )
   }
