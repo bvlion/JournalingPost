@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,9 +54,21 @@ import kotlinx.coroutines.flow.first
 class MoodWidget : GlanceAppWidget() {
   override val sizeMode: SizeMode = SizeMode.Exact
 
+  /**
+   * Glanceのsessionが動いている間、update()/updateAll()はprovideGlance自体を再実行せず、
+   * 実行中のcompositionへ更新イベントを送るだけになる。provideContentの外で読んだMoodは
+   * そのsession中ずっと固定されるため、Mood設定の保存直後にupdateAll()しても配置済み
+   * Widgetが古い並びのまま残る。composition内でMoodRepositoryを購読し、sessionが動いて
+   * いる間の変更もWidgetへ反映する。
+   *
+   * provideContent前の[first]は初回描画を空にしないための初期値取得で、購読の代わりには
+   * ならない。
+   */
   override suspend fun provideGlance(context: Context, id: GlanceId) {
-    val moods = context.moodRepository().moods.first()
+    val moodRepository = context.moodRepository()
+    val initialMoods = moodRepository.moods.first()
     provideContent {
+      val moods by moodRepository.moods.collectAsState(initialMoods)
       GlanceTheme {
         MoodWidgetContent(moods)
       }
