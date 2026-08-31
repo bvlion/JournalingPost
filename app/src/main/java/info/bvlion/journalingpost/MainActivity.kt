@@ -21,7 +21,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,8 +34,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import info.bvlion.journalingpost.analysis.AnalysisHistoryScreen
+import info.bvlion.journalingpost.di.appViewModelFactory
 import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.history.JournalHistoryScreen
 import info.bvlion.journalingpost.mood.Mood
@@ -46,22 +47,20 @@ import info.bvlion.journalingpost.mood.MoodSnapshot
 import info.bvlion.journalingpost.mood.moodCatalog
 import info.bvlion.journalingpost.settings.SettingsScreen
 import info.bvlion.journalingpost.settings.WebhookSettingsScreen
+import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-  private val viewModel: MainViewModel by viewModels { MainViewModelFactory }
-  private val historyViewModel: JournalHistoryViewModel by viewModels { JournalHistoryViewModelFactory }
-  private val analysisHistoryViewModel: AnalysisHistoryViewModel by viewModels { AnalysisHistoryViewModelFactory }
-  private val settingsViewModel: SettingsViewModel by viewModels { SettingsViewModelFactory }
+  private val viewModel: MainViewModel by viewModels { appViewModelFactory }
+  private val historyViewModel: JournalHistoryViewModel by viewModels { appViewModelFactory }
+  private val analysisHistoryViewModel: AnalysisHistoryViewModel by viewModels { appViewModelFactory }
+  private val settingsViewModel: SettingsViewModel by viewModels { appViewModelFactory }
+  private val webhookSettingsViewModel: WebhookSettingsViewModel by viewModels { appViewModelFactory }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    MainViewModelFactory.initialize(applicationContext)
-    JournalHistoryViewModelFactory.initialize(applicationContext)
-    AnalysisHistoryViewModelFactory.initialize(applicationContext)
-    SettingsViewModelFactory.initialize(applicationContext)
     enableEdgeToEdge()
 
     // Widget pickerのgenerated preview(Android 15+)登録。通常UI/入力フローには影響しない。
@@ -69,10 +68,13 @@ class MainActivity : ComponentActivity() {
 
     setContent {
       JournalingPostTheme {
-        val uiState by viewModel.uiState.collectAsState()
+        val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
         var destination by rememberSaveable { mutableStateOf(MainDestination.RECORD) }
         var showWebhookSettings by rememberSaveable { mutableStateOf(false) }
+        // Settingsで保存済み設定が無いままCustom Webhookを選んで来た場合、Webhook設定画面で既存設定が
+        // 見つかればその場で有効化する。利用者が自分で設定項目を開いた場合は有効化しない。
+        var webhookSetupPending by rememberSaveable { mutableStateOf(false) }
         var selectedMood by rememberSaveable { mutableStateOf<Mood?>(null) }
 
         val snackbarHostState = remember { SnackbarHostState() }
@@ -95,6 +97,18 @@ class MainActivity : ComponentActivity() {
         val recordInProgress = uiState == MainViewModel.UiState.LOADING ||
           uiState == MainViewModel.UiState.SUCCESS
 
+        val openWebhookSettings: (Boolean) -> Unit = { activatePendingSelection ->
+          webhookSetupPending = activatePendingSelection
+          webhookSettingsViewModel.onScreenOpened(activatePendingSelection)
+          showWebhookSettings = true
+        }
+        val closeWebhookSettings: () -> Unit = {
+          webhookSettingsViewModel.onScreenClosed()
+          settingsViewModel.onWebhookSettingsClosed()
+          webhookSetupPending = false
+          showWebhookSettings = false
+        }
+
         LaunchedEffect(destination) {
           if (destination == MainDestination.SETTINGS) settingsViewModel.onSettingsOpened()
         }
@@ -108,10 +122,7 @@ class MainActivity : ComponentActivity() {
               viewModel.resetState()
             }
             // Webhook設定はSettingsの下位画面のため、Backは1段階だけ戻す。
-            showWebhookSettings -> {
-              settingsViewModel.onWebhookSettingsScreenClosed()
-              showWebhookSettings = false
-            }
+            showWebhookSettings -> closeWebhookSettings()
             else -> destination = MainDestination.RECORD
           }
         }
@@ -147,31 +158,22 @@ class MainActivity : ComponentActivity() {
               if (showWebhookSettings) {
                 // process recreationでこの画面がそのまま復元された場合に備えたフォールバック。
                 LaunchedEffect(Unit) {
-                  settingsViewModel.ensureWebhookSettingsScreenOpened()
+                  webhookSettingsViewModel.ensureScreenOpened(webhookSetupPending)
                 }
-                val webhookSettingsLoadState by settingsViewModel.webhookSettingsLoadState.collectAsState()
-                val webhookFormState by settingsViewModel.webhookFormState.collectAsState()
-                val webhookValidation by settingsViewModel.webhookValidation.collectAsState()
-                val webhookSaveResult by settingsViewModel.webhookSaveResult.collectAsState()
+                val webhookSettingsUiState by webhookSettingsViewModel.uiState.collectAsStateWithLifecycle()
                 WebhookSettingsScreen(
-                  loadState = webhookSettingsLoadState,
-                  formState = webhookFormState,
-                  validation = webhookValidation,
-                  saveResult = webhookSaveResult,
+                  uiState = webhookSettingsUiState,
+                  saveResults = webhookSettingsViewModel.saveResults,
                   onShowMessage = showMessage,
-                  onSaveResultShown = settingsViewModel::consumeWebhookSaveResult,
-                  onUrlChange = settingsViewModel::updateWebhookUrl,
-                  onHeaderAdd = settingsViewModel::addWebhookHeader,
-                  onHeaderRemove = settingsViewModel::removeWebhookHeader,
-                  onHeaderNameChange = settingsViewModel::updateWebhookHeaderName,
-                  onHeaderValueChange = settingsViewModel::updateWebhookHeaderValue,
-                  onBodyTemplateChange = settingsViewModel::updateWebhookBodyTemplate,
-                  onBodyTemplateReset = settingsViewModel::resetWebhookBodyTemplate,
-                  onSave = settingsViewModel::saveWebhookSettings,
-                  onBack = {
-                    settingsViewModel.onWebhookSettingsScreenClosed()
-                    showWebhookSettings = false
-                  },
+                  onUrlChange = webhookSettingsViewModel::updateUrl,
+                  onHeaderAdd = webhookSettingsViewModel::addHeader,
+                  onHeaderRemove = webhookSettingsViewModel::removeHeader,
+                  onHeaderNameChange = webhookSettingsViewModel::updateHeaderName,
+                  onHeaderValueChange = webhookSettingsViewModel::updateHeaderValue,
+                  onBodyTemplateChange = webhookSettingsViewModel::updateBodyTemplate,
+                  onBodyTemplateReset = webhookSettingsViewModel::resetBodyTemplate,
+                  onSave = webhookSettingsViewModel::save,
+                  onBack = closeWebhookSettings,
                 )
               } else {
                 when (destination) {
@@ -184,58 +186,47 @@ class MainActivity : ComponentActivity() {
                   )
 
                   MainDestination.JOURNAL_HISTORY -> {
-                    val historyUiState by historyViewModel.uiState.collectAsState()
-                    val deleteFailed by historyViewModel.deleteFailed.collectAsState()
+                    val historyUiState by historyViewModel.uiState.collectAsStateWithLifecycle()
                     JournalHistoryScreen(
                       uiState = historyUiState,
-                      deleteFailed = deleteFailed,
+                      deleteFailures = historyViewModel.deleteFailures,
                       onShowMessage = showMessage,
-                      onDeleteFailedShown = historyViewModel::consumeDeleteFailed,
                       onDelete = historyViewModel::deleteEntry,
                     )
                   }
 
                   MainDestination.ANALYSIS_HISTORY -> {
-                    val analysisHistoryUiState by analysisHistoryViewModel.uiState.collectAsState()
-                    val canRunAnalysis by analysisHistoryViewModel.canRunAnalysis.collectAsState()
-                    val analysisRunState by analysisHistoryViewModel.analysisRunState.collectAsState()
+                    val analysisHistoryUiState by analysisHistoryViewModel.uiState.collectAsStateWithLifecycle()
+                    val canRunAnalysis by analysisHistoryViewModel.canRunAnalysis.collectAsStateWithLifecycle()
+                    val isAnalysisRunning by analysisHistoryViewModel.isAnalysisRunning.collectAsStateWithLifecycle()
                     AnalysisHistoryScreen(
                       uiState = analysisHistoryUiState,
                       canRunAnalysis = canRunAnalysis,
-                      runState = analysisRunState,
+                      isRunning = isAnalysisRunning,
+                      runResults = analysisHistoryViewModel.runResults,
                       onShowMessage = showMessage,
-                      onRunResultShown = analysisHistoryViewModel::consumeRunResult,
                       onAnalyze = analysisHistoryViewModel::analyze,
                     )
                   }
 
                   MainDestination.SETTINGS -> {
-                    val selectedIntegration by settingsViewModel.selectedAnalysisIntegration.collectAsState()
-                    val integrationSaveFailed by settingsViewModel.integrationSaveFailed.collectAsState()
-                    val webhookConfigured by settingsViewModel.webhookConfigured.collectAsState()
-                    val webhookDestinationLabel by settingsViewModel.webhookDestinationLabel.collectAsState()
-                    val webhookSetupRequested by settingsViewModel.webhookSetupRequested.collectAsState()
+                    val settingsUiState by settingsViewModel.uiState.collectAsStateWithLifecycle()
+                    val integrationSaveFailedMessage =
+                      stringResource(R.string.settings_integration_save_failed)
 
-                    LaunchedEffect(webhookSetupRequested) {
-                      if (webhookSetupRequested) {
-                        settingsViewModel.consumeWebhookSetupRequest()
-                        settingsViewModel.onWebhookSettingsScreenOpened()
-                        showWebhookSettings = true
+                    // Snackbar表示と下位画面への遷移はこの画面の外側が持つため、Settingsの
+                    // 一時的な結果はここで受け取る。
+                    EventEffect(settingsViewModel.events) { event ->
+                      when (event) {
+                        SettingsEvent.IntegrationSaveFailed -> showMessage(integrationSaveFailedMessage)
+                        SettingsEvent.WebhookSetupRequested -> openWebhookSettings(true)
                       }
                     }
 
                     SettingsScreen(
-                      selectedIntegration = selectedIntegration,
-                      integrationSaveFailed = integrationSaveFailed,
-                      onShowMessage = showMessage,
-                      onIntegrationSaveFailedShown = settingsViewModel::consumeIntegrationSaveFailed,
+                      uiState = settingsUiState,
                       onAnalysisIntegrationChange = settingsViewModel::setAnalysisIntegration,
-                      webhookConfigured = webhookConfigured,
-                      webhookDestinationLabel = webhookDestinationLabel,
-                      onWebhookSettingsOpen = {
-                        settingsViewModel.onWebhookSettingsScreenOpened()
-                        showWebhookSettings = true
-                      },
+                      onWebhookSettingsOpen = { openWebhookSettings(false) },
                     )
                   }
                 }

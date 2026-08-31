@@ -14,7 +14,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -28,12 +27,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.R
+import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 // 履歴が蓄積すると何年の記録か分からなくなるため、日付見出しには年も含める。
 private val historyDateFormatter = DateTimeFormatter.ofPattern("yyyy/M/d", Locale.JAPAN)
@@ -42,21 +44,15 @@ private val historyTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.J
 @Composable
 fun JournalHistoryScreen(
   uiState: JournalHistoryUiState,
-  deleteFailed: Boolean,
+  deleteFailures: Flow<Unit>,
   onShowMessage: (String) -> Unit,
-  onDeleteFailedShown: () -> Unit,
   onDelete: (Long) -> Unit,
 ) {
   // 削除確認中のentryは、回転しても対象を見失わないようidだけを保持する。
   var pendingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
 
   val deleteFailedMessage = stringResource(R.string.journal_history_delete_failed)
-  LaunchedEffect(deleteFailed) {
-    if (deleteFailed) {
-      onShowMessage(deleteFailedMessage)
-      onDeleteFailedShown()
-    }
-  }
+  EventEffect(deleteFailures) { onShowMessage(deleteFailedMessage) }
 
   Column(modifier = Modifier.fillMaxSize()) {
     ScreenTopAppBar(title = stringResource(R.string.tab_journal_history))
@@ -230,9 +226,8 @@ fun JournalHistoryScreenPreview() {
           ),
         ),
       ),
-      deleteFailed = false,
+      deleteFailures = emptyFlow(),
       onShowMessage = {},
-      onDeleteFailedShown = {},
       onDelete = {},
     )
   }

@@ -12,6 +12,7 @@ import java.time.ZoneOffset
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
@@ -21,14 +22,15 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class JournalHistoryViewModelTest {
   private val testDispatcher = StandardTestDispatcher()
+
+  // Channel由来のdeleteFailuresは購読者がいる間だけ流れるため、テスト中はこのscopeで購読し続ける。
+  private val collectorScope = CoroutineScope(testDispatcher)
 
   @Before
   fun setUp() {
@@ -37,6 +39,7 @@ class JournalHistoryViewModelTest {
 
   @After
   fun tearDown() {
+    collectorScope.cancel()
     Dispatchers.resetMain()
   }
 
@@ -105,12 +108,13 @@ class JournalHistoryViewModelTest {
   fun `deleteEntryは指定したidだけを削除対象としてdeleterへ渡す`() = runTest(testDispatcher) {
     val deleter = FakeJournalEntryDeleter()
     val viewModel = JournalHistoryViewModel(FakeJournalEntryReader(), deleter, ZoneOffset.UTC)
+    val failures = collectDeleteFailures(viewModel)
 
     viewModel.deleteEntry(2)
     testDispatcher.scheduler.advanceUntilIdle()
 
     assertEquals(listOf(2L), deleter.deletedIds)
-    assertFalse(viewModel.deleteFailed.value)
+    assertEquals(0, failures.size)
   }
 
   @Test
@@ -155,41 +159,30 @@ class JournalHistoryViewModelTest {
   }
 
   @Test
-  fun `削除に失敗すると未処理例外にならずdeleteFailedがtrueになる`() = runTest(testDispatcher) {
+  fun `削除に失敗すると未処理例外にならず削除失敗を1度だけ通知する`() = runTest(testDispatcher) {
     val deleter = FakeJournalEntryDeleter(failNextDeletes = 1)
     val viewModel = JournalHistoryViewModel(FakeJournalEntryReader(), deleter, ZoneOffset.UTC)
+    val failures = collectDeleteFailures(viewModel)
 
     viewModel.deleteEntry(1)
     testDispatcher.scheduler.advanceUntilIdle()
 
-    assertTrue(viewModel.deleteFailed.value)
+    assertEquals(1, failures.size)
   }
 
   @Test
-  fun `画面がSnackbar表示を消費すると削除失敗フラグはfalseへ戻る`() = runTest(testDispatcher) {
+  fun `削除に失敗した後に成功しても再度は通知しない`() = runTest(testDispatcher) {
     val deleter = FakeJournalEntryDeleter(failNextDeletes = 1)
     val viewModel = JournalHistoryViewModel(FakeJournalEntryReader(), deleter, ZoneOffset.UTC)
+    val failures = collectDeleteFailures(viewModel)
     viewModel.deleteEntry(1)
     testDispatcher.scheduler.advanceUntilIdle()
-    assertTrue(viewModel.deleteFailed.value)
-
-    viewModel.consumeDeleteFailed()
-
-    assertFalse(viewModel.deleteFailed.value)
-  }
-
-  @Test
-  fun `削除に失敗した後に成功するとdeleteFailedがfalseへ戻る`() = runTest(testDispatcher) {
-    val deleter = FakeJournalEntryDeleter(failNextDeletes = 1)
-    val viewModel = JournalHistoryViewModel(FakeJournalEntryReader(), deleter, ZoneOffset.UTC)
-    viewModel.deleteEntry(1)
-    testDispatcher.scheduler.advanceUntilIdle()
-    assertTrue(viewModel.deleteFailed.value)
+    assertEquals(1, failures.size)
 
     viewModel.deleteEntry(1)
     testDispatcher.scheduler.advanceUntilIdle()
 
-    assertFalse(viewModel.deleteFailed.value)
+    assertEquals(1, failures.size)
   }
 
   private fun entry(id: Long, at: String, note: String) = JournalEntry(
@@ -201,6 +194,12 @@ class JournalHistoryViewModelTest {
 
   private fun launchCollection(viewModel: JournalHistoryViewModel) =
     CoroutineScope(testDispatcher).launch { viewModel.uiState.collect {} }
+
+  private fun collectDeleteFailures(viewModel: JournalHistoryViewModel): List<Unit> {
+    val failures = mutableListOf<Unit>()
+    collectorScope.launch { viewModel.deleteFailures.collect { failures += it } }
+    return failures
+  }
 
   /** 初回発行前の状態を再現するため、購読開始時点では値を持たないflowを使う。 */
   private class FakeJournalEntryReader : JournalEntryReader {

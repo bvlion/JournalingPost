@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   webhook_settings DataStore(暗号化済みWebhook設定)は、Android Keystoreの鍵が端末単位のため
-  cloud backup/device transferで復元しても復号できない。ファイル名はWebhookSettingsStore.FILE_NAMEと
-  一致させること(変更する場合は両方を合わせて更新する)。
+  cloud backup/device transferで復元しても復号できない。ファイル名はAppContainerの
+  WEBHOOK_SETTINGS_FILE_NAMEと一致させること(変更する場合は両方を合わせて更新する)。
 -->
 <data-extraction-rules>
     <cloud-backup>

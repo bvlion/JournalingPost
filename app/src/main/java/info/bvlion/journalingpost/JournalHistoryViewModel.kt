@@ -8,11 +8,12 @@ import info.bvlion.journalingpost.journal.history.JournalHistoryUiState
 import info.bvlion.journalingpost.journal.history.toHistoryGroups
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -28,24 +29,19 @@ class JournalHistoryViewModel(
     }
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), JournalHistoryUiState.Loading)
 
-  // 削除失敗を1度だけ画面へ伝える(画面はSnackbarで見せてから[consumeDeleteFailed])。
-  private val _deleteFailed = MutableStateFlow(false)
-  val deleteFailed: StateFlow<Boolean> = _deleteFailed.asStateFlow()
-
-  fun consumeDeleteFailed() {
-    _deleteFailed.value = false
-  }
+  // 削除失敗は継続的な画面状態ではなく1度きりの通知なので、画面がSnackbarで見せるまで保持して消費する。
+  private val _deleteFailures = Channel<Unit>(Channel.BUFFERED)
+  val deleteFailures: Flow<Unit> = _deleteFailures.receiveAsFlow()
 
   /** 削除後の一覧はRoomのFlowが更新するため、ここでuiStateを直接書き換えない。 */
   fun deleteEntry(id: Long) {
-    _deleteFailed.value = false
     viewModelScope.launch {
       try {
         deleter.delete(id)
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {
-        _deleteFailed.value = true
+        _deleteFailures.send(Unit)
       }
     }
   }

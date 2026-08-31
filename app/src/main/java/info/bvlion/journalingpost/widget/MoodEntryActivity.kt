@@ -12,7 +12,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -26,9 +25,10 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import info.bvlion.journalingpost.MainViewModel
-import info.bvlion.journalingpost.MainViewModelFactory
 import info.bvlion.journalingpost.R
+import info.bvlion.journalingpost.di.appViewModelFactory
 import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.mood.Mood
 import info.bvlion.journalingpost.mood.MoodRecordOverlay
@@ -38,7 +38,7 @@ import kotlinx.coroutines.launch
 
 /** 既存MainViewModel/JournalRecorderを再利用する。 */
 class MoodEntryActivity : ComponentActivity() {
-  private val viewModel: MainViewModel by viewModels { MainViewModelFactory }
+  private val viewModel: MainViewModel by viewModels { appViewModelFactory }
   private var mood by mutableStateOf<Mood?>(null)
 
   // Widgetのタップ1回を1つの入力sessionとして識別する。同じMoodを続けてタップした場合でも
@@ -47,7 +47,6 @@ class MoodEntryActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    MainViewModelFactory.initialize(applicationContext)
 
     val initialMood = Mood.fromExtraValue(intent.getStringExtra(EXTRA_MOOD))
     if (initialMood == null) {
@@ -63,7 +62,7 @@ class MoodEntryActivity : ComponentActivity() {
       JournalingPostTheme {
         mood?.let { currentMood ->
           val currentSessionId = sessionId
-          val uiState by viewModel.uiState.collectAsState()
+          val uiState by viewModel.uiState.collectAsStateWithLifecycle()
           val moodLabel = stringResource(currentMood.labelRes)
 
           key(currentSessionId) {

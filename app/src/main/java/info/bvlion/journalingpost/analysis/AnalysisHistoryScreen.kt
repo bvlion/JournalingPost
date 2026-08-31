@@ -1,5 +1,6 @@
 package info.bvlion.journalingpost.analysis
 
+import android.content.res.Resources
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,18 +21,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import info.bvlion.journalingpost.AnalysisRunState
+import info.bvlion.journalingpost.AnalysisRunResult
 import info.bvlion.journalingpost.R
+import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import java.time.Instant
@@ -41,6 +43,8 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 // 期間は時間帯まで指定され得るため(#40)、日付だけでなく時刻も表示する。
 private val analysisDateTimeFormatter = DateTimeFormatter.ofPattern("yyyy/M/d HH:mm", Locale.JAPAN)
@@ -58,44 +62,27 @@ private val analysisDayFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日"
 fun AnalysisHistoryScreen(
   uiState: AnalysisHistoryUiState,
   canRunAnalysis: Boolean,
-  runState: AnalysisRunState,
+  isRunning: Boolean,
+  runResults: Flow<AnalysisRunResult>,
   onShowMessage: (String) -> Unit,
-  onRunResultShown: () -> Unit,
   onAnalyze: (LocalDate) -> Unit,
 ) {
+  val resources = LocalResources.current
   val completedMessage = stringResource(R.string.analysis_completed)
-  val failureMessage = (runState as? AnalysisRunState.Failed)?.let { failed ->
-    when (failed.failure) {
-      // 対象日をSnackbar側で持ち直さず、失敗結果に含まれる日をそのまま文言へ入れる。
-      PeriodAnalysisOutcome.Failure.NO_ENTRIES ->
-        stringResource(failed.messageRes(), failed.day.format(analysisDayFormatter))
-
-      else -> stringResource(failed.messageRes())
-    }
-  }
-  LaunchedEffect(runState) {
-    when (runState) {
-      is AnalysisRunState.Succeeded -> {
-        onShowMessage(completedMessage)
-        onRunResultShown()
-      }
-
-      is AnalysisRunState.Failed -> {
-        failureMessage?.let(onShowMessage)
-        onRunResultShown()
-      }
-
-      else -> Unit
+  EventEffect(runResults) { result ->
+    when (result) {
+      AnalysisRunResult.Succeeded -> onShowMessage(completedMessage)
+      is AnalysisRunResult.Failed -> onShowMessage(resources.failureMessage(result))
     }
   }
 
   Column(modifier = Modifier.fillMaxSize()) {
     ScreenTopAppBar(title = stringResource(R.string.tab_analysis_history))
 
-    if (canRunAnalysis || runState is AnalysisRunState.Running) {
+    if (canRunAnalysis || isRunning) {
       AnalysisTrigger(
         canRunAnalysis = canRunAnalysis,
-        isRunning = runState is AnalysisRunState.Running,
+        isRunning = isRunning,
         onAnalyze = onAnalyze,
       )
     }
@@ -195,14 +182,17 @@ private fun LocalDate.toUtcMillis(): Long = atStartOfDay(ZoneOffset.UTC).toInsta
 private fun Long.toLocalDateFromUtc(): LocalDate =
   Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
 
-private fun AnalysisRunState.Failed.messageRes(): Int = when (failure) {
-  PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE -> R.string.analysis_failure_webhook_unavailable
-  PeriodAnalysisOutcome.Failure.NO_ENTRIES -> R.string.analysis_failure_no_entries
-  PeriodAnalysisOutcome.Failure.LOCAL_READ -> R.string.analysis_failure_local_read
-  PeriodAnalysisOutcome.Failure.NETWORK -> R.string.analysis_failure_network
-  PeriodAnalysisOutcome.Failure.SERVER_ERROR -> R.string.analysis_failure_server_error
-  PeriodAnalysisOutcome.Failure.INVALID_RESPONSE -> R.string.analysis_failure_invalid_response
-  null -> R.string.analysis_failure_save
+/** 対象日をSnackbar側で持ち直さず、失敗結果に含まれる日をそのまま文言へ入れる。 */
+private fun Resources.failureMessage(failed: AnalysisRunResult.Failed): String = when (failed.failure) {
+  PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE -> getString(R.string.analysis_failure_webhook_unavailable)
+  PeriodAnalysisOutcome.Failure.NO_ENTRIES ->
+    getString(R.string.analysis_failure_no_entries, failed.day.format(analysisDayFormatter))
+
+  PeriodAnalysisOutcome.Failure.LOCAL_READ -> getString(R.string.analysis_failure_local_read)
+  PeriodAnalysisOutcome.Failure.NETWORK -> getString(R.string.analysis_failure_network)
+  PeriodAnalysisOutcome.Failure.SERVER_ERROR -> getString(R.string.analysis_failure_server_error)
+  PeriodAnalysisOutcome.Failure.INVALID_RESPONSE -> getString(R.string.analysis_failure_invalid_response)
+  null -> getString(R.string.analysis_failure_save)
 }
 
 @Composable
@@ -247,9 +237,9 @@ fun AnalysisHistoryScreenPreview() {
         ),
       ),
       canRunAnalysis = true,
-      runState = AnalysisRunState.Idle,
+      isRunning = false,
+      runResults = emptyFlow(),
       onShowMessage = {},
-      onRunResultShown = {},
       onAnalyze = {},
     )
   }

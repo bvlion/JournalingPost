@@ -22,16 +22,12 @@ internal abstract class JournalDatabase : RoomDatabase() {
   abstract fun analysisResultDao(): AnalysisResultDao
 
   companion object {
-    @Volatile
-    private var instance: JournalDatabase? = null
-
-    fun getInstance(context: Context): JournalDatabase =
-      instance ?: synchronized(this) {
-        instance ?: Room.databaseBuilder(
-          context.applicationContext,
-          JournalDatabase::class.java,
-          "journal.db",
-        ).build().also { instance = it }
-      }
+    /** process内で1つだけ生成すること。生成箇所はAppContainerへ集約している。 */
+    fun create(context: Context): JournalDatabase =
+      Room.databaseBuilder(
+        context.applicationContext,
+        JournalDatabase::class.java,
+        "journal.db",
+      ).build()
   }
 }
