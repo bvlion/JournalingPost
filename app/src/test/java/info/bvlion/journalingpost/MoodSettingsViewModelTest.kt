@@ -44,7 +44,7 @@ class MoodSettingsViewModelTest {
     val moods = listOf(mood("first", "😄", "嬉しい"), mood("second", "😭", "悲しい"))
     val viewModel = MoodSettingsViewModel(FakeMoodRepository(moods)) {}
 
-    viewModel.onScreenOpened()
+    viewModel.onScreenOpened(screenSessionId = 1)
     advanceUntilIdle()
 
     assertEquals(listOf("first", "second"), viewModel.uiState.value.moods.map { it.id })
@@ -109,7 +109,7 @@ class MoodSettingsViewModelTest {
     var refreshCount = 0
     val viewModel = MoodSettingsViewModel(repository) { refreshCount++ }
     val events = collectEvents(viewModel)
-    viewModel.onScreenOpened()
+    viewModel.onScreenOpened(screenSessionId = 1)
     advanceUntilIdle()
     viewModel.updateLabel("first", "  新しい名称  ")
 
@@ -129,7 +129,7 @@ class MoodSettingsViewModelTest {
     )
     val viewModel = MoodSettingsViewModel(repository) {}
     val events = collectEvents(viewModel)
-    viewModel.onScreenOpened()
+    viewModel.onScreenOpened(screenSessionId = 1)
     advanceUntilIdle()
     viewModel.updateLabel("first", "変更中")
 
@@ -141,11 +141,33 @@ class MoodSettingsViewModelTest {
     assertEquals(listOf(MoodSettingsEvent.SaveFailed), events)
   }
 
+  @Test
+  fun `同じ画面sessionを再初期化しても未保存の編集を維持する`() = runTest(dispatcher) {
+    val viewModel = createLoadedViewModel()
+    viewModel.updateLabel("first", "編集中")
+
+    viewModel.onScreenOpened(screenSessionId = 1)
+    advanceUntilIdle()
+
+    assertEquals("編集中", viewModel.uiState.value.moods.first().label)
+  }
+
+  @Test
+  fun `新しい画面sessionを開くと保存済みのMoodを読み直す`() = runTest(dispatcher) {
+    val viewModel = createLoadedViewModel()
+    viewModel.updateLabel("first", "編集中")
+
+    viewModel.onScreenOpened(screenSessionId = 2)
+    advanceUntilIdle()
+
+    assertEquals("嬉しい", viewModel.uiState.value.moods.first().label)
+  }
+
   private suspend fun createLoadedViewModel(
     moods: List<Mood> = listOf(mood("first", "😄", "嬉しい"), mood("second", "😭", "悲しい")),
   ): MoodSettingsViewModel {
     val viewModel = MoodSettingsViewModel(FakeMoodRepository(moods)) {}
-    viewModel.onScreenOpened()
+    viewModel.onScreenOpened(screenSessionId = 1)
     dispatcher.scheduler.advanceUntilIdle()
     return viewModel
   }

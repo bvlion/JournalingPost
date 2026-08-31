@@ -25,12 +25,21 @@ class MoodSettingsViewModel(
   private val _events = Channel<MoodSettingsEvent>(Channel.BUFFERED)
   val events: Flow<MoodSettingsEvent> = _events.receiveAsFlow()
 
-  fun onScreenOpened() {
+  // Activity再生成で同じ設定画面を再表示しても、保存前の編集をrepositoryから読み直さない。
+  private var openedScreenSessionId: Int? = null
+
+  fun onScreenOpened(screenSessionId: Int) {
+    if (openedScreenSessionId == screenSessionId) return
+
+    openedScreenSessionId = screenSessionId
     while (_events.tryReceive().isSuccess) Unit
     _uiState.value = MoodSettingsUiState()
     viewModelScope.launch {
+      if (openedScreenSessionId != screenSessionId) return@launch
+      val moods = repository.moods.first()
+      if (openedScreenSessionId != screenSessionId) return@launch
       _uiState.value = MoodSettingsUiState(
-        moods = repository.moods.first().map { it.toDraft() },
+        moods = moods.map { it.toDraft() },
         isLoading = false,
       )
     }

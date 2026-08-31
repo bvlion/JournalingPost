@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -76,6 +77,7 @@ class MainActivity : ComponentActivity() {
         var destination by rememberSaveable { mutableStateOf(MainDestination.RECORD) }
         var showWebhookSettings by rememberSaveable { mutableStateOf(false) }
         var showMoodSettings by rememberSaveable { mutableStateOf(false) }
+        var moodSettingsScreenSessionId by rememberSaveable { mutableIntStateOf(0) }
         // Settingsで保存済み設定が無いままCustom Webhookを選んで来た場合、Webhook設定画面で既存設定が
         // 見つかればその場で有効化する。利用者が自分で設定項目を開いた場合は有効化しない。
         var webhookSetupPending by rememberSaveable { mutableStateOf(false) }
@@ -114,6 +116,10 @@ class MainActivity : ComponentActivity() {
           showWebhookSettings = false
         }
         val closeMoodSettings: () -> Unit = { showMoodSettings = false }
+        val openMoodSettings: () -> Unit = {
+          moodSettingsScreenSessionId++
+          showMoodSettings = true
+        }
 
         LaunchedEffect(destination) {
           if (destination == MainDestination.SETTINGS) settingsViewModel.onSettingsOpened()
@@ -164,7 +170,7 @@ class MainActivity : ComponentActivity() {
           ) { innerPadding ->
             Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
               if (showMoodSettings) {
-                LaunchedEffect(Unit) { moodSettingsViewModel.onScreenOpened() }
+                LaunchedEffect(Unit) { moodSettingsViewModel.onScreenOpened(moodSettingsScreenSessionId) }
                 val moodSettingsUiState by moodSettingsViewModel.uiState.collectAsStateWithLifecycle()
                 val savedMessage = stringResource(R.string.mood_settings_save_succeeded)
                 val saveFailedMessage = stringResource(R.string.mood_settings_save_failed)
@@ -264,7 +270,7 @@ class MainActivity : ComponentActivity() {
                     SettingsScreen(
                       uiState = settingsUiState,
                       onAnalysisIntegrationChange = settingsViewModel::setAnalysisIntegration,
-                      onMoodSettingsOpen = { showMoodSettings = true },
+                      onMoodSettingsOpen = openMoodSettings,
                       onWebhookSettingsOpen = { openWebhookSettings(false) },
                     )
                   }

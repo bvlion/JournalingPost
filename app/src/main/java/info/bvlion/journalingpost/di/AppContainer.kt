@@ -28,6 +28,7 @@ import info.bvlion.journalingpost.webhook.AndroidKeystoreWebhookSettingsCipher
 import info.bvlion.journalingpost.webhook.DataStoreWebhookSettingsRepository
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
 import info.bvlion.journalingpost.widget.MoodWidget
+import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -108,7 +109,11 @@ internal class AppContainer(context: Context) {
   }
 
   suspend fun refreshMoodWidgets() {
-    MoodWidget().updateAll(context)
+    try {
+      MoodWidget().updateAll(context)
+    } finally {
+      registerMoodWidgetPreviewOnce(context, shouldRefresh = true)
+    }
   }
 
   private fun createPreferenceDataStore(fileName: String): DataStore<Preferences> =
