@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
+import info.bvlion.journalingpost.settings.NoteOnlyEntryRepository
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
 import info.bvlion.journalingpost.webhook.WebhookSettingsState
 import info.bvlion.journalingpost.webhook.destinationLabelOrNull
@@ -26,6 +27,8 @@ import kotlinx.coroutines.launch
 class SettingsViewModel(
   private val analysisIntegrationRepository: AnalysisIntegrationRepository,
   private val webhookSettingsRepository: WebhookSettingsRepository,
+  private val noteOnlyEntryRepository: NoteOnlyEntryRepository,
+  private val refreshWidgets: suspend () -> Unit,
 ) : ViewModel() {
   /** 未設定からCustom Webhookを選んだ直後は、保存完了前でもradioだけは利用者の選択を示す。 */
   private val pendingCustomWebhookSelection = MutableStateFlow(false)
@@ -34,7 +37,8 @@ class SettingsViewModel(
     analysisIntegrationRepository.analysisIntegration,
     webhookSettingsRepository.settings,
     pendingCustomWebhookSelection,
-  ) { integration, webhookSettings, pendingCustomWebhook ->
+    noteOnlyEntryRepository.isNoteOnlyEntryEnabled,
+  ) { integration, webhookSettings, pendingCustomWebhook, noteOnlyEntryEnabled ->
     SettingsUiState(
       selectedIntegration = if (pendingCustomWebhook) AnalysisIntegration.CUSTOM_WEBHOOK else integration,
       webhookConfigured = integration == AnalysisIntegration.CUSTOM_WEBHOOK &&
@@ -44,6 +48,7 @@ class SettingsViewModel(
       } else {
         null
       },
+      noteOnlyEntryEnabled = noteOnlyEntryEnabled,
     )
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -99,6 +104,27 @@ class SettingsViewModel(
     }
   }
 
+  /** 「メモだけ記録」の表示設定は記録画面とWidgetで共有するため、保存後に配置済みWidgetも更新する。 */
+  fun setNoteOnlyEntryEnabled(enabled: Boolean) {
+    viewModelScope.launch {
+      try {
+        noteOnlyEntryRepository.setNoteOnlyEntryEnabled(enabled)
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        _events.send(SettingsEvent.NoteOnlyEntrySaveFailed)
+        return@launch
+      }
+      try {
+        refreshWidgets()
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        // 設定自体は保存済みで、Widgetは次回のsystem updateでも同じRepositoryから再描画される。
+      }
+    }
+  }
+
   private suspend fun persistAnalysisIntegration(integration: AnalysisIntegration, session: Any) {
     try {
       analysisIntegrationRepository.setAnalysisIntegration(integration)
@@ -120,11 +146,15 @@ data class SettingsUiState(
   val webhookConfigured: Boolean = false,
   /** 現在の送信先を安全に示す短い文字列。作れない場合はnull(画面側でfallback表示)。 */
   val webhookDestinationLabel: String? = null,
+  /** 「メモだけ記録」を表示するか。読み込み確定前はnull。 */
+  val noteOnlyEntryEnabled: Boolean? = null,
 )
 
 /** Settings画面で1度だけ扱う操作結果。 */
 sealed interface SettingsEvent {
   data object IntegrationSaveFailed : SettingsEvent
+
+  data object NoteOnlyEntrySaveFailed : SettingsEvent
 
   /** Custom Webhookを選んだが保存済み設定が無く、Webhook設定画面へ進める必要がある。 */
   data object WebhookSetupRequested : SettingsEvent

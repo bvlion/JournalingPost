@@ -49,7 +49,8 @@ import kotlinx.coroutines.flow.first
  * (compact)では絵文字を横一列に表示し、名称のみのMoodは名称を表示する。横方向へ広げた場合は、compact/
  * expandedいずれもdefaultWeight()により各Mood領域がそのまま広がる。
  *
- * 表示するMoodと並びは記録画面と同じMoodRepositoryを正とする。
+ * 表示するMoodと並びは記録画面と同じMoodRepositoryを正とし、「メモだけ記録」を出すかどうかも
+ * 記録画面と同じ設定に従う。
  */
 class MoodWidget : GlanceAppWidget() {
   override val sizeMode: SizeMode = SizeMode.Exact
@@ -59,18 +60,22 @@ class MoodWidget : GlanceAppWidget() {
    * 実行中のcompositionへ更新イベントを送るだけになる。provideContentの外で読んだMoodは
    * そのsession中ずっと固定されるため、Mood設定の保存直後にupdateAll()しても配置済み
    * Widgetが古い並びのまま残る。composition内でMoodRepositoryを購読し、sessionが動いて
-   * いる間の変更もWidgetへ反映する。
+   * いる間の変更もWidgetへ反映する。「メモだけ記録」の表示設定も同じ理由で購読する。
    *
    * provideContent前の[first]は初回描画を空にしないための初期値取得で、購読の代わりには
    * ならない。
    */
   override suspend fun provideGlance(context: Context, id: GlanceId) {
     val moodRepository = context.moodRepository()
+    val noteOnlyEntryRepository = context.noteOnlyEntryRepository()
     val initialMoods = moodRepository.moods.first()
+    val initialNoteOnlyEntryVisible = noteOnlyEntryRepository.isNoteOnlyEntryEnabled.first()
     provideContent {
       val moods by moodRepository.moods.collectAsState(initialMoods)
+      val isNoteOnlyEntryVisible by noteOnlyEntryRepository.isNoteOnlyEntryEnabled
+        .collectAsState(initialNoteOnlyEntryVisible)
       GlanceTheme {
-        MoodWidgetContent(moods)
+        MoodWidgetContent(moods, isNoteOnlyEntryVisible)
       }
     }
   }
@@ -84,16 +89,17 @@ class MoodWidget : GlanceAppWidget() {
    */
   override suspend fun providePreview(context: Context, widgetCategory: Int) {
     val moods = context.moodRepository().moods.first()
+    val isNoteOnlyEntryVisible = context.noteOnlyEntryRepository().isNoteOnlyEntryEnabled.first()
     provideContent {
       GlanceTheme {
-        MoodWidgetContent(moods)
+        MoodWidgetContent(moods, isNoteOnlyEntryVisible)
       }
     }
   }
 }
 
 @Composable
-private fun MoodWidgetContent(moods: List<Mood>) {
+private fun MoodWidgetContent(moods: List<Mood>, isNoteOnlyEntryVisible: Boolean) {
   val size = LocalSize.current
   val isExpanded = size.height >= LABELED_MIN_HEIGHT_DP.dp
 
@@ -103,9 +109,9 @@ private fun MoodWidgetContent(moods: List<Mood>) {
     horizontalPadding = 0.dp,
   ) {
     if (isExpanded) {
-      ExpandedMoodList(moods)
+      ExpandedMoodList(moods, isNoteOnlyEntryVisible)
     } else {
-      CompactMoodRow(moods)
+      CompactMoodRow(moods, isNoteOnlyEntryVisible)
     }
   }
 }
@@ -118,7 +124,7 @@ private fun MoodWidgetContent(moods: List<Mood>) {
  * emoji自体は常に識別できる。名称のみのMoodは同じセルへ名称を表示する。
  */
 @Composable
-private fun CompactMoodRow(moods: List<Mood>) {
+private fun CompactMoodRow(moods: List<Mood>, isNoteOnlyEntryVisible: Boolean) {
   val context = LocalContext.current
   Row(modifier = GlanceModifier.fillMaxSize().padding(2.dp)) {
     moods.forEach { mood ->
@@ -149,6 +155,25 @@ private fun CompactMoodRow(moods: List<Mood>) {
         }
       }
     }
+    if (isNoteOnlyEntryVisible) {
+      Box(
+        modifier = GlanceModifier
+          .defaultWeight()
+          .fillMaxHeight()
+          .clickable(noteOnlyAction())
+          .semantics {
+            contentDescription = context.getString(R.string.record_note_only_entry)
+          },
+        contentAlignment = Alignment.Center,
+      ) {
+        // Moodと同じ絵文字表示にすると、Moodの1つに見えてしまうため文言で示す。
+        Text(
+          text = context.getString(R.string.record_note_only_entry_short),
+          maxLines = 1,
+          style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 12.sp),
+        )
+      }
+    }
   }
 }
 
@@ -174,7 +199,7 @@ private fun renderEmojiBitmap(emoji: String): Bitmap {
 private const val EMOJI_BITMAP_SIZE_PX = 128
 
 @Composable
-private fun ExpandedMoodList(moods: List<Mood>) {
+private fun ExpandedMoodList(moods: List<Mood>, isNoteOnlyEntryVisible: Boolean) {
   val context = LocalContext.current
   Column(modifier = GlanceModifier.fillMaxSize().padding(4.dp)) {
     moods.forEach { mood ->
@@ -209,13 +234,37 @@ private fun ExpandedMoodList(moods: List<Mood>) {
         }
       }
     }
+    if (isNoteOnlyEntryVisible) {
+      Box(
+        modifier = GlanceModifier
+          .defaultWeight()
+          .fillMaxWidth()
+          .padding(horizontal = 8.dp)
+          .clickable(noteOnlyAction())
+          .semantics {
+            contentDescription = context.getString(R.string.record_note_only_entry)
+          },
+        contentAlignment = Alignment.CenterStart,
+      ) {
+        Text(
+          text = context.getString(R.string.record_note_only_entry),
+          maxLines = 1,
+          style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 13.sp),
+        )
+      }
+    }
   }
 }
 
 private fun moodAction(mood: Mood) =
   actionStartActivity<MoodEntryActivity>(actionParametersOf(MOOD_KEY to mood.id))
 
+private fun noteOnlyAction() =
+  actionStartActivity<MoodEntryActivity>(actionParametersOf(NOTE_ONLY_KEY to true))
+
 private val MOOD_KEY = ActionParameters.Key<String>(MoodEntryActivity.EXTRA_MOOD)
+
+private val NOTE_ONLY_KEY = ActionParameters.Key<Boolean>(MoodEntryActivity.EXTRA_NOTE_ONLY)
 
 // Androidのセルサイズ計算式(70dp×セル数-30dp)で3セル分の高さ。
 // compactの横一列だけでは手狭なラベルを、縦3セル以上に広げたときに表示する。
@@ -223,3 +272,6 @@ private const val LABELED_MIN_HEIGHT_DP = 180
 
 private fun Context.moodRepository() =
   (applicationContext as JournalingPostApplication).container.moodRepository
+
+private fun Context.noteOnlyEntryRepository() =
+  (applicationContext as JournalingPostApplication).container.noteOnlyEntryRepository
