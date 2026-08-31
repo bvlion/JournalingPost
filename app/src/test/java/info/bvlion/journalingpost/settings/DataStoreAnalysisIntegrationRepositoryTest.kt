@@ -3,19 +3,11 @@ package info.bvlion.journalingpost.settings
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.preferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
-import info.bvlion.journalingpost.journal.DeliveryStatus
-import info.bvlion.journalingpost.journal.IntegrationRoutingJournalRecorder
-import info.bvlion.journalingpost.journal.JournalEntry
-import info.bvlion.journalingpost.journal.JournalEntryRepository
-import info.bvlion.journalingpost.journal.JournalSource
-import info.bvlion.journalingpost.journal.LocalOnlyJournalRecorder
-import info.bvlion.journalingpost.journal.LocalWebhookJournalRecorder
-import info.bvlion.journalingpost.poster.JournalPoster
 import java.io.File
 import java.io.IOException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,11 +17,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class DataStoreAnalysisIntegrationRepositoryTest {
   @get:Rule
   val tempFolder = TemporaryFolder()
@@ -64,23 +56,14 @@ class DataStoreAnalysisIntegrationRepositoryTest {
   }
 
   @Test
-  fun `使用しない選択はwrite完了前から記録のWebhook送信を止める`() = runTest {
+  fun `使用しない選択はwrite完了前から実効値へ反映される`() = runTest {
     val dataStore = BlockingWriteDataStore(preferencesWith(AnalysisIntegration.CUSTOM_WEBHOOK))
-    val integrationRepository = DataStoreAnalysisIntegrationRepository(dataStore)
-    val journalRepository = FakeJournalEntryRepository()
-    var postCalled = false
-    val recorder = IntegrationRoutingJournalRecorder(
-      analysisIntegrationRepository = integrationRepository,
-      localOnlyRecorder = LocalOnlyJournalRecorder(journalRepository),
-      localWebhookRecorder = LocalWebhookJournalRecorder(journalRepository, JournalPoster { postCalled = true; true }),
-    )
+    val repository = DataStoreAnalysisIntegrationRepository(dataStore)
 
-    backgroundScope.launch { integrationRepository.setAnalysisIntegration(AnalysisIntegration.NONE) }
+    backgroundScope.launch { repository.setAnalysisIntegration(AnalysisIntegration.NONE) }
     runCurrent()
-    val result = recorder.record("today was good", mood = null, source = JournalSource.APP)
 
-    assertEquals(DeliveryStatus.NOT_REQUIRED, result)
-    assertFalse(postCalled)
+    assertEquals(AnalysisIntegration.NONE, repository.analysisIntegration.first())
   }
 
   @Test
@@ -152,20 +135,5 @@ class DataStoreAnalysisIntegrationRepositoryTest {
 
     override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
       error("not used in this test")
-  }
-
-  private class FakeJournalEntryRepository : JournalEntryRepository {
-    val entries = mutableMapOf<Long, JournalEntry>()
-    private var nextId = 1L
-
-    override suspend fun insert(entry: JournalEntry): Long {
-      val id = nextId++
-      entries[id] = entry.copy(id = id)
-      return id
-    }
-
-    override suspend fun updateDeliveryStatus(id: Long, status: DeliveryStatus) {
-      entries[id] = requireNotNull(entries[id]).copy(deliveryStatus = status)
-    }
   }
 }

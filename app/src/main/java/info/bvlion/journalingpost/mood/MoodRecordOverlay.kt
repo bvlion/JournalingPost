@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -35,10 +36,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 
 private const val SCRIM_ALPHA = 0.32f
@@ -50,6 +52,8 @@ private const val SCRIM_ALPHA = 0.32f
  * fade animationやActivityのlifecycle制御(Widget側)は呼び出し元が[modifier]や状態で扱う。
  *
  * @param isInteractionLocked 記録処理中や完了直後など、操作を受け付けない状態。scrimタップも無効化する。
+ * @param hasFailure trueにするとカード内へ失敗メッセージを出す。アプリ側はSnackbarで伝えるためfalseで
+ *   呼び、Widget起動のMoodEntryActivityのようにSnackbarを出せないsurfaceだけtrueにする。
  */
 @Composable
 fun MoodRecordOverlay(
@@ -132,12 +136,11 @@ private fun MoodRecordCard(
           maxLines = 4,
           trailingIcon = if (note.isNotEmpty()) {
             {
-              IconButton(
-                onClick = { note = "" },
-                enabled = !isInteractionLocked,
-                modifier = Modifier.semantics { contentDescription = "メモをクリア" },
-              ) {
-                Text("✕")
+              IconButton(onClick = { note = "" }, enabled = !isInteractionLocked) {
+                Icon(
+                  painter = painterResource(R.drawable.ic_close),
+                  contentDescription = stringResource(R.string.record_note_clear),
+                )
               }
             }
           } else {
@@ -148,7 +151,7 @@ private fun MoodRecordCard(
 
       if (hasFailure) {
         Text(
-          text = "記録に失敗しました。もう一度お試しください",
+          text = stringResource(R.string.record_failure),
           color = MaterialTheme.colorScheme.error,
           style = MaterialTheme.typography.bodySmall,
           modifier = Modifier.padding(top = 8.dp),
@@ -162,11 +165,11 @@ private fun MoodRecordCard(
       ) {
         if (!isNoteVisible) {
           TextButton(onClick = { isNoteVisible = true }, enabled = !isInteractionLocked) {
-            Text("メモを追加")
+            Text(stringResource(R.string.record_add_note))
           }
         }
         TextButton(onClick = onDismiss, enabled = !isInteractionLocked) {
-          Text("記録しない")
+          Text(stringResource(R.string.record_dismiss))
         }
         Button(
           onClick = { onRecord(note) },
@@ -175,7 +178,7 @@ private fun MoodRecordCard(
           if (isInteractionLocked) {
             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
           } else {
-            Text("記録")
+            Text(stringResource(R.string.record_action))
           }
         }
       }

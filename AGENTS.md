@@ -140,9 +140,9 @@ productionコードの識別子（クラス、関数、プロパティ、定数�
 
 ### UI文言とフィードバック
 
-- ユーザーへ表示される文言（画面タイトル、ボタン、ラベル、説明、空状態、ダイアログ、validation / error / success message、Snackbar、accessibilityの`contentDescription`等）はAndroid string resourcesで管理し、Kotlin / Composeへ直接書かない。ユーザーに表示されない内部識別子・テストデータ・protocol値・JSON key、Compose `@Preview`内のサンプルデータは対象外。
-- Activity / Compose画面上で利用者が操作し、その画面で結果を返すケースの一時的な成功・失敗・エラーfeedbackはSnackbarを基本とする。Toastや、操作結果として画面内に残るTextを混在させない（画面の恒常的な説明・空状態・入力欄自体の状態は「一時feedback」ではなく対象外）。
-- App Widget、通知、background処理などSnackbarが自然でないsurfaceには、そのsurfaceに適したfeedbackを使う。アプリ内画面のSnackbar方針を機械的に適用しない。
+- ユーザーへ表示される文言（画面タイトル、ボタン、ラベル、説明、空状態、ダイアログ、validation / error / success message、Snackbar、accessibilityの`contentDescription`等）はAndroid string resourcesで管理し、Kotlin / Composeへ直接書きません。ユーザーに表示されない内部識別子・テストデータ・protocol値・JSON key、Compose `@Preview`内のサンプルデータは対象外です。
+- Activity / Compose画面上で利用者が操作し、その画面で結果を返すケースの一時的な成功・失敗・エラーfeedbackはSnackbarを基本とします。Toastや、操作結果として画面内に残るTextを混在させません（画面の恒常的な説明・空状態・入力欄自体の状態は「一時feedback」ではなく対象外）。
+- App Widget、通知、background処理などSnackbarが自然でないsurfaceには、そのsurfaceに適したfeedbackを使います（アプリ内画面のSnackbar方針を機械的に適用しません）。
 
 ### コメント
 

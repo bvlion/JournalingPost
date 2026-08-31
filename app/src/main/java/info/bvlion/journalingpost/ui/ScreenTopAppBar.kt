@@ -8,6 +8,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import info.bvlion.journalingpost.R
 
 /**
@@ -32,7 +33,7 @@ fun ScreenTopAppBar(
         IconButton(onClick = onBack) {
           Icon(
             painter = painterResource(R.drawable.ic_arrow_back),
-            contentDescription = "戻る",
+            contentDescription = stringResource(R.string.action_back),
           )
         }
       }

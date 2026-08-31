@@ -4,12 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
+import info.bvlion.journalingpost.webhook.WebhookBodyTemplateRenderer
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettings
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
 import info.bvlion.journalingpost.webhook.WebhookSettingsState
 import info.bvlion.journalingpost.webhook.WebhookSettingsValidator
-import info.bvlion.journalingpost.webhook.destinationLabel
+import info.bvlion.journalingpost.webhook.destinationLabelOrNull
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -44,15 +45,26 @@ class SettingsViewModel(
   val selectedAnalysisIntegration: StateFlow<AnalysisIntegration?> = selectedIntegrationFlow
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+  // 解析・連携の切替に失敗したことを1度だけ画面へ伝える(画面はSnackbarで見せてから[consumeIntegrationSaveFailed])。
   private val _integrationSaveFailed = MutableStateFlow(false)
   val integrationSaveFailed: StateFlow<Boolean> = _integrationSaveFailed.asStateFlow()
+
+  fun consumeIntegrationSaveFailed() {
+    _integrationSaveFailed.value = false
+  }
 
   private val webhookSettingsState: StateFlow<WebhookSettingsState> = webhookSettingsRepository.settings
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WebhookSettingsState.Loading)
 
+  /** Custom Webhookが解析先で、かつ保存済み設定が存在するとき true。設定項目を出すかどうかに使う。 */
+  val webhookConfigured: StateFlow<Boolean> = combine(analysisIntegration, webhookSettingsState) { integration, state ->
+    integration == AnalysisIntegration.CUSTOM_WEBHOOK && state is WebhookSettingsState.Configured
+  }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+  /** 現在の送信先を安全に示す短い文字列。作れない場合はnull(画面側でfallback表示)。 */
   val webhookDestinationLabel: StateFlow<String?> = combine(analysisIntegration, webhookSettingsState) { integration, state ->
     if (integration != AnalysisIntegration.CUSTOM_WEBHOOK) return@combine null
-    (state as? WebhookSettingsState.Configured)?.settings?.destinationLabel()
+    (state as? WebhookSettingsState.Configured)?.settings?.destinationLabelOrNull()
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
   private val _webhookSetupRequested = MutableStateFlow(false)
@@ -90,13 +102,24 @@ class SettingsViewModel(
     }
   }
 
-  private suspend fun persistAnalysisIntegration(integration: AnalysisIntegration, generation: Int) {
-    try {
+  /**
+   * 永続化できたら true。[reportFailure] が true のときだけ失敗を[_integrationSaveFailed]へ立てる。
+   * Webhookの保存・復旧フローでは失敗をWebhook設定画面のfeedback([_webhookSaveResult])で扱うため
+   * false で呼び、戻り値で有効化の成否を判断する。
+   */
+  private suspend fun persistAnalysisIntegration(
+    integration: AnalysisIntegration,
+    generation: Int,
+    reportFailure: Boolean = true,
+  ): Boolean {
+    return try {
       analysisIntegrationRepository.setAnalysisIntegration(integration)
+      true
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
-      if (generation == integrationRequestGeneration.get()) _integrationSaveFailed.value = true
+      if (reportFailure && generation == integrationRequestGeneration.get()) _integrationSaveFailed.value = true
+      false
     }
   }
 
@@ -118,11 +141,41 @@ class SettingsViewModel(
     }
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WebhookSettingsLoadState.LOADING)
 
-  private val _webhookValidationErrors = MutableStateFlow<List<WebhookSettingsValidator.ValidationError>>(emptyList())
-  val webhookValidationErrors: StateFlow<List<WebhookSettingsValidator.ValidationError>> = _webhookValidationErrors.asStateFlow()
+  private val _webhookValidation = MutableStateFlow(WebhookValidationState())
+  val webhookValidation: StateFlow<WebhookValidationState> = _webhookValidation.asStateFlow()
 
-  private val _webhookSaveFailed = MutableStateFlow(false)
-  val webhookSaveFailed: StateFlow<Boolean> = _webhookSaveFailed.asStateFlow()
+  // 利用者が該当欄を編集したら、その欄由来のvalidation errorだけ消す(次の保存までerrorを残さない)。
+  private fun dropWebhookValidation(vararg kinds: WebhookSettingsValidator.ValidationError) {
+    _webhookValidation.update { it.copy(all = it.all - kinds.toSet()) }
+  }
+
+  /**
+   * 表示中のheader errorを現在の入力へ追随させる。header errorがまだ1つも出ていない状態では、
+   * 保存前に先回りしてerrorを出さないため何もしない。1行だけ直しても未修正行のerrorは残り、
+   * 重複解消やindexのずれは再検証で現在の入力に合う内訳へ更新される。
+   */
+  private fun refreshHeaderValidation() {
+    _webhookValidation.update { current ->
+      val headerErrorShown = current.headerErrors.isNotEmpty() ||
+        current.all.any { it in WebhookSettingsValidator.HEADER_ERRORS }
+      if (!headerErrorShown) return@update current
+
+      val headerErrors = WebhookSettingsValidator.validateHeaders(_webhookFormState.value.headers)
+      current.copy(
+        all = current.all.filterNot { it in WebhookSettingsValidator.HEADER_ERRORS } +
+          WebhookSettingsValidator.HEADER_ERRORS.filter { kind -> headerErrors.values.any { kind in it } },
+        headerErrors = headerErrors,
+      )
+    }
+  }
+
+  // Webhook設定の保存操作の結果を1度だけ画面へ伝える(画面はSnackbarで見せてから[consumeWebhookSaveResult])。
+  private val _webhookSaveResult = MutableStateFlow<WebhookSaveResult?>(null)
+  val webhookSaveResult: StateFlow<WebhookSaveResult?> = _webhookSaveResult.asStateFlow()
+
+  fun consumeWebhookSaveResult() {
+    _webhookSaveResult.value = null
+  }
 
   private val webhookRequestGeneration = AtomicInteger(0)
 
@@ -140,8 +193,8 @@ class SettingsViewModel(
   fun onWebhookSettingsScreenOpened() {
     webhookSettingsScreenInitialized = true
     val generation = webhookRequestGeneration.incrementAndGet()
-    _webhookValidationErrors.value = emptyList()
-    _webhookSaveFailed.value = false
+    _webhookValidation.value = WebhookValidationState()
+    _webhookSaveResult.value = null
     _webhookFormLoaded.value = false
     _webhookFormState.value = WebhookFormState()
     viewModelScope.launch {
@@ -151,10 +204,16 @@ class SettingsViewModel(
       if (generation != webhookRequestGeneration.get()) return@launch
       if (settled is WebhookSettingsState.Configured) {
         _webhookFormState.value = settled.settings.toFormState()
-        // 一時的な読み取り失敗から復旧して既存設定が見つかった場合、意味のない再保存を要求しない。
+        // 一時的な読み取り失敗から復旧して既存設定が見つかった場合、意味のない再保存は要求しないが、
+        // ここでの有効化に失敗すると実効integrationはNONEのままなので、保存フローと同じfeedbackを出す。
         if (_pendingCustomWebhookSelection.value) {
-          persistAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK, integrationRequestGeneration.incrementAndGet())
+          val activated = persistAnalysisIntegration(
+            AnalysisIntegration.CUSTOM_WEBHOOK,
+            integrationRequestGeneration.incrementAndGet(),
+            reportFailure = false,
+          )
           _pendingCustomWebhookSelection.value = false
+          if (!activated) _webhookSaveResult.value = WebhookSaveResult.ACTIVATION_FAILED
         }
       }
       _webhookFormLoaded.value = true
@@ -164,8 +223,8 @@ class SettingsViewModel(
   fun onWebhookSettingsScreenClosed() {
     webhookSettingsScreenInitialized = false
     webhookRequestGeneration.incrementAndGet()
-    _webhookValidationErrors.value = emptyList()
-    _webhookSaveFailed.value = false
+    _webhookValidation.value = WebhookValidationState()
+    _webhookSaveResult.value = null
     _webhookFormLoaded.value = false
     _webhookFormState.value = WebhookFormState()
     _pendingCustomWebhookSelection.value = false
@@ -181,30 +240,42 @@ class SettingsViewModel(
 
   fun updateWebhookUrl(url: String) {
     updateWebhookForm { it.copy(url = url) }
+    dropWebhookValidation(WebhookSettingsValidator.ValidationError.INVALID_URL)
   }
 
   fun addWebhookHeader() {
     updateWebhookForm { it.copy(headers = it.headers + WebhookHeader(name = "", value = "")) }
+    refreshHeaderValidation()
   }
 
   fun removeWebhookHeader(index: Int) {
     updateWebhookForm { state -> state.copy(headers = state.headers.filterIndexed { i, _ -> i != index }) }
+    refreshHeaderValidation()
   }
 
   fun updateWebhookHeaderName(index: Int, name: String) {
     updateWebhookForm { state ->
       state.copy(headers = state.headers.mapIndexed { i, header -> if (i == index) header.copy(name = name) else header })
     }
+    refreshHeaderValidation()
   }
 
   fun updateWebhookHeaderValue(index: Int, value: String) {
     updateWebhookForm { state ->
       state.copy(headers = state.headers.mapIndexed { i, header -> if (i == index) header.copy(value = value) else header })
     }
+    refreshHeaderValidation()
   }
 
   fun updateWebhookBodyTemplate(bodyTemplate: String) {
     updateWebhookForm { it.copy(bodyTemplate = bodyTemplate) }
+    dropWebhookValidation(WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE)
+  }
+
+  /** Body templateを初期値へ戻す。呼び出し側(画面)が確認を取ってから呼ぶ。 */
+  fun resetWebhookBodyTemplate() {
+    updateWebhookForm { it.copy(bodyTemplate = WebhookBodyTemplateRenderer.DEFAULT_TEMPLATE) }
+    dropWebhookValidation(WebhookSettingsValidator.ValidationError.INVALID_BODY_TEMPLATE)
   }
 
   private fun updateWebhookForm(transform: (WebhookFormState) -> WebhookFormState) {
@@ -220,23 +291,31 @@ class SettingsViewModel(
     val form = _webhookFormState.value
     val validation = WebhookSettingsValidator.validate(form.url, form.headers, form.bodyTemplate)
     if (validation.errors.isNotEmpty()) {
-      _webhookValidationErrors.value = validation.errors
+      _webhookValidation.value = WebhookValidationState(validation.errors, validation.headerErrors)
       return
     }
-    _webhookValidationErrors.value = emptyList()
-    _webhookSaveFailed.value = false
+    _webhookValidation.value = WebhookValidationState()
+    _webhookSaveResult.value = null
     viewModelScope.launch {
       try {
         webhookSettingsRepository.save(WebhookSettings(form.url, validation.normalizedHeaders, form.bodyTemplate))
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {
-        if (generation == webhookRequestGeneration.get()) _webhookSaveFailed.value = true
+        if (generation == webhookRequestGeneration.get()) _webhookSaveResult.value = WebhookSaveResult.FAILED
         return@launch
       }
       if (generation == webhookRequestGeneration.get()) {
-        persistAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK, integrationRequestGeneration.incrementAndGet())
+        // Webhook設定の保存に成功しても、Custom Webhookの有効化まで成功して初めて「保存できた」と
+        // 見せる。有効化に失敗した場合は実効AnalysisIntegrationがNONEのままなので、その旨を伝える。
+        val activated = persistAnalysisIntegration(
+          AnalysisIntegration.CUSTOM_WEBHOOK,
+          integrationRequestGeneration.incrementAndGet(),
+          reportFailure = false,
+        )
         _pendingCustomWebhookSelection.value = false
+        _webhookSaveResult.value =
+          if (activated) WebhookSaveResult.SUCCEEDED else WebhookSaveResult.ACTIVATION_FAILED
       }
     }
   }
@@ -248,10 +327,30 @@ enum class WebhookSettingsLoadState {
   READY,
 }
 
+/** Webhook設定の保存操作の結果。SUCCEEDEDはCustom Webhookの有効化まで成功した場合のみ。 */
+enum class WebhookSaveResult {
+  SUCCEEDED,
+  FAILED,
+  ACTIVATION_FAILED,
+}
+
 data class WebhookFormState(
   val url: String = "",
   val headers: List<WebhookHeader> = emptyList(),
-  val bodyTemplate: String = "",
+  // 新規設定は初期templateから始める。保存済み設定を開いたときは[toFormState]で上書きする。
+  val bodyTemplate: String = WebhookBodyTemplateRenderer.DEFAULT_TEMPLATE,
 )
 
-private fun WebhookSettings.toFormState() = WebhookFormState(url = url, headers = headers, bodyTemplate = bodyTemplate)
+/**
+ * 直近の保存で出たvalidation結果。[all] は保存可否判定にも使う全error、[headerErrors] はどのheader行の
+ * 問題かのindex別内訳。利用者が該当欄を編集したら、その欄由来のerrorだけ消して残さない。
+ */
+data class WebhookValidationState(
+  val all: List<WebhookSettingsValidator.ValidationError> = emptyList(),
+  val headerErrors: Map<Int, List<WebhookSettingsValidator.ValidationError>> = emptyMap(),
+) {
+  val isEmpty: Boolean get() = all.isEmpty()
+}
+
+private fun WebhookSettings.toFormState() =
+  WebhookFormState(url = url, headers = headers, bodyTemplate = bodyTemplate)

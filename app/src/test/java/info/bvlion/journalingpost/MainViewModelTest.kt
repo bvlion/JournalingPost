@@ -1,13 +1,8 @@
 package info.bvlion.journalingpost
 
-import info.bvlion.journalingpost.journal.DeliveryStatus
-import info.bvlion.journalingpost.journal.JournalEntry
-import info.bvlion.journalingpost.journal.JournalEntryRepository
 import info.bvlion.journalingpost.journal.JournalRecorder
 import info.bvlion.journalingpost.journal.JournalSource
-import info.bvlion.journalingpost.journal.LocalWebhookJournalRecorder
 import info.bvlion.journalingpost.mood.MoodSnapshot
-import info.bvlion.journalingpost.poster.JournalPoster
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -108,30 +103,6 @@ class MainViewModelTest {
   }
 
   @Test
-  fun `ローカル保存成功後にWebhook送信が失敗するとSUCCESS_DELIVERY_FAILEDになる`() =
-    runTest(testDispatcher) {
-      val repository = InMemoryJournalEntryRepository()
-      val recorder = LocalWebhookJournalRecorder(repository, JournalPoster { false })
-      val viewModel = MainViewModel(recorder)
-
-      viewModel.record("today was good", source = JournalSource.APP)
-      testDispatcher.scheduler.advanceUntilIdle()
-
-      assertEquals(MainViewModel.UiState.SUCCESS_DELIVERY_FAILED, viewModel.uiState.value)
-      assertEquals(DeliveryStatus.FAILED, repository.entries.values.single().deliveryStatus)
-    }
-
-  @Test
-  fun `Webhook配送がFAILEDの場合はSUCCESS_DELIVERY_FAILEDへ遷移する`() = runTest(testDispatcher) {
-    val viewModel = MainViewModel(FakeJournalRecorder { DeliveryStatus.FAILED })
-
-    viewModel.record("today was good", source = JournalSource.APP)
-    testDispatcher.scheduler.advanceUntilIdle()
-
-    assertEquals(MainViewModel.UiState.SUCCESS_DELIVERY_FAILED, viewModel.uiState.value)
-  }
-
-  @Test
   fun `直前のrecordが処理中の呼び出しは無視される`() = runTest(testDispatcher) {
     val fakeJournalRecorder = FakeJournalRecorder()
     val viewModel = MainViewModel(fakeJournalRecorder)
@@ -159,7 +130,7 @@ class MainViewModelTest {
   }
 
   private class FakeJournalRecorder(
-    private val behavior: suspend (String) -> DeliveryStatus = { DeliveryStatus.SENT },
+    private val behavior: suspend (String) -> Unit = {},
   ) : JournalRecorder {
     var callCount = 0
       private set
@@ -170,27 +141,12 @@ class MainViewModelTest {
     var lastSource: JournalSource? = null
       private set
 
-    override suspend fun record(note: String, mood: MoodSnapshot?, source: JournalSource): DeliveryStatus {
+    override suspend fun record(note: String, mood: MoodSnapshot?, source: JournalSource) {
       callCount++
       lastNote = note
       lastMood = mood
       lastSource = source
-      return behavior(note)
-    }
-  }
-
-  private class InMemoryJournalEntryRepository : JournalEntryRepository {
-    val entries = mutableMapOf<Long, JournalEntry>()
-    private var nextId = 1L
-
-    override suspend fun insert(entry: JournalEntry): Long {
-      val id = nextId++
-      entries[id] = entry.copy(id = id)
-      return id
-    }
-
-    override suspend fun updateDeliveryStatus(id: Long, status: DeliveryStatus) {
-      entries[id] = requireNotNull(entries[id]).copy(deliveryStatus = status)
+      behavior(note)
     }
   }
 }

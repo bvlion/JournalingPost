@@ -2,80 +2,62 @@ package info.bvlion.journalingpost.webhook
 
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * Body templateをJSONとしてparseし、文字列値の中に現れるplaceholderだけを置換して再serializeする。
- * raw String.replace()でJSON全体を書き換えないのは、messageに含まれる引用符・バックスラッシュ・改行等で
- * JSONが壊れるのを防ぐため。置換後の値はJsonPrimitiveとして組み立て直すため、再serialize時に
- * kotlinx.serializationが自動でエスケープする。
+ * Custom WebhookのBody template。利用者がrequest body全体をJSONで編集し、送信時に次のplaceholderを
+ * 展開する。
  *
- * `{{...}}`という記法自体はplaceholder構文として広く検出するが、置換対象として認めるのは
- * `message`/`timestamp`という厳密な名前のみ(空白・hyphen等を含む記法や大文字小文字違いは拒否する)。
- * さらにJSON object keyでの利用は、名前がmessage/timestampと一致していても常に拒否する
- * (placeholderはJSON文字列valueの中でのみ利用可能というIssue #11の契約を保証するため)。
- * `{{message}}`が引用符に囲まれていないraw JSON fragmentとしての利用(`{"value": {{message}}}`)は、
- * そもそも有効なJSONとして構文解析できないため、InvalidJsonとして自然に拒否される。
+ * - [PERIOD_START] / [PERIOD_END]: 対象期間の境界を、そのまま秒精度のUTC文字列として差し込む
+ *   (例: `2026-08-29T00:00:00Z`)。template側で引用符に囲んで使う想定。
+ * - [ENTRIES]: 唯一のraw JSON placeholder。JournalEntryのJSON arrayとして、引用符なしで差し込む
+ *   (`"entries": {{entries}}`)。
+ * - 上記以外の `{{...}}` は置換せず、そのまま文字列として送信する。
+ *
+ * [render]は純粋な文字列置換だけを行い、JSONの構造を前提にしない([ENTRIES]がvalue位置へ引用符なしで
+ * 入るため、template単体では有効なJSONにならないことがある)。展開後bodyが有効なJSONになるかの検証は
+ * 保存時に[rendersValidJson]で行う。それ以外の特別扱いはしない。
  */
 object WebhookBodyTemplateRenderer {
-  private val placeholderSyntax = Regex("""\{\{[^{}]*\}\}""")
-  private val placeholderValues: Map<String, (message: String, timestamp: String) -> String> = mapOf(
-    "message" to { message, _ -> message },
-    "timestamp" to { _, timestamp -> timestamp },
-  )
+  const val PERIOD_START = "{{periodStart}}"
+  const val PERIOD_END = "{{periodEnd}}"
+  const val ENTRIES = "{{entries}}"
 
-  sealed interface Result {
-    data class Success(val json: String) : Result
+  // 展開後の形式を説明・検証で示すための見本値。画面のplaceholder説明・entries例・response例と
+  // 同じ1日(2026-08-29)へ揃えてある。
+  const val PERIOD_EXAMPLE = "2026-08-29T00:00:00Z"
+  const val PERIOD_END_EXAMPLE = "2026-08-30T00:00:00Z"
 
-    sealed interface Failure : Result {
-      data object InvalidJson : Failure
-      data class UnsupportedPlaceholder(val name: String) : Failure
+  // 空arrayではなく1件入りにするのは、{{entries}}を引用符で囲むと展開結果のJSONが壊れることを
+  // 保存時に検出できるようにするため(空arrayだと `"{{entries}}"` → `"[]"` が有効なJSONになってしまう)。
+  private const val SAMPLE_ENTRIES_JSON = """[{"recordedAt":"2026-08-29T09:15:00Z","note":"sample"}]"""
+
+  /** 新規設定時の初期Body template。Hostedと共通のrequest schemaに合わせている。 */
+  val DEFAULT_TEMPLATE: String = """
+    {
+      "period": {
+        "start": "$PERIOD_START",
+        "end": "$PERIOD_END"
+      },
+      "entries": $ENTRIES
     }
-  }
+  """.trimIndent()
 
-  fun render(template: String, message: String, timestamp: String): Result {
-    val root = try {
-      Json.parseToJsonElement(template)
+  fun render(template: String, periodStart: String, periodEnd: String, entriesJson: String): String =
+    template
+      .replace(PERIOD_START, periodStart)
+      .replace(PERIOD_END, periodEnd)
+      .replace(ENTRIES, entriesJson)
+
+  /** [ENTRIES]をraw JSON値、期間placeholderを見本文字列として展開した結果が有効なJSONか。 */
+  fun rendersValidJson(template: String): Boolean {
+    val rendered = render(template, PERIOD_EXAMPLE, PERIOD_END_EXAMPLE, SAMPLE_ENTRIES_JSON)
+    return try {
+      Json.parseToJsonElement(rendered)
+      true
     } catch (e: SerializationException) {
-      return Result.Failure.InvalidJson
+      false
     } catch (e: IllegalArgumentException) {
-      return Result.Failure.InvalidJson
-    }
-
-    val unsupported = root.findUnsupportedPlaceholder()
-    if (unsupported != null) return Result.Failure.UnsupportedPlaceholder(unsupported)
-
-    val rendered = root.substitutePlaceholders(message, timestamp)
-    return Result.Success(Json.encodeToString(JsonElement.serializer(), rendered))
-  }
-
-  private fun JsonElement.findUnsupportedPlaceholder(): String? = when (this) {
-    is JsonObject -> entries.firstNotNullOfOrNull { (key, value) ->
-      // key上の記法は、名前がmessage/timestampであっても常に不正扱いにする。
-      placeholderSyntax.find(key)?.let { it.placeholderName() } ?: value.findUnsupportedPlaceholder()
-    }
-    is JsonArray -> firstNotNullOfOrNull { it.findUnsupportedPlaceholder() }
-    is JsonPrimitive -> if (isString) {
-      placeholderSyntax.findAll(content).map { it.placeholderName() }.firstOrNull { it !in placeholderValues }
-    } else {
-      null
+      false
     }
   }
-
-  private fun JsonElement.substitutePlaceholders(message: String, timestamp: String): JsonElement = when (this) {
-    is JsonObject -> JsonObject(mapValues { (_, value) -> value.substitutePlaceholders(message, timestamp) })
-    is JsonArray -> JsonArray(map { it.substitutePlaceholders(message, timestamp) })
-    is JsonPrimitive -> if (isString) {
-      JsonPrimitive(
-        placeholderSyntax.replace(content) { match -> placeholderValues.getValue(match.placeholderName())(message, timestamp) },
-      )
-    } else {
-      this
-    }
-  }
-
-  private fun MatchResult.placeholderName(): String = value.removeSurrounding("{{", "}}")
 }

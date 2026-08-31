@@ -28,14 +28,11 @@ class JournalHistoryViewModel(
     }
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), JournalHistoryUiState.Loading)
 
+  // 削除失敗を1度だけ画面へ伝える(画面はSnackbarで見せてから[consumeDeleteFailed])。
   private val _deleteFailed = MutableStateFlow(false)
   val deleteFailed: StateFlow<Boolean> = _deleteFailed.asStateFlow()
 
-  /**
-   * 履歴画面へ入り直したときに、前回の削除失敗を持ち越さない。ViewModelはActivityと同じ寿命のため、
-   * これがないと画面を出入りしても「削除できませんでした」が残り続ける。
-   */
-  fun onHistoryOpened() {
+  fun consumeDeleteFailed() {
     _deleteFailed.value = false
   }
 

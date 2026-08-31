@@ -31,7 +31,7 @@ class DataStoreWebhookSettingsRepositoryTest {
   private val sampleSettings = WebhookSettings(
     url = "https://example.com/webhook",
     headers = listOf(WebhookHeader("Authorization", "Bearer xxxxx")),
-    bodyTemplate = """{"text": "{{message}}"}""",
+    bodyTemplate = """{"entries": {{entries}}}""",
   )
 
   private fun createRepository(cipher: WebhookSettingsCipher = FakeWebhookSettingsCipher()): DataStoreWebhookSettingsRepository {

@@ -20,5 +20,4 @@ data class JournalEntry(
   val moodLabel: String? = null,
   val note: String? = null,
   val source: JournalSource,
-  val deliveryStatus: DeliveryStatus,
 )

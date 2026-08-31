@@ -10,10 +10,11 @@ import info.bvlion.journalingpost.analysis.db.AnalysisResultDao
 import info.bvlion.journalingpost.journal.JournalEntry
 
 /**
- * version 2でanalysis_resultsテーブルを追加。公開前のためversion 1の開発用DBとの互換
- * migrationは持たず、旧DBが残る端末はアプリデータ削除または再インストールで対応する。
+ * version 2でanalysis_resultsテーブルを追加。version 3でjournal_entriesのdeliveryStatus列を削除
+ * (記録都度のWebhook配送を廃止し期間解析へ移行したため)。公開前のため互換migrationは持たず、
+ * 旧DBが残る端末はアプリデータ削除または再インストールで対応する。
  */
-@Database(entities = [JournalEntry::class, AnalysisResult::class], version = 2, exportSchema = true)
+@Database(entities = [JournalEntry::class, AnalysisResult::class], version = 3, exportSchema = true)
 @TypeConverters(Converters::class)
 internal abstract class JournalDatabase : RoomDatabase() {
   abstract fun journalEntryDao(): JournalEntryDao
