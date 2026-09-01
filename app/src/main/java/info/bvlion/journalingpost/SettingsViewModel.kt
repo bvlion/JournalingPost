@@ -2,6 +2,8 @@ package info.bvlion.journalingpost
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import info.bvlion.journalingpost.debug.DebugFixtureSeedResult
+import info.bvlion.journalingpost.debug.DebugFixtureSeeder
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import info.bvlion.journalingpost.settings.NoteOnlyEntryRepository
@@ -29,6 +31,8 @@ class SettingsViewModel(
   private val webhookSettingsRepository: WebhookSettingsRepository,
   private val noteOnlyEntryRepository: NoteOnlyEntryRepository,
   private val refreshWidgets: suspend () -> Unit,
+  /** debugビルドでのみ非null。動作確認用fixtureの投入導線を出すかどうかの判定にも使う。 */
+  private val debugFixtureSeeder: DebugFixtureSeeder? = null,
 ) : ViewModel() {
   /** 未設定からCustom Webhookを選んだ直後は、保存完了前でもradioだけは利用者の選択を示す。 */
   private val pendingCustomWebhookSelection = MutableStateFlow(false)
@@ -125,6 +129,26 @@ class SettingsViewModel(
     }
   }
 
+  /** debugビルドの設定画面からのみ呼ばれる。releaseでは[debugFixtureSeeder]がnullで何もしない。 */
+  fun seedDebugFixtures() {
+    val seeder = debugFixtureSeeder ?: return
+    viewModelScope.launch {
+      val event = try {
+        when (val result = seeder.seed()) {
+          is DebugFixtureSeedResult.Seeded ->
+            SettingsEvent.DebugFixturesSeeded(result.entryCount, result.analysisResultCount)
+
+          DebugFixtureSeedResult.AlreadySeeded -> SettingsEvent.DebugFixturesAlreadySeeded
+        }
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        SettingsEvent.DebugFixturesSeedFailed
+      }
+      _events.send(event)
+    }
+  }
+
   private suspend fun persistAnalysisIntegration(integration: AnalysisIntegration, session: Any) {
     try {
       analysisIntegrationRepository.setAnalysisIntegration(integration)
@@ -158,4 +182,13 @@ sealed interface SettingsEvent {
 
   /** Custom Webhookを選んだが保存済み設定が無く、Webhook設定画面へ進める必要がある。 */
   data object WebhookSetupRequested : SettingsEvent
+
+  /** debugビルドの動作確認用fixtureを投入した。 */
+  data class DebugFixturesSeeded(val entryCount: Int, val analysisResultCount: Int) : SettingsEvent
+
+  /** debugビルドの動作確認用fixtureは投入済みで、何も追加しなかった。 */
+  data object DebugFixturesAlreadySeeded : SettingsEvent
+
+  /** debugビルドの動作確認用fixtureの投入に失敗した。 */
+  data object DebugFixturesSeedFailed : SettingsEvent
 }

@@ -73,6 +73,15 @@
   <string name="settings_webhook_item">Webhook設定</string>
   <string name="settings_webhook_destination_unknown">設定済み</string>
 
+  <!-- 開発者向け。debugビルドの設定画面でのみ表示する。 -->
+  <string name="settings_debug_heading">開発者向け</string>
+  <string name="settings_debug_seed_fixtures_item">動作確認用データを投入</string>
+  <string name="settings_debug_seed_fixtures_description">今日を含む過去7日分の記録と解析結果を作成します。debugビルドでのみ表示されます。</string>
+  <!-- %1$d は記録の件数、%2$d は解析結果の件数 -->
+  <string name="settings_debug_fixtures_seeded">動作確認用データを投入しました（記録%1$d件・解析%2$d件）</string>
+  <string name="settings_debug_fixtures_already_seeded">動作確認用データは投入済みです</string>
+  <string name="settings_debug_fixtures_seed_failed">動作確認用データを投入できませんでした</string>
+
   <!-- ==== Webhook設定 ==== -->
   <string name="webhook_settings_url_label">URL</string>
   <string name="webhook_settings_headers_heading">HTTPヘッダー</string>
