@@ -1,5 +1,10 @@
 package info.bvlion.journalingpost.journal.history
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,16 +15,28 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -37,19 +54,31 @@ import java.util.Locale
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
-// 履歴が蓄積すると何年の記録か分からなくなるため、日付見出しには年も含める。
+// 履歴が蓄積すると何年の記録か分からなくなるため、日付表示には年も含める。
 private val historyDateFormatter = DateTimeFormatter.ofPattern("yyyy/M/d", Locale.JAPAN)
 private val historyTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.JAPAN)
 
+// 縦スクロール中の指の横ぶれで日付が動かない程度に、ページ送りの判定距離を取る。
+private val swipeThreshold = 56.dp
+
+/**
+ * 記録履歴の画面。1日分だけを表示し、日付ナビゲーション行・日付指定・左右スワイプで表示日を切り替える。
+ * どの日へ移動できるかの判断はViewModelが持ち、この画面は操作を伝えるだけにする。
+ */
 @Composable
 fun JournalHistoryScreen(
   uiState: JournalHistoryUiState,
   deleteFailures: Flow<Unit>,
   onShowMessage: (String) -> Unit,
   onDelete: (Long) -> Unit,
+  onPreviousDay: () -> Unit,
+  onNextDay: () -> Unit,
+  onToday: () -> Unit,
+  onSelectDate: (LocalDate) -> Unit,
 ) {
   // 削除確認中のentryは、回転しても対象を見失わないようidだけを保持する。
   var pendingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
+  var showDateJump by rememberSaveable { mutableStateOf(false) }
 
   val deleteFailedMessage = stringResource(R.string.journal_history_delete_failed)
   EventEffect(deleteFailures) { onShowMessage(deleteFailedMessage) }
@@ -62,29 +91,38 @@ fun JournalHistoryScreen(
         CircularProgressIndicator()
       }
 
-      JournalHistoryUiState.Empty -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-          text = stringResource(R.string.journal_history_empty),
-          style = MaterialTheme.typography.bodyMedium,
+      is JournalHistoryUiState.Content -> {
+        JournalHistoryDateNavigation(
+          uiState = uiState,
+          onPreviousDay = onPreviousDay,
+          onNextDay = onNextDay,
+          onToday = onToday,
+          onDateJumpRequest = { showDateJump = true },
         )
-      }
-
-      is JournalHistoryUiState.Content -> LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        uiState.groups.forEach { group ->
-          item(key = "date-${group.date}") {
-            JournalHistoryDateHeader(group.date)
-          }
-          items(group.items, key = { it.id }) { item ->
-            JournalHistoryRow(item = item, onDeleteRequest = { pendingDeleteId = item.id })
-          }
-        }
+        JournalHistoryDay(
+          uiState = uiState,
+          onPreviousDay = onPreviousDay,
+          onNextDay = onNextDay,
+          onDeleteRequest = { pendingDeleteId = it.id },
+        )
       }
     }
   }
 
-  val pendingItem = (uiState as? JournalHistoryUiState.Content)
-    ?.groups
-    ?.firstNotNullOfOrNull { group -> group.items.firstOrNull { it.id == pendingDeleteId } }
+  val content = uiState as? JournalHistoryUiState.Content
+  if (content != null && showDateJump) {
+    JournalHistoryDateJumpDialog(
+      selectedDate = content.selectedDate,
+      today = content.today,
+      onSelect = {
+        showDateJump = false
+        onSelectDate(it)
+      },
+      onDismiss = { showDateJump = false },
+    )
+  }
+
+  val pendingItem = content?.items?.firstOrNull { it.id == pendingDeleteId }
   if (pendingItem != null) {
     JournalHistoryDeleteConfirmDialog(
       item = pendingItem,
@@ -94,6 +132,156 @@ fun JournalHistoryScreen(
       },
       onDismiss = { pendingDeleteId = null },
     )
+  }
+}
+
+@Composable
+private fun JournalHistoryDateNavigation(
+  uiState: JournalHistoryUiState.Content,
+  onPreviousDay: () -> Unit,
+  onNextDay: () -> Unit,
+  onToday: () -> Unit,
+  onDateJumpRequest: () -> Unit,
+) {
+  val selectedDateText = uiState.selectedDate.format(historyDateFormatter)
+  val dateJumpDescription = stringResource(R.string.journal_history_date_jump_description, selectedDateText)
+
+  Row(
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    IconButton(onClick = onPreviousDay) {
+      Icon(
+        painter = painterResource(R.drawable.ic_chevron_left),
+        contentDescription = stringResource(R.string.journal_history_previous_day),
+      )
+    }
+    // 表示中の日付そのものを日付指定の入口にして、専用のボタンを増やさない。
+    TextButton(
+      onClick = onDateJumpRequest,
+      modifier = Modifier.weight(1f).semantics { contentDescription = dateJumpDescription },
+    ) {
+      Text(text = selectedDateText, style = MaterialTheme.typography.titleMedium)
+    }
+    IconButton(onClick = onNextDay, enabled = !uiState.isToday) {
+      Icon(
+        painter = painterResource(R.drawable.ic_chevron_right),
+        contentDescription = stringResource(R.string.journal_history_next_day),
+      )
+    }
+    TextButton(onClick = onToday, enabled = !uiState.isToday) {
+      Text(stringResource(R.string.journal_history_today))
+    }
+  }
+}
+
+/**
+ * 表示日は際限なく過去へ遡れるため、日付ごとのページを並べて持たず、1日分だけを描いて
+ * 横ドラッグの結果を表示日の変更として扱う。
+ */
+@Composable
+private fun JournalHistoryDay(
+  uiState: JournalHistoryUiState.Content,
+  onPreviousDay: () -> Unit,
+  onNextDay: () -> Unit,
+  onDeleteRequest: (JournalHistoryItem) -> Unit,
+) {
+  val currentPreviousDay by rememberUpdatedState(onPreviousDay)
+  val currentNextDay by rememberUpdatedState(onNextDay)
+  val thresholdPx = with(LocalDensity.current) { swipeThreshold.toPx() }
+
+  Box(
+    modifier = Modifier
+      .fillMaxSize()
+      .pointerInput(thresholdPx) {
+        var dragged = 0f
+        detectHorizontalDragGestures(
+          onDragStart = { dragged = 0f },
+          onDragCancel = { dragged = 0f },
+          onDragEnd = {
+            when {
+              dragged <= -thresholdPx -> currentNextDay()
+              dragged >= thresholdPx -> currentPreviousDay()
+            }
+          },
+          onHorizontalDrag = { change, dragAmount ->
+            dragged += dragAmount
+            change.consume()
+          },
+        )
+      },
+  ) {
+    AnimatedContent(
+      targetState = uiState,
+      // 同じ日のまま記録が増減しただけのときは切り替え扱いにしない。
+      contentKey = { it.selectedDate },
+      transitionSpec = {
+        val forward = targetState.selectedDate.isAfter(initialState.selectedDate)
+        val direction = if (forward) 1 else -1
+        slideInHorizontally { width -> direction * width } togetherWith
+          slideOutHorizontally { width -> -direction * width }
+      },
+      label = "journalHistoryDay",
+    ) { state ->
+      if (state.items.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+          Text(
+            text = stringResource(
+              if (state.hasAnyEntry) R.string.journal_history_day_empty else R.string.journal_history_empty,
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+          )
+        }
+      } else {
+        LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+          items(state.items, key = { it.id }) { item ->
+            JournalHistoryRow(item = item, onDeleteRequest = { onDeleteRequest(item) })
+          }
+        }
+      }
+    }
+  }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun JournalHistoryDateJumpDialog(
+  selectedDate: LocalDate,
+  today: LocalDate,
+  onSelect: (LocalDate) -> Unit,
+  onDismiss: () -> Unit,
+) {
+  val selectableDates = remember(today) {
+    object : SelectableDates {
+      override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+        isSelectableHistoryDate(utcTimeMillis, today)
+
+      override fun isSelectableYear(year: Int): Boolean = isSelectableHistoryYear(year, today)
+    }
+  }
+  val datePickerState = rememberDatePickerState(
+    initialSelectedDateMillis = selectedDate.toDatePickerMillis(),
+    selectableDates = selectableDates,
+  )
+  val pickedDate = datePickerState.selectedDateMillis?.toDatePickerDate()
+
+  DatePickerDialog(
+    onDismissRequest = onDismiss,
+    confirmButton = {
+      TextButton(
+        enabled = pickedDate != null,
+        onClick = { if (pickedDate != null) onSelect(pickedDate) },
+      ) {
+        Text(stringResource(R.string.journal_history_date_jump_confirm))
+      }
+    },
+    dismissButton = {
+      TextButton(onClick = onDismiss) {
+        Text(stringResource(R.string.action_cancel))
+      }
+    },
+  ) {
+    DatePicker(state = datePickerState)
   }
 }
 
@@ -154,15 +342,6 @@ private fun JournalHistoryDeleteConfirmDialog(
 }
 
 @Composable
-private fun JournalHistoryDateHeader(date: LocalDate) {
-  Text(
-    text = date.format(historyDateFormatter),
-    style = MaterialTheme.typography.titleSmall,
-    modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
-  )
-}
-
-@Composable
 private fun JournalHistoryRow(
   item: JournalHistoryItem,
   onDeleteRequest: () -> Unit,
@@ -216,25 +395,27 @@ fun JournalHistoryScreenPreview() {
   JournalingPostTheme {
     JournalHistoryScreen(
       uiState = JournalHistoryUiState.Content(
-        listOf(
-          JournalHistoryGroup(
+        selectedDate = LocalDate.of(2026, 8, 29),
+        today = LocalDate.of(2026, 8, 30),
+        items = listOf(
+          JournalHistoryItem(
+            id = 1,
             date = LocalDate.of(2026, 8, 29),
-            items = listOf(
-              JournalHistoryItem(
-                id = 1,
-                date = LocalDate.of(2026, 8, 29),
-                time = LocalTime.of(9, 30),
-                moodEmoji = "🙂",
-                moodLabel = "ふつう",
-                note = "朝の記録",
-              ),
-            ),
+            time = LocalTime.of(9, 30),
+            moodEmoji = "🙂",
+            moodLabel = "ふつう",
+            note = "朝の記録",
           ),
         ),
+        hasAnyEntry = true,
       ),
       deleteFailures = emptyFlow(),
       onShowMessage = {},
       onDelete = {},
+      onPreviousDay = {},
+      onNextDay = {},
+      onToday = {},
+      onSelectDate = {},
     )
   }
 }
