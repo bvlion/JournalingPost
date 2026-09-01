@@ -251,6 +251,10 @@ class MainActivity : ComponentActivity() {
                       deleteFailures = historyViewModel.deleteFailures,
                       onShowMessage = showMessage,
                       onDelete = historyViewModel::deleteEntry,
+                      onPreviousDay = historyViewModel::showPreviousDay,
+                      onNextDay = historyViewModel::showNextDay,
+                      onToday = historyViewModel::showToday,
+                      onSelectDate = historyViewModel::selectDate,
                     )
                   }
 
