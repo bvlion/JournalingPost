@@ -32,6 +32,9 @@ sealed interface PeriodAnalysisOutcome {
     /** Custom Webhookが解析先として有効でない(未選択、または利用可能な設定がない)。 */
     WEBHOOK_UNAVAILABLE,
 
+    /** 解析・連携が「使用しない」で、手動解析の対象が無い。 */
+    INTEGRATION_UNAVAILABLE,
+
     /** 対象期間にJournalEntryが1件も無い。HTTP requestは送らない。 */
     NO_ENTRIES,
 
@@ -41,8 +44,14 @@ sealed interface PeriodAnalysisOutcome {
     /** 送信・受信でネットワークエラーが発生した。 */
     NETWORK,
 
-    /** WebhookがHTTPエラー(2xx以外)を返した。 */
+    /** 解析先がHTTPエラー(2xx以外)を返した。処理前の拒否と分かる恒久的な失敗。 */
     SERVER_ERROR,
+
+    /**
+     * 解析先が一時的に応答できない(timeout・503・504・429・処理中など)。同じ意図で
+     * しばらくしてから再実行でき、その際は同じIdempotency-Keyを使う。
+     */
+    TEMPORARILY_UNAVAILABLE,
 
     /** responseがHostedと同じ想定schemaでなかった、または `analysis.text` が空だった。 */
     INVALID_RESPONSE,

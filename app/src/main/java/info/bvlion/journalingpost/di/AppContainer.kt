@@ -6,11 +6,19 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.glance.appwidget.updateAll
+import info.bvlion.journalingpost.BuildConfig
 import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.analysis.AnalysisResultWriter
+import info.bvlion.journalingpost.analysis.IntegrationRoutingPeriodAnalyzer
 import info.bvlion.journalingpost.analysis.PeriodAnalyzer
 import info.bvlion.journalingpost.analysis.WebhookPeriodAnalyzer
 import info.bvlion.journalingpost.analysis.db.RoomAnalysisResultRepository
+import info.bvlion.journalingpost.hosted.DataStoreHostedCredentialsRepository
+import info.bvlion.journalingpost.hosted.DataStoreHostedIdempotencyKeyStore
+import info.bvlion.journalingpost.hosted.HostedCredentialsRepository
+import info.bvlion.journalingpost.hosted.HostedIdempotencyKeyStore
+import info.bvlion.journalingpost.hosted.HostedInstallationRegistrar
+import info.bvlion.journalingpost.hosted.HostedPeriodAnalyzer
 import info.bvlion.journalingpost.journal.JournalEntryDeleter
 import info.bvlion.journalingpost.journal.JournalEntryReader
 import info.bvlion.journalingpost.journal.JournalRecorder
@@ -21,6 +29,7 @@ import info.bvlion.journalingpost.journal.db.RoomJournalEntryRepository
 import info.bvlion.journalingpost.mood.DataStoreMoodRepository
 import info.bvlion.journalingpost.mood.MoodRepository
 import info.bvlion.journalingpost.mood.createInitialMoodCatalog
+import info.bvlion.journalingpost.security.AndroidKeystoreCipher
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import info.bvlion.journalingpost.settings.DataStoreAnalysisIntegrationRepository
 import info.bvlion.journalingpost.settings.DataStoreNoteOnlyEntryRepository
@@ -33,6 +42,7 @@ import info.bvlion.journalingpost.widget.MoodWidget
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 
@@ -59,6 +69,16 @@ internal class AppContainer(context: Context) {
     HttpClient(CIO) {
       install(ContentNegotiation) {
         json()
+      }
+    }
+  }
+
+  /** Hosted解析専用のHTTP client。Server #4 の実測にもとづくrequest timeoutを既定で持たせる。 */
+  private val hostedHttpClient by lazy {
+    HttpClient(CIO) {
+      install(ContentNegotiation) { json() }
+      install(HttpTimeout) {
+        requestTimeoutMillis = HostedPeriodAnalyzer.REQUEST_TIMEOUT_MILLIS
       }
     }
   }
@@ -93,6 +113,17 @@ internal class AppContainer(context: Context) {
     )
   }
 
+  private val hostedCredentialsRepository: HostedCredentialsRepository by lazy {
+    DataStoreHostedCredentialsRepository(
+      dataStore = createPreferenceDataStore(HOSTED_CREDENTIALS_FILE_NAME),
+      cipher = AndroidKeystoreCipher(HOSTED_CREDENTIALS_KEY_ALIAS),
+    )
+  }
+
+  private val hostedIdempotencyKeyStore: HostedIdempotencyKeyStore by lazy {
+    DataStoreHostedIdempotencyKeyStore(createPreferenceDataStore(HOSTED_IDEMPOTENCY_FILE_NAME))
+  }
+
   /**
    * 「CUSTOM_WEBHOOKが有効ならWebhook設定が存在する」契約はここでのみ組み立てる。記録側・設定画面側の
    * どちらかが素のDataStore実装を直接使うと、その契約が片側だけ崩れるため。
@@ -107,10 +138,25 @@ internal class AppContainer(context: Context) {
   }
 
   val periodAnalyzer: PeriodAnalyzer by lazy {
-    WebhookPeriodAnalyzer(
-      httpClient = httpClient,
+    IntegrationRoutingPeriodAnalyzer(
       analysisIntegrationRepository = analysisIntegrationRepository,
-      webhookSettingsRepository = webhookSettingsRepository,
+      webhookAnalyzer = WebhookPeriodAnalyzer(
+        httpClient = httpClient,
+        analysisIntegrationRepository = analysisIntegrationRepository,
+        webhookSettingsRepository = webhookSettingsRepository,
+      ),
+      hostedAnalyzer = HostedPeriodAnalyzer(
+        httpClient = hostedHttpClient,
+        registrar = HostedInstallationRegistrar(
+          httpClient = hostedHttpClient,
+          credentialsRepository = hostedCredentialsRepository,
+          baseUrl = hostedBaseUrl,
+        ),
+        credentialsRepository = hostedCredentialsRepository,
+        idempotencyKeyStore = hostedIdempotencyKeyStore,
+        analysisIntegrationRepository = analysisIntegrationRepository,
+        baseUrl = hostedBaseUrl,
+      ),
     )
   }
 
@@ -125,6 +171,8 @@ internal class AppContainer(context: Context) {
   private fun createPreferenceDataStore(fileName: String): DataStore<Preferences> =
     PreferenceDataStoreFactory.create(produceFile = { context.preferencesDataStoreFile(fileName) })
 
+  private val hostedBaseUrl: String get() = BuildConfig.HOSTED_ANALYSIS_BASE_URL.trimEnd('/')
+
   private companion object {
     /**
      * AnalysisIntegration設定とはファイルを分離する(責務が異なるうえ、Webhook設定ファイルは
@@ -138,5 +186,14 @@ internal class AppContainer(context: Context) {
     const val MOOD_SETTINGS_FILE_NAME = "mood_settings"
 
     const val NOTE_ONLY_ENTRY_FILE_NAME = "note_only_entry_settings"
+
+    /** Hosted API keyの暗号化保存先。backupから除外する(dataExtractionRulesと合わせる)。 */
+    const val HOSTED_CREDENTIALS_FILE_NAME = "hosted_credentials"
+
+    /** 変更すると既存端末の保存済みAPI keyを復号できなくなるため固定する。 */
+    const val HOSTED_CREDENTIALS_KEY_ALIAS = "journaling_post_hosted_credentials_key"
+
+    /** Idempotency-Keyの一時保存先。秘密値ではないためbackup対象で構わない。 */
+    const val HOSTED_IDEMPOTENCY_FILE_NAME = "hosted_idempotency"
   }
 }

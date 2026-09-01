@@ -108,10 +108,15 @@ class AnalysisHistoryViewModelTest {
   }
 
   @Test
-  fun `canRunAnalysisはCUSTOM_WEBHOOKのときだけtrueになる`() = runTest(testDispatcher) {
+  fun `canRunAnalysisは解析先が選ばれているときtrueになる`() = runTest(testDispatcher) {
     val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK)
     val viewModel = createViewModel(integrationRepository = integrationRepository)
     val collectJob = CoroutineScope(testDispatcher).launch { viewModel.canRunAnalysis.collect {} }
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertTrue(viewModel.canRunAnalysis.value)
+
+    integrationRepository.set(AnalysisIntegration.HOSTED)
     testDispatcher.scheduler.advanceUntilIdle()
 
     assertTrue(viewModel.canRunAnalysis.value)

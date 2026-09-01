@@ -185,12 +185,18 @@ private fun Long.toLocalDateFromUtc(): LocalDate =
 /** 対象日をSnackbar側で持ち直さず、失敗結果に含まれる日をそのまま文言へ入れる。 */
 private fun Resources.failureMessage(failed: AnalysisRunResult.Failed): String = when (failed.failure) {
   PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE -> getString(R.string.analysis_failure_webhook_unavailable)
+  PeriodAnalysisOutcome.Failure.INTEGRATION_UNAVAILABLE ->
+    getString(R.string.analysis_failure_integration_unavailable)
+
   PeriodAnalysisOutcome.Failure.NO_ENTRIES ->
     getString(R.string.analysis_failure_no_entries, failed.day.format(analysisDayFormatter))
 
   PeriodAnalysisOutcome.Failure.LOCAL_READ -> getString(R.string.analysis_failure_local_read)
   PeriodAnalysisOutcome.Failure.NETWORK -> getString(R.string.analysis_failure_network)
   PeriodAnalysisOutcome.Failure.SERVER_ERROR -> getString(R.string.analysis_failure_server_error)
+  PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE ->
+    getString(R.string.analysis_failure_temporarily_unavailable)
+
   PeriodAnalysisOutcome.Failure.INVALID_RESPONSE -> getString(R.string.analysis_failure_invalid_response)
   null -> getString(R.string.analysis_failure_save)
 }

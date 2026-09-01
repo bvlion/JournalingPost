@@ -45,11 +45,13 @@
   <!-- %1$s 解析日時 -->
   <string name="analysis_card_analyzed_at">解析日時：%1$s</string>
   <string name="analysis_failure_webhook_unavailable">Custom Webhookの設定を確認できませんでした</string>
+  <string name="analysis_failure_integration_unavailable">解析・連携が設定されていません</string>
   <!-- %1$s は解析対象に選んだ日 -->
   <string name="analysis_failure_no_entries">%1$s には記録がないため解析できませんでした</string>
   <string name="analysis_failure_local_read">端末内の記録を読み込めませんでした</string>
   <string name="analysis_failure_network">解析先と通信できませんでした</string>
   <string name="analysis_failure_server_error">解析先からエラーが返されました</string>
+  <string name="analysis_failure_temporarily_unavailable">解析先が一時的に応答できません。しばらくしてからもう一度お試しください</string>
   <string name="analysis_failure_invalid_response">解析結果を受け取れませんでした</string>
   <string name="analysis_failure_save">解析結果を保存できませんでした</string>
 
@@ -58,6 +60,11 @@
   <string name="settings_integration_save_failed">解析・連携の設定を保存できませんでした</string>
   <string name="settings_integration_none">使用しない</string>
   <string name="settings_integration_custom_webhook">Custom Webhook</string>
+  <string name="settings_integration_hosted">JournalingPost Hosted</string>
+  <string name="settings_integration_hosted_description">手動解析のとき、対象期間の記録をJournalingPostのサーバーへ送信してAI解析します</string>
+  <string name="settings_hosted_consent_title">記録を外部へ送信します</string>
+  <string name="settings_hosted_consent_body">JournalingPost Hostedを有効にすると、手動で解析するたびに、その対象期間の記録がAI解析のためJournalingPostのサーバーへ送信されます。記録の原本と解析結果は引き続き端末に保存され、サーバーには恒久保存されません。</string>
+  <string name="settings_hosted_consent_confirm">同意して有効にする</string>
   <string name="settings_mood_item">Mood設定</string>
   <string name="settings_mood_item_description">表示内容・順序・件数を変更</string>
   <string name="settings_note_only_item">「メモだけ記録」を表示</string>
