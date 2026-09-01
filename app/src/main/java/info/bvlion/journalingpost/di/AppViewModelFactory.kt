@@ -53,6 +53,7 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
       webhookSettingsRepository = container.webhookSettingsRepository,
       noteOnlyEntryRepository = container.noteOnlyEntryRepository,
       refreshWidgets = container::refreshMoodWidgets,
+      debugFixtureSeeder = container.debugFixtureSeeder,
     )
   }
   initializer {
