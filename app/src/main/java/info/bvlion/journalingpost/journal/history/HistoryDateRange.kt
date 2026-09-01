@@ -6,28 +6,31 @@ import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 
 /**
- * 履歴で表示できる最も古い日。記録の有無で決まる下限ではない。
- *
- * 左右スワイプはHorizontalPagerで扱っており有限のページ数を必要とするため、下限そのものは避けられない。
- * 値はMaterial3のDatePickerが既定で選択できる下限(1900年)へ揃えてあり、スワイプで辿れる範囲と
- * 日付指定で選べる範囲が食い違わないようにしている。
+ * 履歴で移動できる範囲は`[earliestDate, today]`。下限はJournalEntryが実際に存在する最古の日で決まり
+ * このファイルは持たない。呼び出し側([info.bvlion.journalingpost.JournalHistoryViewModel])が現在の
+ * 記録から算出した値を、そのつど引数として渡す。
  */
-internal val HISTORY_EARLIEST_DATE: LocalDate = LocalDate.of(1900, 1, 1)
+
+/** 左右スワイプはHorizontalPagerで扱っており、[earliestDate]をページ番号0とみなす。 */
+internal fun historyPageOf(date: LocalDate, earliestDate: LocalDate): Int =
+  ChronoUnit.DAYS.between(earliestDate, date).toInt()
+
+internal fun historyDateOfPage(page: Int, earliestDate: LocalDate): LocalDate =
+  earliestDate.plusDays(page.toLong())
+
+/** 記録が1件も無く`earliestDate == today`の場合は、今日だけの1ページになる。 */
+internal fun historyPageCount(earliestDate: LocalDate, today: LocalDate): Int =
+  (historyPageOf(today, earliestDate) + 1).coerceAtLeast(1)
 
 /**
- * 最後のページを[today]にすることで、Pagerの終端がそのまま「未来へは進めない」制約になる。
- * 端末時刻が[HISTORY_EARLIEST_DATE]より前になっている場合でもPagerを構成できるよう1ページは残す。
+ * 未来日には記録が存在し得ないため上限は常に[today]。下限は現在存在する記録から決まる[earliestDate]で、
+ * それより前の日へは移動できない。
  */
-internal fun historyPageCount(today: LocalDate): Int = (historyPageOf(today) + 1).coerceAtLeast(1)
-
-internal fun historyPageOf(date: LocalDate): Int =
-  ChronoUnit.DAYS.between(HISTORY_EARLIEST_DATE, date).toInt()
-
-internal fun historyDateOfPage(page: Int): LocalDate = HISTORY_EARLIEST_DATE.plusDays(page.toLong())
-
-/** 記録のtimestampは常に記録時点のため、未来日には記録が存在し得ない。上限は[today]。 */
-internal fun coerceToHistoryRange(date: LocalDate, today: LocalDate): LocalDate =
-  minOf(maxOf(date, HISTORY_EARLIEST_DATE), today)
+internal fun coerceToHistoryRange(date: LocalDate, earliestDate: LocalDate, today: LocalDate): LocalDate = when {
+  date.isBefore(earliestDate) -> earliestDate
+  date.isAfter(today) -> today
+  else -> date
+}
 
 /**
  * Material3のDatePickerはUTC基準のepoch millisで日付を扱うため、端末timezoneのカレンダー日との
@@ -39,10 +42,11 @@ internal fun LocalDate.toDatePickerMillis(): Long =
 internal fun Long.toDatePickerDate(): LocalDate =
   Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
 
-internal fun isSelectableHistoryDate(utcTimeMillis: Long, today: LocalDate): Boolean {
+/** 日付指定でもスワイプ・前日翌日ボタンと同じ`[earliestDate, today]`だけを選べるようにする。 */
+internal fun isSelectableHistoryDate(utcTimeMillis: Long, earliestDate: LocalDate, today: LocalDate): Boolean {
   val date = utcTimeMillis.toDatePickerDate()
-  return !date.isBefore(HISTORY_EARLIEST_DATE) && !date.isAfter(today)
+  return !date.isBefore(earliestDate) && !date.isAfter(today)
 }
 
-internal fun isSelectableHistoryYear(year: Int, today: LocalDate): Boolean =
-  year in HISTORY_EARLIEST_DATE.year..today.year
+internal fun isSelectableHistoryYear(year: Int, earliestDate: LocalDate, today: LocalDate): Boolean =
+  year in earliestDate.year..today.year

@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -106,6 +107,7 @@ fun JournalHistoryScreen(
   if (content != null && showDateJump) {
     JournalHistoryDateJumpDialog(
       selectedDate = content.selectedDate,
+      earliestDate = content.earliestDate,
       today = content.today,
       onSelect = {
         showDateJump = false
@@ -144,7 +146,7 @@ private fun JournalHistoryDateNavigation(
     modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    IconButton(onClick = onPreviousDay) {
+    IconButton(onClick = onPreviousDay, enabled = !uiState.isEarliestDate) {
       Icon(
         painter = painterResource(R.drawable.ic_chevron_left),
         contentDescription = stringResource(R.string.journal_history_previous_day),
@@ -173,7 +175,9 @@ private fun JournalHistoryDateNavigation(
  * 1ページ=1日のHorizontalPagerで日付を送る。ドラッグ追従・fling・スナップ・縦スクロールとの調停は
  * Pagerの標準挙動へ任せ、この画面では独自のスワイプ判定を持たない。
  *
- * 最後のページが今日なので、Pagerの終端がそのまま「未来へは進めない」制約になる。
+ * ページ番号は[JournalHistoryUiState.Content.earliestDate]を0とした相対番号で、最後のページが今日。
+ * Pagerの両端がそのまま移動できる範囲の制約になる。[earliestDate]は削除で動くことがあるため、
+ * ページ番号の意味が変わった場合はLaunchedEffect(selectedPage)がPagerの位置を追従させる。
  */
 @Composable
 private fun JournalHistoryDayPager(
@@ -182,26 +186,31 @@ private fun JournalHistoryDayPager(
   onDeleteRequest: (JournalHistoryItem) -> Unit,
 ) {
   val pagerState = rememberPagerState(
-    initialPage = historyPageOf(uiState.selectedDate),
-    pageCount = { historyPageCount(uiState.today) },
+    initialPage = historyPageOf(uiState.selectedDate, uiState.earliestDate),
+    pageCount = { historyPageCount(uiState.earliestDate, uiState.today) },
   )
-  val selectedPage = historyPageOf(uiState.selectedDate)
+  val selectedPage = historyPageOf(uiState.selectedDate, uiState.earliestDate)
 
-  // 日付ナビゲーション行や日付指定で表示日が変わったときは、Pagerを同じ日へ寄せる。
+  // 日付ナビゲーション行や日付指定で表示日が変わったとき、または下限が動いてページ番号の意味が
+  // 変わったときに、Pagerを同じ日へ寄せる。
   LaunchedEffect(selectedPage) {
     if (pagerState.currentPage != selectedPage) pagerState.animateScrollToPage(selectedPage)
   }
+  // LaunchedEffect(pagerState)はpagerStateが同一インスタンスである限り再起動されないため、
+  // ブロック内で参照するuiState由来の値はrememberUpdatedStateで最新化しておく。
+  val currentEarliestDate by rememberUpdatedState(uiState.earliestDate)
+  val currentOnSelectDate by rememberUpdatedState(onSelectDate)
   // スワイプで落ち着いたページを表示日として確定する。購読直後の1件はPagerの現在値が流れてくるだけで
   // スワイプ結果ではない。これを表示日として扱うと、process再生成でPagerの位置だけが復元されたときに
   // 「初期表示は今日」がPager側の値で上書きされる。
   LaunchedEffect(pagerState) {
     snapshotFlow { pagerState.settledPage }
       .drop(1)
-      .collect { onSelectDate(historyDateOfPage(it)) }
+      .collect { currentOnSelectDate(historyDateOfPage(it, currentEarliestDate)) }
   }
 
   HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-    val items = uiState.itemsOn(historyDateOfPage(page))
+    val items = uiState.itemsOn(historyDateOfPage(page, uiState.earliestDate))
     if (items.isEmpty()) {
       Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
@@ -225,16 +234,18 @@ private fun JournalHistoryDayPager(
 @Composable
 private fun JournalHistoryDateJumpDialog(
   selectedDate: LocalDate,
+  earliestDate: LocalDate,
   today: LocalDate,
   onSelect: (LocalDate) -> Unit,
   onDismiss: () -> Unit,
 ) {
-  val selectableDates = remember(today) {
+  // 日付指定でも前日/翌日ボタン・スワイプと同じ範囲だけを選べるようにする。
+  val selectableDates = remember(earliestDate, today) {
     object : SelectableDates {
       override fun isSelectableDate(utcTimeMillis: Long): Boolean =
-        isSelectableHistoryDate(utcTimeMillis, today)
+        isSelectableHistoryDate(utcTimeMillis, earliestDate, today)
 
-      override fun isSelectableYear(year: Int): Boolean = isSelectableHistoryYear(year, today)
+      override fun isSelectableYear(year: Int): Boolean = isSelectableHistoryYear(year, earliestDate, today)
     }
   }
   val datePickerState = rememberDatePickerState(
@@ -375,6 +386,7 @@ fun JournalHistoryScreenPreview() {
       uiState = JournalHistoryUiState.Content(
         selectedDate = LocalDate.of(2026, 8, 29),
         today = LocalDate.of(2026, 8, 30),
+        earliestDate = LocalDate.of(2026, 8, 20),
         itemsByDate = mapOf(
           LocalDate.of(2026, 8, 29) to listOf(
             JournalHistoryItem(
