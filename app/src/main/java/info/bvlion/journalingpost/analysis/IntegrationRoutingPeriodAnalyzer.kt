@@ -15,7 +15,7 @@ internal class IntegrationRoutingPeriodAnalyzer(
   private val analysisIntegrationRepository: AnalysisIntegrationRepository,
   private val webhookAnalyzer: PeriodAnalyzer,
   private val hostedAnalyzer: PeriodAnalyzer,
-) : PeriodAnalyzer {
+) : PeriodAnalyzer, AnalysisResultPersistenceListener {
   override suspend fun analyze(
     periodStart: Instant,
     periodEnd: Instant,
@@ -24,5 +24,11 @@ internal class IntegrationRoutingPeriodAnalyzer(
     AnalysisIntegration.CUSTOM_WEBHOOK -> webhookAnalyzer.analyze(periodStart, periodEnd, entries)
     AnalysisIntegration.HOSTED -> hostedAnalyzer.analyze(periodStart, periodEnd, entries)
     AnalysisIntegration.NONE -> PeriodAnalysisOutcome.Failure.INTEGRATION_UNAVAILABLE
+  }
+
+  override suspend fun onAnalysisResultPersisted(periodStart: Instant, periodEnd: Instant) {
+    // retry stateを持つのは現状Hostedだけ。委譲先のうちlistenerを実装するものへ転送する。
+    (webhookAnalyzer as? AnalysisResultPersistenceListener)?.onAnalysisResultPersisted(periodStart, periodEnd)
+    (hostedAnalyzer as? AnalysisResultPersistenceListener)?.onAnalysisResultPersisted(periodStart, periodEnd)
   }
 }

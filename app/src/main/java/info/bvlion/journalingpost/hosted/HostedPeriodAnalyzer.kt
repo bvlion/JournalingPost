@@ -1,5 +1,6 @@
 package info.bvlion.journalingpost.hosted
 
+import info.bvlion.journalingpost.analysis.AnalysisResultPersistenceListener
 import info.bvlion.journalingpost.analysis.PeriodAnalysisOutcome
 import info.bvlion.journalingpost.analysis.PeriodAnalyzer
 import info.bvlion.journalingpost.journal.JournalEntry
@@ -30,10 +31,13 @@ import kotlinx.serialization.json.Json
  * 対象期間のJournalEntry取得と[info.bvlion.journalingpost.analysis.AnalysisResult]保存は呼び出し側。
  * どの失敗でもJournalEntryへは触れない(このクラスはJournalEntryのwriterを持たない)。
  *
- * Idempotency-Keyは[HostedIdempotencyKeyStore]が対象期間ごとに管理する。network失敗・timeout・
- * 一時エラーではkeyを残し、同じ意図のretryが同じkeyを使ってServerのretry bufferから結果を取り、
- * 不要なAI再課金を避ける。解析が確定したら(成功、または処理前の拒否)keyを捨て、次の実行は
- * 新しい解析になる。
+ * Idempotency-Keyは[HostedIdempotencyKeyStore]が「対象期間 + 送信payloadのfingerprint」ごとに
+ * 管理する。network失敗・timeout・一時エラーではkeyを残し、同じpayloadのretryが同じkeyでServerの
+ * retry bufferから結果を取り不要なAI再課金を避ける。処理前の拒否と分かる失敗(4xx等)ではkeyを捨てる。
+ *
+ * 200成功時はkeyを捨てない。AnalysisResultの端末保存が確定する前に捨てると、保存失敗時のretryが
+ * bufferを引けず結果を失うためである。保存が確定したら[onAnalysisResultPersisted]でkeyを捨て、
+ * 以降の同じ期間・同じpayloadの明示実行は新しいkey(新しい解析)になる。
  */
 internal class HostedPeriodAnalyzer(
   private val httpClient: HttpClient,
@@ -42,7 +46,7 @@ internal class HostedPeriodAnalyzer(
   private val idempotencyKeyStore: HostedIdempotencyKeyStore,
   private val analysisIntegrationRepository: AnalysisIntegrationRepository,
   private val baseUrl: String,
-) : PeriodAnalyzer {
+) : PeriodAnalyzer, AnalysisResultPersistenceListener {
   // moodのみ/noteのみのentryではnullのフィールドをJSONへ出さない(Hostedのentries[]と同じ形)。
   private val requestJson = Json { explicitNulls = false }
   private val responseJson = Json { ignoreUnknownKeys = true }
@@ -76,6 +80,14 @@ internal class HostedPeriodAnalyzer(
         entries = entries.map { it.toHostedAnalysisEntry() },
       ),
     )
+
+    // installation登録の待ち時間中に利用者が「使用しない」等へ変更していないか、JournalEntryを
+    // 送る直前に再確認する。opt-out後の外部送信を起こさないため。登録済みAPI keyはそのまま残す
+    // (再度Hostedを選べば使える。JournalEntry本文は登録には送っていない)。
+    if (analysisIntegrationRepository.analysisIntegration.first() != AnalysisIntegration.HOSTED) {
+      return PeriodAnalysisOutcome.Failure.INTEGRATION_UNAVAILABLE
+    }
+
     // 送信bodyのfingerprintをkeyの一部にする。timeout後に記録を編集して同じ日を解析し直すと
     // fingerprintが変わり新しいkeyになるため、Server側の idempotency_key_reuse 衝突を避けられる。
     val idempotencyKey = idempotencyKeyStore.currentKey(period, body.sha256Hex())
@@ -151,15 +163,22 @@ internal class HostedPeriodAnalyzer(
     val analyzedAt = analysis.analyzedAt.toHostedResponseInstantOrNull()
       ?: return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
 
-    // 成功してもkeyは消さない。呼び出し側のRoom保存が失敗した場合に、同じkeyのretryが
-    // Serverのretry bufferから同じ結果を引けるようにするため(不要なAI再課金・結果喪失を避ける)。
-    // 期限切れ、またはpayloadを変えた解析し直しで新しいkeyへ移る。
+    // 成功してもkeyは消さない。端末保存の確定は呼び出し側だけが知るため、
+    // [onAnalysisResultPersisted]まで保持する(保存失敗時のretryをbufferで引けるようにするため)。
     return PeriodAnalysisOutcome.Success(
       periodStart = start,
       periodEnd = end,
       analyzedAt = analyzedAt,
       body = analysis.text,
     )
+  }
+
+  /**
+   * AnalysisResultの端末保存が確定した。この解析意図は完了とし、以降の同じ期間・同じpayloadの
+   * 明示実行が新しいkey(新しい解析)になるようkeyを捨てる。
+   */
+  override suspend fun onAnalysisResultPersisted(periodStart: Instant, periodEnd: Instant) {
+    idempotencyKeyStore.clear(HostedAnalysisPeriod(periodStart, periodEnd))
   }
 
   private suspend fun handleConflict(response: HttpResponse, period: HostedAnalysisPeriod): PeriodAnalysisOutcome {

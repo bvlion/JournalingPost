@@ -52,6 +52,16 @@ class IntegrationRoutingPeriodAnalyzerTest {
     assertEquals(0, hosted.callCount)
   }
 
+  @Test
+  fun `onAnalysisResultPersistedはlistenerを実装するanalyzerへ転送する`() = runTest {
+    val webhook = RecordingAnalyzer(PeriodAnalysisOutcome.Failure.SERVER_ERROR)
+    val hosted = RecordingPersistenceAnalyzer()
+
+    router(AnalysisIntegration.HOSTED, webhook, hosted).onAnalysisResultPersisted(start, end)
+
+    assertEquals(listOf(start to end), hosted.persistedPeriods)
+  }
+
   private fun router(
     integration: AnalysisIntegration,
     webhook: PeriodAnalyzer,
@@ -76,6 +86,21 @@ class IntegrationRoutingPeriodAnalyzerTest {
     ): PeriodAnalysisOutcome {
       callCount++
       return outcome
+    }
+  }
+
+  private class RecordingPersistenceAnalyzer :
+    PeriodAnalyzer, AnalysisResultPersistenceListener {
+    val persistedPeriods = mutableListOf<Pair<Instant, Instant>>()
+
+    override suspend fun analyze(
+      periodStart: Instant,
+      periodEnd: Instant,
+      entries: List<JournalEntry>,
+    ): PeriodAnalysisOutcome = PeriodAnalysisOutcome.Failure.NETWORK
+
+    override suspend fun onAnalysisResultPersisted(periodStart: Instant, periodEnd: Instant) {
+      persistedPeriods += periodStart to periodEnd
     }
   }
 }

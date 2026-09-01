@@ -280,6 +280,61 @@ class HostedPeriodAnalyzerTest {
   }
 
   @Test
+  fun `端末保存の確定後は同じ記録の再実行が新しいkeyになる`() = runTest {
+    val keys = mutableListOf<String>()
+    val analyzer = analyzer(credentials = FakeHostedCredentialsRepository(stored = "k")) { request ->
+      keys += requireNotNull(request.headers["Idempotency-Key"])
+      respondJson(successBody)
+    }
+
+    analyzer.analyze(periodStart, periodEnd, oneEntry)
+    // AnalysisResultの端末保存まで成功した時点。
+    analyzer.onAnalysisResultPersisted(periodStart, periodEnd)
+    analyzer.analyze(periodStart, periodEnd, oneEntry)
+
+    assertNotEquals(keys[0], keys[1])
+  }
+
+  @Test
+  fun `端末保存の確定通知が無ければ同じ記録のretryは同じkeyを維持する`() = runTest {
+    val keys = mutableListOf<String>()
+    val analyzer = analyzer(credentials = FakeHostedCredentialsRepository(stored = "k")) { request ->
+      keys += requireNotNull(request.headers["Idempotency-Key"])
+      respondJson(successBody)
+    }
+
+    analyzer.analyze(periodStart, periodEnd, oneEntry)
+    // onAnalysisResultPersisted を呼ばない(端末保存に失敗した想定)。
+    analyzer.analyze(periodStart, periodEnd, oneEntry)
+
+    assertEquals(keys[0], keys[1])
+  }
+
+  @Test
+  fun `installation登録の待ち中にopt-outしたらJournalEntryを送らない`() = runTest {
+    val paths = mutableListOf<String>()
+    val integration = FakeIntegrationRepository(AnalysisIntegration.HOSTED)
+    val analyzer = analyzer(
+      integrationRepository = integration,
+      credentials = FakeHostedCredentialsRepository(),
+    ) { request ->
+      paths += request.url.encodedPath
+      if (request.url.encodedPath == "/v1/installations") {
+        // 登録の待ち時間中に利用者が「使用しない」へ切り替えた。
+        integration.set(AnalysisIntegration.NONE)
+        respondJson("""{"installation":{"apiKey":"jpk_issued"}}""", HttpStatusCode.Created)
+      } else {
+        respondJson(successBody)
+      }
+    }
+
+    val outcome = analyzer.analyze(periodStart, periodEnd, oneEntry)
+
+    assertEquals(PeriodAnalysisOutcome.Failure.INTEGRATION_UNAVAILABLE, outcome)
+    assertEquals(listOf("/v1/installations"), paths)
+  }
+
+  @Test
   fun `登録がretryできない失敗ならSERVER_ERROR`() = runTest {
     val analyzer = analyzer(credentials = FakeHostedCredentialsRepository()) {
       respondJson("""{}""", HttpStatusCode.BadRequest)
@@ -321,16 +376,13 @@ class HostedPeriodAnalyzerTest {
 
   private fun analyzer(
     integration: AnalysisIntegration = AnalysisIntegration.HOSTED,
+    integrationRepository: FakeIntegrationRepository = FakeIntegrationRepository(integration),
     credentials: FakeHostedCredentialsRepository = FakeHostedCredentialsRepository(stored = "jpk_stored"),
     keyStore: FakeIdempotencyKeyStore = FakeIdempotencyKeyStore(),
     handler: suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData,
   ): HostedPeriodAnalyzer {
     val client = HttpClient(MockEngine { request -> handler(request) }) {
       install(ContentNegotiation) { json() }
-    }
-    val integrationRepository = object : AnalysisIntegrationRepository {
-      override val analysisIntegration: Flow<AnalysisIntegration> = MutableStateFlow(integration)
-      override suspend fun setAnalysisIntegration(integration: AnalysisIntegration) = error("unused")
     }
     return HostedPeriodAnalyzer(
       httpClient = client,
@@ -341,6 +393,14 @@ class HostedPeriodAnalyzerTest {
       baseUrl = baseUrl,
     )
   }
+}
+
+/** `analysisIntegration.first()` を読むたびに現在値を返す。registration待ち中の設定変更を模せる。 */
+internal class FakeIntegrationRepository(initial: AnalysisIntegration) : AnalysisIntegrationRepository {
+  private val state = MutableStateFlow(initial)
+  override val analysisIntegration: Flow<AnalysisIntegration> get() = state
+  fun set(value: AnalysisIntegration) { state.value = value }
+  override suspend fun setAnalysisIntegration(integration: AnalysisIntegration) = error("unused")
 }
 
 internal class FakeIdempotencyKeyStore(private val fixedKey: String? = null) : HostedIdempotencyKeyStore {
