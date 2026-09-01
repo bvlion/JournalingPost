@@ -1,10 +1,5 @@
 package info.bvlion.journalingpost.journal.history
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
@@ -26,16 +23,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -52,14 +48,12 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.emptyFlow
 
 // 履歴が蓄積すると何年の記録か分からなくなるため、日付表示には年も含める。
 private val historyDateFormatter = DateTimeFormatter.ofPattern("yyyy/M/d", Locale.JAPAN)
 private val historyTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.JAPAN)
-
-// 縦スクロール中の指の横ぶれで日付が動かない程度に、ページ送りの判定距離を取る。
-private val swipeThreshold = 56.dp
 
 /**
  * 記録履歴の画面。1日分だけを表示し、日付ナビゲーション行・日付指定・左右スワイプで表示日を切り替える。
@@ -99,10 +93,9 @@ fun JournalHistoryScreen(
           onToday = onToday,
           onDateJumpRequest = { showDateJump = true },
         )
-        JournalHistoryDay(
+        JournalHistoryDayPager(
           uiState = uiState,
-          onPreviousDay = onPreviousDay,
-          onNextDay = onNextDay,
+          onSelectDate = onSelectDate,
           onDeleteRequest = { pendingDeleteId = it.id },
         )
       }
@@ -122,7 +115,8 @@ fun JournalHistoryScreen(
     )
   }
 
-  val pendingItem = content?.items?.firstOrNull { it.id == pendingDeleteId }
+  val pendingItem = content?.itemsByDate?.values
+    ?.firstNotNullOfOrNull { items -> items.firstOrNull { it.id == pendingDeleteId } }
   if (pendingItem != null) {
     JournalHistoryDeleteConfirmDialog(
       item = pendingItem,
@@ -176,67 +170,51 @@ private fun JournalHistoryDateNavigation(
 }
 
 /**
- * 表示日は際限なく過去へ遡れるため、日付ごとのページを並べて持たず、1日分だけを描いて
- * 横ドラッグの結果を表示日の変更として扱う。
+ * 1ページ=1日のHorizontalPagerで日付を送る。ドラッグ追従・fling・スナップ・縦スクロールとの調停は
+ * Pagerの標準挙動へ任せ、この画面では独自のスワイプ判定を持たない。
+ *
+ * 最後のページが今日なので、Pagerの終端がそのまま「未来へは進めない」制約になる。
  */
 @Composable
-private fun JournalHistoryDay(
+private fun JournalHistoryDayPager(
   uiState: JournalHistoryUiState.Content,
-  onPreviousDay: () -> Unit,
-  onNextDay: () -> Unit,
+  onSelectDate: (LocalDate) -> Unit,
   onDeleteRequest: (JournalHistoryItem) -> Unit,
 ) {
-  val currentPreviousDay by rememberUpdatedState(onPreviousDay)
-  val currentNextDay by rememberUpdatedState(onNextDay)
-  val thresholdPx = with(LocalDensity.current) { swipeThreshold.toPx() }
+  val pagerState = rememberPagerState(
+    initialPage = historyPageOf(uiState.selectedDate),
+    pageCount = { historyPageCount(uiState.today) },
+  )
+  val selectedPage = historyPageOf(uiState.selectedDate)
 
-  Box(
-    modifier = Modifier
-      .fillMaxSize()
-      .pointerInput(thresholdPx) {
-        var dragged = 0f
-        detectHorizontalDragGestures(
-          onDragStart = { dragged = 0f },
-          onDragCancel = { dragged = 0f },
-          onDragEnd = {
-            when {
-              dragged <= -thresholdPx -> currentNextDay()
-              dragged >= thresholdPx -> currentPreviousDay()
-            }
-          },
-          onHorizontalDrag = { change, dragAmount ->
-            dragged += dragAmount
-            change.consume()
-          },
+  // 日付ナビゲーション行や日付指定で表示日が変わったときは、Pagerを同じ日へ寄せる。
+  LaunchedEffect(selectedPage) {
+    if (pagerState.currentPage != selectedPage) pagerState.animateScrollToPage(selectedPage)
+  }
+  // スワイプで落ち着いたページを表示日として確定する。購読直後の1件はPagerの現在値が流れてくるだけで
+  // スワイプ結果ではない。これを表示日として扱うと、process再生成でPagerの位置だけが復元されたときに
+  // 「初期表示は今日」がPager側の値で上書きされる。
+  LaunchedEffect(pagerState) {
+    snapshotFlow { pagerState.settledPage }
+      .drop(1)
+      .collect { onSelectDate(historyDateOfPage(it)) }
+  }
+
+  HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+    val items = uiState.itemsOn(historyDateOfPage(page))
+    if (items.isEmpty()) {
+      Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(
+          text = stringResource(
+            if (uiState.hasAnyEntry) R.string.journal_history_day_empty else R.string.journal_history_empty,
+          ),
+          style = MaterialTheme.typography.bodyMedium,
         )
-      },
-  ) {
-    AnimatedContent(
-      targetState = uiState,
-      // 同じ日のまま記録が増減しただけのときは切り替え扱いにしない。
-      contentKey = { it.selectedDate },
-      transitionSpec = {
-        val forward = targetState.selectedDate.isAfter(initialState.selectedDate)
-        val direction = if (forward) 1 else -1
-        slideInHorizontally { width -> direction * width } togetherWith
-          slideOutHorizontally { width -> -direction * width }
-      },
-      label = "journalHistoryDay",
-    ) { state ->
-      if (state.items.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-          Text(
-            text = stringResource(
-              if (state.hasAnyEntry) R.string.journal_history_day_empty else R.string.journal_history_empty,
-            ),
-            style = MaterialTheme.typography.bodyMedium,
-          )
-        }
-      } else {
-        LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-          items(state.items, key = { it.id }) { item ->
-            JournalHistoryRow(item = item, onDeleteRequest = { onDeleteRequest(item) })
-          }
+      }
+    } else {
+      LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+        items(items, key = { it.id }) { item ->
+          JournalHistoryRow(item = item, onDeleteRequest = { onDeleteRequest(item) })
         }
       }
     }
@@ -397,17 +375,18 @@ fun JournalHistoryScreenPreview() {
       uiState = JournalHistoryUiState.Content(
         selectedDate = LocalDate.of(2026, 8, 29),
         today = LocalDate.of(2026, 8, 30),
-        items = listOf(
-          JournalHistoryItem(
-            id = 1,
-            date = LocalDate.of(2026, 8, 29),
-            time = LocalTime.of(9, 30),
-            moodEmoji = "🙂",
-            moodLabel = "ふつう",
-            note = "朝の記録",
+        itemsByDate = mapOf(
+          LocalDate.of(2026, 8, 29) to listOf(
+            JournalHistoryItem(
+              id = 1,
+              date = LocalDate.of(2026, 8, 29),
+              time = LocalTime.of(9, 30),
+              moodEmoji = "🙂",
+              moodLabel = "ふつう",
+              note = "朝の記録",
+            ),
           ),
         ),
-        hasAnyEntry = true,
       ),
       deleteFailures = emptyFlow(),
       onShowMessage = {},

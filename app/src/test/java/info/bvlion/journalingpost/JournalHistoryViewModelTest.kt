@@ -4,6 +4,7 @@ import info.bvlion.journalingpost.journal.JournalEntry
 import info.bvlion.journalingpost.journal.JournalEntryDeleter
 import info.bvlion.journalingpost.journal.JournalEntryReader
 import info.bvlion.journalingpost.journal.JournalSource
+import info.bvlion.journalingpost.journal.history.HISTORY_EARLIEST_DATE
 import info.bvlion.journalingpost.journal.history.JournalHistoryUiState
 import java.io.IOException
 import java.time.Instant
@@ -78,7 +79,7 @@ class JournalHistoryViewModelTest {
     val content = viewModel.content()
     assertEquals(LocalDate.of(2026, 8, 26), content.selectedDate)
     assertEquals(LocalDate.of(2026, 8, 26), content.today)
-    assertEquals(listOf("today night", "today morning"), content.items.map { it.note })
+    assertEquals(listOf("today night", "today morning"), content.selectedItems.map { it.note })
     assertTrue(content.isToday)
     collectJob.cancel()
   }
@@ -93,7 +94,7 @@ class JournalHistoryViewModelTest {
     testDispatcher.scheduler.advanceUntilIdle()
 
     val content = viewModel.content()
-    assertTrue(content.items.isEmpty())
+    assertTrue(content.selectedItems.isEmpty())
     assertFalse(content.hasAnyEntry)
     collectJob.cancel()
   }
@@ -107,7 +108,7 @@ class JournalHistoryViewModelTest {
     testDispatcher.scheduler.advanceUntilIdle()
 
     val content = viewModel.content()
-    assertTrue(content.items.isEmpty())
+    assertTrue(content.selectedItems.isEmpty())
     assertTrue(content.hasAnyEntry)
     collectJob.cancel()
   }
@@ -123,12 +124,12 @@ class JournalHistoryViewModelTest {
     viewModel.showPreviousDay()
     testDispatcher.scheduler.advanceUntilIdle()
     assertEquals(LocalDate.of(2026, 8, 25), viewModel.content().selectedDate)
-    assertTrue(viewModel.content().items.isEmpty())
+    assertTrue(viewModel.content().selectedItems.isEmpty())
 
     viewModel.showPreviousDay()
     testDispatcher.scheduler.advanceUntilIdle()
     assertEquals(LocalDate.of(2026, 8, 24), viewModel.content().selectedDate)
-    assertEquals(listOf("old"), viewModel.content().items.map { it.note })
+    assertEquals(listOf("old"), viewModel.content().selectedItems.map { it.note })
     collectJob.cancel()
   }
 
@@ -145,8 +146,25 @@ class JournalHistoryViewModelTest {
 
     val content = viewModel.content()
     assertEquals(LocalDate.of(2020, 1, 1), content.selectedDate)
-    assertTrue(content.items.isEmpty())
+    assertTrue(content.selectedItems.isEmpty())
     assertFalse(content.isToday)
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `showPreviousDayは表示できる最も古い日で止まる`() = runTest(testDispatcher) {
+    val reader = FakeJournalEntryReader()
+    val viewModel = createViewModel(reader)
+    val collectJob = launchCollection(viewModel)
+    reader.emit(emptyList())
+    testDispatcher.scheduler.advanceUntilIdle()
+    viewModel.selectDate(HISTORY_EARLIEST_DATE)
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    viewModel.showPreviousDay()
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(HISTORY_EARLIEST_DATE, viewModel.content().selectedDate)
     collectJob.cancel()
   }
 
@@ -249,7 +267,7 @@ class JournalHistoryViewModelTest {
 
     val content = viewModel.content()
     assertEquals(LocalDate.of(2026, 8, 27), content.selectedDate)
-    assertEquals(listOf("late"), content.items.map { it.note })
+    assertEquals(listOf("late"), content.selectedItems.map { it.note })
     collectJob.cancel()
   }
 
@@ -261,7 +279,7 @@ class JournalHistoryViewModelTest {
 
     reader.emit(listOf(entry(id = 1, at = "2026-08-26T10:00:00Z", note = "first")))
     testDispatcher.scheduler.advanceUntilIdle()
-    assertEquals(1, viewModel.content().items.size)
+    assertEquals(1, viewModel.content().selectedItems.size)
 
     reader.emit(
       listOf(
@@ -271,7 +289,7 @@ class JournalHistoryViewModelTest {
     )
     testDispatcher.scheduler.advanceUntilIdle()
 
-    assertEquals(listOf("second", "first"), viewModel.content().items.map { it.note })
+    assertEquals(listOf("second", "first"), viewModel.content().selectedItems.map { it.note })
     collectJob.cancel()
   }
 
@@ -306,7 +324,7 @@ class JournalHistoryViewModelTest {
     reader.emit(listOf(entry(id = 1, at = "2026-08-26T10:00:00Z", note = "first")))
     testDispatcher.scheduler.advanceUntilIdle()
 
-    assertEquals(listOf("first"), viewModel.content().items.map { it.note })
+    assertEquals(listOf("first"), viewModel.content().selectedItems.map { it.note })
     collectJob.cancel()
   }
 
@@ -324,7 +342,7 @@ class JournalHistoryViewModelTest {
     testDispatcher.scheduler.advanceUntilIdle()
 
     val content = viewModel.content()
-    assertTrue(content.items.isEmpty())
+    assertTrue(content.selectedItems.isEmpty())
     assertFalse(content.hasAnyEntry)
     collectJob.cancel()
   }
@@ -363,6 +381,8 @@ class JournalHistoryViewModelTest {
   ) = JournalHistoryViewModel(reader, deleter, zoneId) { now }
 
   private fun JournalHistoryViewModel.content() = uiState.value as JournalHistoryUiState.Content
+
+  private val JournalHistoryUiState.Content.selectedItems get() = itemsOn(selectedDate)
 
   private fun entry(id: Long, at: String, note: String) = JournalEntry(
     id = id,

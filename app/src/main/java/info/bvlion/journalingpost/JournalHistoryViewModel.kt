@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import info.bvlion.journalingpost.journal.JournalEntryDeleter
 import info.bvlion.journalingpost.journal.JournalEntryReader
 import info.bvlion.journalingpost.journal.history.JournalHistoryUiState
+import info.bvlion.journalingpost.journal.history.coerceToHistoryRange
 import info.bvlion.journalingpost.journal.history.toHistoryGroups
 import java.time.Instant
 import java.time.LocalDate
@@ -32,17 +33,15 @@ class JournalHistoryViewModel(
   private val selectedDate = MutableStateFlow(today())
 
   /**
-   * 日別表示のためにDAOへ日付条件を足さず、既存の全件Flowをグループ化した結果から選択日を引く。
-   * 過去方向の下限を設けないため、記録が無い日は空の一覧として扱う。
+   * 日別表示のためにDAOへ日付条件を足さず、既存の全件Flowをグループ化した結果を日付で引けるようにする。
+   * 記録の有無で移動できる日を絞らないため、記録が無い日は空の一覧として扱う。
    */
   val uiState: StateFlow<JournalHistoryUiState> = combine(reader.observeAll(), selectedDate) { entries, selected ->
-    val groups = entries.toHistoryGroups(zoneId)
     JournalHistoryUiState.Content(
       selectedDate = selected,
       // アプリを開いたまま日付が変わることがあるため、「今日」は保持せず算出のたびに求める。
       today = today(),
-      items = groups.firstOrNull { it.date == selected }?.items.orEmpty(),
-      hasAnyEntry = entries.isNotEmpty(),
+      itemsByDate = entries.toHistoryGroups(zoneId).associate { it.date to it.items },
     )
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), JournalHistoryUiState.Loading)
 
@@ -50,22 +49,22 @@ class JournalHistoryViewModel(
   private val _deleteFailures = Channel<Unit>(Channel.BUFFERED)
   val deleteFailures: Flow<Unit> = _deleteFailures.receiveAsFlow()
 
-  /** 記録の無い日も飛ばさないため、下限を設けずカレンダー日で1日戻す。 */
+  /** 記録の無い日も飛ばさず、カレンダー日で1日戻す。 */
   fun showPreviousDay() {
-    selectedDate.update { it.minusDays(1) }
+    selectedDate.update { coerceToHistoryRange(it.minusDays(1), today()) }
   }
 
   fun showNextDay() {
-    selectedDate.update { minOf(it.plusDays(1), today()) }
+    selectedDate.update { coerceToHistoryRange(it.plusDays(1), today()) }
   }
 
   fun showToday() {
     selectedDate.value = today()
   }
 
-  /** 未来日には記録が存在し得ないため、指定された日は今日までへ丸める。 */
+  /** スワイプで確定したページからも呼ばれるため、範囲外の日はここで丸める。 */
   fun selectDate(date: LocalDate) {
-    selectedDate.value = minOf(date, today())
+    selectedDate.value = coerceToHistoryRange(date, today())
   }
 
   /** 削除後の一覧はRoomのFlowが更新するため、ここでuiStateを直接書き換えない。 */
