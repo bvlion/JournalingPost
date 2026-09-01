@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IntegrationRoutingPeriodAnalyzerTest {
@@ -53,13 +54,27 @@ class IntegrationRoutingPeriodAnalyzerTest {
   }
 
   @Test
-  fun `onAnalysisResultPersistedはlistenerを実装するanalyzerへ転送する`() = runTest {
+  fun `onAnalysisResultPersistedは直近のanalyzeの委譲先へ転送する`() = runTest {
     val webhook = RecordingAnalyzer(PeriodAnalysisOutcome.Failure.SERVER_ERROR)
     val hosted = RecordingPersistenceAnalyzer()
+    val router = router(AnalysisIntegration.HOSTED, webhook, hosted)
 
-    router(AnalysisIntegration.HOSTED, webhook, hosted).onAnalysisResultPersisted(start, end)
+    router.analyze(start, end, entries)
+    router.onAnalysisResultPersisted(start, end)
 
     assertEquals(listOf(start to end), hosted.persistedPeriods)
+  }
+
+  @Test
+  fun `直近のanalyzeがwebhookなら別解析先のhostedへは通知しない`() = runTest {
+    val webhook = RecordingAnalyzer(PeriodAnalysisOutcome.Failure.SERVER_ERROR)
+    val hosted = RecordingPersistenceAnalyzer()
+    val router = router(AnalysisIntegration.CUSTOM_WEBHOOK, webhook, hosted)
+
+    router.analyze(start, end, entries)
+    router.onAnalysisResultPersisted(start, end)
+
+    assertTrue(hosted.persistedPeriods.isEmpty())
   }
 
   private fun router(
