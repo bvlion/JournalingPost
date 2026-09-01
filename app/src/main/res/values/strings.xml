@@ -15,6 +15,10 @@
 
   <!-- ==== 記録 ==== -->
   <string name="record_screen_heading">今の気分を記録</string>
+  <string name="record_note_only_entry">メモだけ記録</string>
+  <!-- Widgetのcompact表示は1セルが狭いため、そこだけ短い文言を使う。読み上げはrecord_note_only_entry。 -->
+  <string name="record_note_only_entry_short">メモ</string>
+  <string name="record_note_only_heading">メモを記録</string>
   <string name="record_add_note">メモを追加</string>
   <string name="record_dismiss">記録しない</string>
   <string name="record_action">記録</string>
@@ -56,6 +60,9 @@
   <string name="settings_integration_custom_webhook">Custom Webhook</string>
   <string name="settings_mood_item">Mood設定</string>
   <string name="settings_mood_item_description">表示内容・順序・件数を変更</string>
+  <string name="settings_note_only_item">「メモだけ記録」を表示</string>
+  <string name="settings_note_only_item_description">記録画面とWidgetに、Moodを選ばずメモだけを記録する導線を追加</string>
+  <string name="settings_note_only_save_failed">「メモだけ記録」の設定を保存できませんでした</string>
   <string name="settings_webhook_item">Webhook設定</string>
   <string name="settings_webhook_destination_unknown">設定済み</string>
 

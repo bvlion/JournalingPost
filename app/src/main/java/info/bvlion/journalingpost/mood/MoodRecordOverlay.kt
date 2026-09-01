@@ -46,19 +46,20 @@ import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 private const val SCRIM_ALPHA = 0.32f
 
 /**
- * Moodを選んだ後の記録ダイアログ。記録画面(App)とWidgetで同じUI・挙動を使うための共通Composable。
+ * 記録ダイアログ。記録画面(App)とWidgetで同じUI・挙動を使うための共通Composable。
  *
  * scrim + 中央カードを画面全体へ重ねる。閉じる操作はscrimのタップと[onDismiss]呼び出し側に委ね、
  * fade animationやActivityのlifecycle制御(Widget側)は呼び出し元が[modifier]や状態で扱う。
  *
+ * @param mood 記録するMood。nullは「メモだけ記録」を表し、メモ欄を最初から開いてfocusし、
+ *   noteが空白の間は記録できない状態にする。
  * @param isInteractionLocked 記録処理中や完了直後など、操作を受け付けない状態。scrimタップも無効化する。
  * @param hasFailure trueにするとカード内へ失敗メッセージを出す。アプリ側はSnackbarで伝えるためfalseで
  *   呼び、Widget起動のMoodEntryActivityのようにSnackbarを出せないsurfaceだけtrueにする。
  */
 @Composable
 fun MoodRecordOverlay(
-  moodEmoji: String,
-  moodLabel: String,
+  mood: Mood?,
   isInteractionLocked: Boolean,
   hasFailure: Boolean,
   onRecord: (note: String) -> Unit,
@@ -79,8 +80,7 @@ fun MoodRecordOverlay(
       contentAlignment = Alignment.Center,
     ) {
       MoodRecordCard(
-        moodEmoji = moodEmoji,
-        moodLabel = moodLabel,
+        mood = mood,
         isInteractionLocked = isInteractionLocked,
         hasFailure = hasFailure,
         onRecord = onRecord,
@@ -92,15 +92,15 @@ fun MoodRecordOverlay(
 
 @Composable
 private fun MoodRecordCard(
-  moodEmoji: String,
-  moodLabel: String,
+  mood: Mood?,
   isInteractionLocked: Boolean,
   hasFailure: Boolean,
   onRecord: (note: String) -> Unit,
   onDismiss: () -> Unit,
 ) {
+  val isNoteOnly = mood == null
   var note by rememberSaveable { mutableStateOf("") }
-  var isNoteVisible by rememberSaveable { mutableStateOf(false) }
+  var isNoteVisible by rememberSaveable { mutableStateOf(isNoteOnly) }
 
   Surface(
     modifier = Modifier
@@ -114,22 +114,30 @@ private fun MoodRecordCard(
     tonalElevation = AlertDialogDefaults.TonalElevation,
   ) {
     Column(modifier = Modifier.padding(24.dp)) {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        if (moodEmoji.isNotBlank()) {
-          Text(text = moodEmoji, style = MaterialTheme.typography.headlineSmall)
-        }
-        if (moodEmoji.isNotBlank() && moodLabel.isNotBlank()) {
-          Spacer(Modifier.width(8.dp))
-        }
-        if (moodLabel.isNotBlank()) {
-          Text(text = moodLabel, style = MaterialTheme.typography.titleMedium)
+      if (mood == null) {
+        Text(
+          text = stringResource(R.string.record_note_only_heading),
+          style = MaterialTheme.typography.titleMedium,
+        )
+      } else {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          if (mood.emoji.isNotBlank()) {
+            Text(text = mood.emoji, style = MaterialTheme.typography.headlineSmall)
+          }
+          if (mood.emoji.isNotBlank() && mood.label.isNotBlank()) {
+            Spacer(Modifier.width(8.dp))
+          }
+          if (mood.label.isNotBlank()) {
+            Text(text = mood.label, style = MaterialTheme.typography.titleMedium)
+          }
         }
       }
 
       if (isNoteVisible) {
         val focusRequester = remember { FocusRequester() }
-        // 「メモを追加」を選んだ直後だけfocusを移し、ソフトキーボードを表示させる。
-        // 初期表示から入力欄を出さないのは、文章を書かなくても記録が成立することを
+        // 入力欄が現れた直後だけfocusを移し、ソフトキーボードを表示させる。Mood記録では
+        // 「メモを追加」を選んだ時点、「メモだけ記録」では入力そのものが目的なので初期表示時点。
+        // Mood記録で初期表示から入力欄を出さないのは、文章を書かなくても記録が成立することを
         // UI自体で表現するため。
         LaunchedEffect(Unit) {
           focusRequester.requestFocus()
@@ -179,7 +187,8 @@ private fun MoodRecordCard(
         }
         Button(
           onClick = { onRecord(note) },
-          enabled = !isInteractionLocked,
+          // Moodが無い記録はnoteが唯一の内容になるため、空白のままでは記録させない。
+          enabled = !isInteractionLocked && (!isNoteOnly || note.isNotBlank()),
         ) {
           if (isInteractionLocked) {
             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -197,8 +206,21 @@ private fun MoodRecordCard(
 fun MoodRecordOverlayPreview() {
   JournalingPostTheme {
     MoodRecordOverlay(
-      moodEmoji = "🙂",
-      moodLabel = "嬉しい",
+      mood = Mood(id = "1", emoji = "🙂", label = "嬉しい"),
+      isInteractionLocked = false,
+      hasFailure = false,
+      onRecord = {},
+      onDismiss = {},
+    )
+  }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun NoteOnlyRecordOverlayPreview() {
+  JournalingPostTheme {
+    MoodRecordOverlay(
+      mood = null,
       isInteractionLocked = false,
       hasFailure = false,
       onRecord = {},

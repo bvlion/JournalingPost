@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
   private val analysisHistoryViewModel: AnalysisHistoryViewModel by viewModels { appViewModelFactory }
   private val settingsViewModel: SettingsViewModel by viewModels { appViewModelFactory }
   private val moodViewModel: MoodViewModel by viewModels { appViewModelFactory }
+  private val noteOnlyEntryViewModel: NoteOnlyEntryViewModel by viewModels { appViewModelFactory }
   private val moodSettingsViewModel: MoodSettingsViewModel by viewModels { appViewModelFactory }
   private val webhookSettingsViewModel: WebhookSettingsViewModel by viewModels { appViewModelFactory }
 
@@ -73,6 +74,7 @@ class MainActivity : ComponentActivity() {
       JournalingPostTheme {
         val uiState by viewModel.uiState.collectAsStateWithLifecycle()
         val moods by moodViewModel.moods.collectAsStateWithLifecycle()
+        val isNoteOnlyEntryEnabled by noteOnlyEntryViewModel.isEnabled.collectAsStateWithLifecycle()
 
         var destination by rememberSaveable { mutableStateOf(MainDestination.RECORD) }
         var showWebhookSettings by rememberSaveable { mutableStateOf(false) }
@@ -82,7 +84,10 @@ class MainActivity : ComponentActivity() {
         // 見つかればその場で有効化する。利用者が自分で設定項目を開いた場合は有効化しない。
         var webhookSetupPending by rememberSaveable { mutableStateOf(false) }
         var selectedMoodId by rememberSaveable { mutableStateOf<String?>(null) }
+        // 「メモだけ記録」はMoodを持たないため、Mood選択とは別の状態として扱う。
+        var isNoteOnlyRecording by rememberSaveable { mutableStateOf(false) }
         val selectedMood = moods?.firstOrNull { it.id == selectedMoodId }
+        val isRecordOverlayVisible = selectedMood != null || isNoteOnlyRecording
 
         val snackbarHostState = remember { SnackbarHostState() }
         val scope = rememberCoroutineScope()
@@ -115,6 +120,11 @@ class MainActivity : ComponentActivity() {
           webhookSetupPending = false
           showWebhookSettings = false
         }
+        val closeRecordOverlay: () -> Unit = {
+          selectedMoodId = null
+          isNoteOnlyRecording = false
+          viewModel.resetState()
+        }
         val closeMoodSettings: () -> Unit = { showMoodSettings = false }
         val openMoodSettings: () -> Unit = {
           moodSettingsScreenSessionId++
@@ -126,14 +136,11 @@ class MainActivity : ComponentActivity() {
         }
 
         BackHandler(
-          enabled = selectedMoodId != null || showWebhookSettings || showMoodSettings ||
+          enabled = selectedMoodId != null || isNoteOnlyRecording || showWebhookSettings || showMoodSettings ||
             destination != MainDestination.RECORD,
         ) {
           when {
-            selectedMoodId != null -> if (!recordInProgress) {
-              selectedMoodId = null
-              viewModel.resetState()
-            }
+            selectedMoodId != null || isNoteOnlyRecording -> if (!recordInProgress) closeRecordOverlay()
             // Webhook設定はSettingsの下位画面のため、Backは1段階だけ戻す。
             showWebhookSettings -> closeWebhookSettings()
             showMoodSettings -> closeMoodSettings()
@@ -157,6 +164,7 @@ class MainActivity : ComponentActivity() {
                       onClick = {
                         if (item != destination) {
                           selectedMoodId = null
+                          isNoteOnlyRecording = false
                           destination = item
                         }
                       },
@@ -215,16 +223,22 @@ class MainActivity : ComponentActivity() {
                 )
               } else {
                 when (destination) {
-                  MainDestination.RECORD -> if (moods == null) {
+                  // Mood一覧と「メモだけ記録」の表示設定が揃うまでは、記録の選択肢を欠けたまま出さない。
+                  MainDestination.RECORD -> if (moods == null || isNoteOnlyEntryEnabled == null) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                       CircularProgressIndicator()
                     }
                   } else {
                     MoodRecordScreen(
                       moods = requireNotNull(moods),
+                      isNoteOnlyEntryVisible = isNoteOnlyEntryEnabled == true,
                       onMoodClick = { mood ->
                         viewModel.resetState()
                         selectedMoodId = mood.id
+                      },
+                      onNoteOnlyClick = {
+                        viewModel.resetState()
+                        isNoteOnlyRecording = true
                       },
                     )
                   }
@@ -257,12 +271,15 @@ class MainActivity : ComponentActivity() {
                     val settingsUiState by settingsViewModel.uiState.collectAsStateWithLifecycle()
                     val integrationSaveFailedMessage =
                       stringResource(R.string.settings_integration_save_failed)
+                    val noteOnlySaveFailedMessage =
+                      stringResource(R.string.settings_note_only_save_failed)
 
                     // Snackbar表示と下位画面への遷移はこの画面の外側が持つため、Settingsの
                     // 一時的な結果はここで受け取る。
                     EventEffect(settingsViewModel.events) { event ->
                       when (event) {
                         SettingsEvent.IntegrationSaveFailed -> showMessage(integrationSaveFailedMessage)
+                        SettingsEvent.NoteOnlyEntrySaveFailed -> showMessage(noteOnlySaveFailedMessage)
                         SettingsEvent.WebhookSetupRequested -> openWebhookSettings(true)
                       }
                     }
@@ -270,6 +287,7 @@ class MainActivity : ComponentActivity() {
                     SettingsScreen(
                       uiState = settingsUiState,
                       onAnalysisIntegrationChange = settingsViewModel::setAnalysisIntegration,
+                      onNoteOnlyEntryChange = settingsViewModel::setNoteOnlyEntryEnabled,
                       onMoodSettingsOpen = openMoodSettings,
                       onWebhookSettingsOpen = { openWebhookSettings(false) },
                     )
@@ -279,12 +297,12 @@ class MainActivity : ComponentActivity() {
             }
           }
 
-          selectedMood?.let { mood ->
+          if (isRecordOverlayVisible) {
             val successMessage = stringResource(R.string.record_success)
             val failureMessage = stringResource(R.string.record_failure)
+            val recordingMood = if (isNoteOnlyRecording) null else selectedMood
             MoodRecordOverlay(
-              moodEmoji = mood.emoji,
-              moodLabel = mood.label,
+              mood = recordingMood,
               isInteractionLocked = recordInProgress,
               // アプリ内では失敗もSnackbarで伝えるため、ダイアログ内のinline表示は使わない
               // (dialogは開いたままで、入力内容を保持して再試行できる)。
@@ -292,21 +310,17 @@ class MainActivity : ComponentActivity() {
               onRecord = { note ->
                 viewModel.record(
                   note = note,
-                  mood = MoodSnapshot(id = mood.id, emoji = mood.emoji, label = mood.label),
+                  mood = recordingMood?.let { MoodSnapshot(id = it.id, emoji = it.emoji, label = it.label) },
                   source = JournalSource.APP,
                 )
               },
-              onDismiss = {
-                selectedMoodId = null
-                viewModel.resetState()
-              },
+              onDismiss = closeRecordOverlay,
             )
 
             LaunchedEffect(uiState) {
               when (uiState) {
                 MainViewModel.UiState.SUCCESS -> {
-                  selectedMoodId = null
-                  viewModel.resetState()
+                  closeRecordOverlay()
                   showMessage(successMessage)
                 }
 
@@ -328,7 +342,7 @@ class MainActivity : ComponentActivity() {
               .align(Alignment.BottomCenter)
               .imePadding()
               .then(
-                if (showWebhookSettings || showMoodSettings || selectedMood != null) {
+                if (showWebhookSettings || showMoodSettings || isRecordOverlayVisible) {
                   Modifier.navigationBarsPadding()
                 } else {
                   Modifier.padding(bottom = navigationBarHeight)

@@ -43,6 +43,9 @@ class MoodEntryActivity : ComponentActivity() {
   private val moodViewModel: MoodViewModel by viewModels { appViewModelFactory }
   private var moodId by mutableStateOf<String?>(null)
 
+  // 「メモだけ記録」はMoodを持たないため、moodIdの有無とは別に保持する。
+  private var isNoteOnly by mutableStateOf(false)
+
   // Widgetのタップ1回を1つの入力sessionとして識別する。同じMoodを続けてタップした場合でも
   // 前回のnote/メモ展開状態を引き継がないよう、Moodではなくこの値をComposeのkeyにする。
   private var sessionId by mutableIntStateOf(0)
@@ -50,12 +53,10 @@ class MoodEntryActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
-    val initialMoodId = intent.getStringExtra(EXTRA_MOOD)?.takeIf { it.isNotBlank() }
-    if (initialMoodId == null) {
+    if (!applyEntryIntent(intent)) {
       finish()
       return
     }
-    moodId = initialMoodId
     sessionId = savedInstanceState?.getInt(STATE_SESSION_ID) ?: 0
     // scrimをsystem bar領域まで途切れなく描くため、translucent windowでもcontentを全画面へ広げる。
     enableEdgeToEdge()
@@ -64,24 +65,27 @@ class MoodEntryActivity : ComponentActivity() {
       JournalingPostTheme {
         val moods by moodViewModel.moods.collectAsStateWithLifecycle()
         val currentMoodId = moodId
+        val isNoteOnlyEntry = isNoteOnly
         val currentMood = moods?.firstOrNull { it.id == currentMoodId }
 
-        LaunchedEffect(moods, currentMoodId) {
-          if (moods != null && currentMood == null) finish()
+        // 「メモだけ記録」はMood設定に依存しないため、Mood一覧の読み込み結果でfinishしない。
+        LaunchedEffect(moods, currentMoodId, isNoteOnlyEntry) {
+          if (!isNoteOnlyEntry && moods != null && currentMood == null) finish()
         }
 
-        currentMood?.let { mood ->
+        if (isNoteOnlyEntry || currentMood != null) {
+          val recordingMood = if (isNoteOnlyEntry) null else currentMood
           val currentSessionId = sessionId
           val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
           key(currentSessionId) {
             MoodEntryScreen(
-              mood = mood,
+              mood = recordingMood,
               uiState = uiState,
               onRecord = { note ->
                 viewModel.record(
                   note = note,
-                  mood = MoodSnapshot(id = mood.id, emoji = mood.emoji, label = mood.label),
+                  mood = recordingMood?.let { MoodSnapshot(id = it.id, emoji = it.emoji, label = it.label) },
                   source = JournalSource.WIDGET,
                 )
               },
@@ -103,12 +107,24 @@ class MoodEntryActivity : ComponentActivity() {
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     if (!viewModel.uiState.value.acceptsNewMoodEntry()) return
-    val newMoodId = intent.getStringExtra(EXTRA_MOOD)?.takeIf { it.isNotBlank() } ?: return
-    // 構成変更でActivityが作り直されたときも新しいMoodを読めるようにIntentごと差し替える。
+    if (!applyEntryIntent(intent)) return
+    // 構成変更でActivityが作り直されたときも新しい記録対象を読めるようにIntentごと差し替える。
     setIntent(intent)
-    moodId = newMoodId
     sessionId++
     viewModel.resetState()
+  }
+
+  /** 記録対象をIntentから読み取る。どちらの記録も指していない場合はfalseを返し、状態を変えない。 */
+  private fun applyEntryIntent(intent: Intent): Boolean {
+    if (intent.getBooleanExtra(EXTRA_NOTE_ONLY, false)) {
+      moodId = null
+      isNoteOnly = true
+      return true
+    }
+    val newMoodId = intent.getStringExtra(EXTRA_MOOD)?.takeIf { it.isNotBlank() } ?: return false
+    moodId = newMoodId
+    isNoteOnly = false
+    return true
   }
 
   /** 古いsessionのfadeが遅れて完了しても、その間に始まった新しいsessionをfinishしない。 */
@@ -119,6 +135,7 @@ class MoodEntryActivity : ComponentActivity() {
 
   companion object {
     const val EXTRA_MOOD = "info.bvlion.journalingpost.extra.MOOD"
+    const val EXTRA_NOTE_ONLY = "info.bvlion.journalingpost.extra.NOTE_ONLY"
     private const val STATE_SESSION_ID = "info.bvlion.journalingpost.state.SESSION_ID"
   }
 }
@@ -133,13 +150,15 @@ internal fun MainViewModel.UiState.acceptsNewMoodEntry(): Boolean =
 private const val CLOSE_FADE_DURATION_MS = 250
 
 /**
- * Widgetから起動したときのMood記録画面。ダイアログのUI・挙動は[MoodRecordOverlay]で
+ * Widgetから起動したときの記録画面。ダイアログのUI・挙動は[MoodRecordOverlay]で
  * 記録画面と共通化し、ここではActivityのlifecycle固有の処理(fade out、finish、
  * 完了Toast、前sessionの結果を引き継がないためのgating)だけを持つ。
+ *
+ * @param mood 記録するMood。nullは「メモだけ記録」を表す。
  */
 @Composable
 fun MoodEntryScreen(
-  mood: Mood,
+  mood: Mood?,
   uiState: MainViewModel.UiState,
   onRecord: (String) -> Unit,
   onClose: () -> Unit,
@@ -193,8 +212,7 @@ fun MoodEntryScreen(
   }
 
   MoodRecordOverlay(
-    moodEmoji = mood.emoji,
-    moodLabel = mood.label,
+    mood = mood,
     isInteractionLocked = isInteractionLocked,
     hasFailure = hasFailure,
     onRecord = { note ->
@@ -212,6 +230,19 @@ fun MoodEntryScreenPreview() {
   JournalingPostTheme {
     MoodEntryScreen(
       mood = Mood(id = "1", emoji = "😄", label = "嬉しい"),
+      uiState = MainViewModel.UiState.INIT,
+      onRecord = {},
+      onClose = {},
+    )
+  }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun NoteOnlyEntryScreenPreview() {
+  JournalingPostTheme {
+    MoodEntryScreen(
+      mood = null,
       uiState = MainViewModel.UiState.INIT,
       onRecord = {},
       onClose = {},

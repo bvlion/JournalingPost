@@ -23,6 +23,8 @@ import info.bvlion.journalingpost.mood.MoodRepository
 import info.bvlion.journalingpost.mood.createInitialMoodCatalog
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import info.bvlion.journalingpost.settings.DataStoreAnalysisIntegrationRepository
+import info.bvlion.journalingpost.settings.DataStoreNoteOnlyEntryRepository
+import info.bvlion.journalingpost.settings.NoteOnlyEntryRepository
 import info.bvlion.journalingpost.settings.WebhookAwareAnalysisIntegrationRepository
 import info.bvlion.journalingpost.webhook.AndroidKeystoreWebhookSettingsCipher
 import info.bvlion.journalingpost.webhook.DataStoreWebhookSettingsRepository
@@ -68,6 +70,10 @@ internal class AppContainer(context: Context) {
       dataStore = createPreferenceDataStore(MOOD_SETTINGS_FILE_NAME),
       initialMoods = createInitialMoodCatalog(context),
     )
+  }
+
+  val noteOnlyEntryRepository: NoteOnlyEntryRepository by lazy {
+    DataStoreNoteOnlyEntryRepository(createPreferenceDataStore(NOTE_ONLY_ENTRY_FILE_NAME))
   }
 
   val journalEntryReader: JournalEntryReader get() = journalEntryRepository
@@ -130,5 +136,7 @@ internal class AppContainer(context: Context) {
     const val ANALYSIS_INTEGRATION_FILE_NAME = "analysis_integration_settings"
 
     const val MOOD_SETTINGS_FILE_NAME = "mood_settings"
+
+    const val NOTE_ONLY_ENTRY_FILE_NAME = "note_only_entry_settings"
   }
 }

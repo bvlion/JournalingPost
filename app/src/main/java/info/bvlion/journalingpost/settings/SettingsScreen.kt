@@ -9,10 +9,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -27,7 +29,7 @@ import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 
 /**
- * Moodと解析・連携の各設定への入口。JournalEntryが常にローカル保存されることや、DataStoreの
+ * Mood・記録導線と解析・連携の各設定への入口。JournalEntryが常にローカル保存されることや、DataStoreの
  * 内部状態はここへ説明として出さない。Custom Webhookの詳細(URL/ヘッダー/本文)は
  * [WebhookSettingsScreen]側の責務で、この画面では現在の送信先を示す短い情報のみ扱う。
  */
@@ -35,6 +37,7 @@ import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 fun SettingsScreen(
   uiState: SettingsUiState,
   onAnalysisIntegrationChange: (AnalysisIntegration) -> Unit,
+  onNoteOnlyEntryChange: (Boolean) -> Unit,
   onMoodSettingsOpen: () -> Unit,
   onWebhookSettingsOpen: () -> Unit,
 ) {
@@ -54,6 +57,26 @@ fun SettingsScreen(
           Icon(painter = painterResource(R.drawable.ic_chevron_right), contentDescription = null)
         },
         modifier = Modifier.clickable(onClick = onMoodSettingsOpen),
+      )
+
+      // 読み込み確定前は現在値を断定できないため、操作を受け付けない。
+      val noteOnlyEntryEnabled = uiState.noteOnlyEntryEnabled
+      ListItem(
+        headlineContent = { Text(stringResource(R.string.settings_note_only_item)) },
+        supportingContent = { Text(stringResource(R.string.settings_note_only_item_description)) },
+        trailingContent = {
+          Switch(
+            checked = noteOnlyEntryEnabled == true,
+            onCheckedChange = null,
+            enabled = noteOnlyEntryEnabled != null,
+          )
+        },
+        modifier = Modifier.toggleable(
+          value = noteOnlyEntryEnabled == true,
+          enabled = noteOnlyEntryEnabled != null,
+          onValueChange = onNoteOnlyEntryChange,
+          role = Role.Switch,
+        ),
       )
 
       Column(modifier = Modifier.padding(16.dp)) {
@@ -115,8 +138,10 @@ fun SettingsScreenPreview() {
         selectedIntegration = AnalysisIntegration.CUSTOM_WEBHOOK,
         webhookConfigured = true,
         webhookDestinationLabel = "https://hooks.example.com",
+        noteOnlyEntryEnabled = true,
       ),
       onAnalysisIntegrationChange = {},
+      onNoteOnlyEntryChange = {},
       onMoodSettingsOpen = {},
       onWebhookSettingsOpen = {},
     )
