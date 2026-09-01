@@ -9,7 +9,10 @@ import info.bvlion.journalingpost.mood.Mood
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -118,6 +121,24 @@ class DebugFixtureSeederTest {
   }
 
   @Test
+  fun `seedを並行呼び出ししてもJournalEntryとAnalysisResultは1セットしか投入しない`() = runTest {
+    val entries = FakeJournalEntryRepository()
+    val results = FakeAnalysisResultWriter()
+    val seeder = seeder(entries = entries, results = results)
+
+    val outcomes = listOf(
+      async { seeder.seed() },
+      async { seeder.seed() },
+      async { seeder.seed() },
+    ).awaitAll()
+
+    val seededOutcome = outcomes.filterIsInstance<DebugFixtureSeedResult.Seeded>().single()
+    assertEquals(2, outcomes.count { it == DebugFixtureSeedResult.AlreadySeeded })
+    assertEquals(seededOutcome.entryCount, entries.inserted.size)
+    assertEquals(seededOutcome.analysisResultCount, results.saved.size)
+  }
+
+  @Test
   fun `timestampは端末timezoneの今日を基準に生成する`() = runTest {
     // UTCでは9/1、Asia/Tokyoでは9/2に日付が変わる時刻。
     val now = Instant.parse("2026-09-01T16:00:00Z")
@@ -153,6 +174,8 @@ class DebugFixtureSeederTest {
     private var nextId = 1L
 
     override suspend fun insert(entry: JournalEntry): Long {
+      // 並行seed()テストで、書き込みの途中に別の呼び出しへ制御が渡る余地を作る。
+      yield()
       val id = nextId++
       inserted += entry.copy(id = id)
       return id
@@ -164,6 +187,7 @@ class DebugFixtureSeederTest {
     private var nextId = 1L
 
     override suspend fun save(result: AnalysisResult): Long {
+      yield()
       val id = nextId++
       saved += result.copy(id = id)
       return id

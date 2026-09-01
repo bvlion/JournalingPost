@@ -10,13 +10,17 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * debugビルドの動作確認用に、今日を含む過去7日分のJournalEntry / AnalysisResultを端末内DBへ直接
  * 投入する。本番の記録経路([info.bvlion.journalingpost.journal.JournalRecorder])や外部解析は
  * 経由しない。
  *
- * 重複投入は[isAlreadySeeded] / [markSeeded](Room外のDataStoreフラグ)で防ぐ。この用途のために
+ * 重複投入は[isAlreadySeeded] / [markSeeded](Room外のDataStoreフラグ)で防ぐ。設定項目の
+ * ダブルタップ等で[seed]が並行しても、[seedMutex]で全体を直列化し、後続の呼び出しは先行処理の
+ * 完了後に投入済み判定をやり直すため、fixtureは1セットしか入らない。この用途のために
  * Room schemaへdebug専用の列は追加しない。releaseビルドでは
  * [info.bvlion.journalingpost.di.AppContainer]がこのクラスを生成せず、設定画面の導線も出ないため、
  * 投入導線・処理ともに動作しない。
@@ -30,8 +34,10 @@ class DebugFixtureSeeder(
   private val zoneId: () -> ZoneId,
   private val now: () -> Instant,
 ) {
-  suspend fun seed(): DebugFixtureSeedResult {
-    if (isAlreadySeeded()) return DebugFixtureSeedResult.AlreadySeeded
+  private val seedMutex = Mutex()
+
+  suspend fun seed(): DebugFixtureSeedResult = seedMutex.withLock {
+    if (isAlreadySeeded()) return@withLock DebugFixtureSeedResult.AlreadySeeded
 
     val zone = zoneId()
     val nowInstant = now()
@@ -45,7 +51,7 @@ class DebugFixtureSeeder(
     for (result in results) analysisResultWriter.save(result)
 
     markSeeded()
-    return DebugFixtureSeedResult.Seeded(
+    DebugFixtureSeedResult.Seeded(
       entryCount = entries.size,
       analysisResultCount = results.size,
     )
