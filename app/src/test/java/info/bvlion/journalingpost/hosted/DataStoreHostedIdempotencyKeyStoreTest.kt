@@ -24,6 +24,7 @@ class DataStoreHostedIdempotencyKeyStoreTest {
     Instant.parse("2026-08-30T00:00:00Z"),
     Instant.parse("2026-08-31T00:00:00Z"),
   )
+  private val fingerprint = "fp-1"
 
   private fun createStore() = DataStoreHostedIdempotencyKeyStore(
     PreferenceDataStoreFactory.create(produceFile = { File(tempFolder.root, "hosted_idempotency.preferences_pb") }),
@@ -31,12 +32,12 @@ class DataStoreHostedIdempotencyKeyStoreTest {
   )
 
   @Test
-  fun `同じ期間の未確定retryは同じkeyを返す`() = runTest {
+  fun `同じ期間_同じfingerprintの未確定retryは同じkeyを返す`() = runTest {
     val store = createStore()
 
-    val first = store.currentKey(periodA)
+    val first = store.currentKey(periodA, fingerprint)
     now = now.plusSeconds(60)
-    val second = store.currentKey(periodA)
+    val second = store.currentKey(periodA, fingerprint)
 
     assertEquals(first, second)
   }
@@ -45,16 +46,27 @@ class DataStoreHostedIdempotencyKeyStoreTest {
   fun `期間が違えば別のkeyになる`() = runTest {
     val store = createStore()
 
-    assertNotEquals(store.currentKey(periodA), store.currentKey(periodB))
+    assertNotEquals(store.currentKey(periodA, fingerprint), store.currentKey(periodB, fingerprint))
+  }
+
+  @Test
+  fun `fingerprintが変わると新しいkeyになる`() = runTest {
+    val store = createStore()
+
+    val first = store.currentKey(periodA, fingerprint)
+    now = now.plusSeconds(60)
+    val second = store.currentKey(periodA, "fp-2")
+
+    assertNotEquals(first, second)
   }
 
   @Test
   fun `clear すると次は新しいkeyになる`() = runTest {
     val store = createStore()
 
-    val first = store.currentKey(periodA)
+    val first = store.currentKey(periodA, fingerprint)
     store.clear(periodA)
-    val second = store.currentKey(periodA)
+    val second = store.currentKey(periodA, fingerprint)
 
     assertNotEquals(first, second)
   }
@@ -63,9 +75,9 @@ class DataStoreHostedIdempotencyKeyStoreTest {
   fun `保持期間を過ぎたkeyは作り直す`() = runTest {
     val store = createStore()
 
-    val first = store.currentKey(periodA)
+    val first = store.currentKey(periodA, fingerprint)
     now = now.plusSeconds(31 * 60)
-    val second = store.currentKey(periodA)
+    val second = store.currentKey(periodA, fingerprint)
 
     assertNotEquals(first, second)
   }

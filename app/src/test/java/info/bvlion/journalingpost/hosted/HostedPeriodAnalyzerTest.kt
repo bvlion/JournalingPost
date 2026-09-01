@@ -29,6 +29,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -251,7 +252,7 @@ class HostedPeriodAnalyzerTest {
   }
 
   @Test
-  fun `成功するとkeyを捨て、次の実行は新しい解析になる`() = runTest {
+  fun `成功してもkeyは消さない（保存失敗時のretryをbufferで引くため）`() = runTest {
     val keyStore = FakeIdempotencyKeyStore()
     val analyzer = analyzer(credentials = FakeHostedCredentialsRepository(stored = "k"), keyStore = keyStore) {
       respondJson(successBody)
@@ -259,7 +260,23 @@ class HostedPeriodAnalyzerTest {
 
     analyzer.analyze(periodStart, periodEnd, oneEntry)
 
-    assertTrue(keyStore.wasCleared(period))
+    assertFalse(keyStore.wasCleared(period))
+  }
+
+  @Test
+  fun `同じ記録でのretryは同じIdempotency-Key、記録を変えると別のkeyになる`() = runTest {
+    val keys = mutableListOf<String>()
+    val analyzer = analyzer(credentials = FakeHostedCredentialsRepository(stored = "k")) { request ->
+      keys += requireNotNull(request.headers["Idempotency-Key"])
+      respondJson("""{"error":{"code":"x"}}""", HttpStatusCode.ServiceUnavailable)
+    }
+
+    analyzer.analyze(periodStart, periodEnd, oneEntry)
+    analyzer.analyze(periodStart, periodEnd, oneEntry)
+    analyzer.analyze(periodStart, periodEnd, listOf(entry("2026-08-30T01:00:00Z", note = "編集後のメモ")))
+
+    assertEquals(keys[0], keys[1])
+    assertNotEquals(keys[1], keys[2])
   }
 
   @Test
@@ -327,15 +344,16 @@ class HostedPeriodAnalyzerTest {
 }
 
 internal class FakeIdempotencyKeyStore(private val fixedKey: String? = null) : HostedIdempotencyKeyStore {
+  // "period identity | request fingerprint" -> key。fingerprintが変わると別のkeyになる本番挙動を模す。
   private val keys = mutableMapOf<String, String>()
   private val cleared = mutableSetOf<String>()
   private var generation = 0
 
-  override suspend fun currentKey(period: HostedAnalysisPeriod): String =
-    keys.getOrPut(period.identity) { fixedKey ?: "key-${++generation}" }
+  override suspend fun currentKey(period: HostedAnalysisPeriod, requestFingerprint: String): String =
+    keys.getOrPut("${period.identity}|$requestFingerprint") { fixedKey ?: "key-${++generation}" }
 
   override suspend fun clear(period: HostedAnalysisPeriod) {
-    keys.remove(period.identity)
+    keys.keys.removeAll { it.startsWith("${period.identity}|") }
     cleared += period.identity
   }
 

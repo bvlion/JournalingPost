@@ -15,6 +15,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
+import java.security.MessageDigest
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
@@ -69,13 +70,15 @@ internal class HostedPeriodAnalyzer(
     }
 
     val period = HostedAnalysisPeriod(periodStart, periodEnd)
-    val idempotencyKey = idempotencyKeyStore.currentKey(period)
     val body = requestJson.encodeToString(
       HostedAnalysisRequest(
         period = HostedAnalysisRequest.Period(periodStart.toString(), periodEnd.toString()),
         entries = entries.map { it.toHostedAnalysisEntry() },
       ),
     )
+    // 送信bodyのfingerprintをkeyの一部にする。timeout後に記録を編集して同じ日を解析し直すと
+    // fingerprintが変わり新しいkeyになるため、Server側の idempotency_key_reuse 衝突を避けられる。
+    val idempotencyKey = idempotencyKeyStore.currentKey(period, body.sha256Hex())
 
     val response = try {
       httpClient.post("$baseUrl/v1/analyses") {
@@ -148,8 +151,9 @@ internal class HostedPeriodAnalyzer(
     val analyzedAt = analysis.analyzedAt.toHostedResponseInstantOrNull()
       ?: return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
 
-    // 解析が確定した。次に同じ期間を実行したら「利用者が意図した新しい解析」になるようkeyを捨てる。
-    idempotencyKeyStore.clear(period)
+    // 成功してもkeyは消さない。呼び出し側のRoom保存が失敗した場合に、同じkeyのretryが
+    // Serverのretry bufferから同じ結果を引けるようにするため(不要なAI再課金・結果喪失を避ける)。
+    // 期限切れ、またはpayloadを変えた解析し直しで新しいkeyへ移る。
     return PeriodAnalysisOutcome.Success(
       periodStart = start,
       periodEnd = end,
@@ -184,3 +188,7 @@ internal class HostedPeriodAnalyzer(
     const val REQUEST_TIMEOUT_MILLIS = 90_000L
   }
 }
+
+/** payloadの変化検出用のfingerprint。暗号強度は不要で、内容が変われば値が変わればよい。 */
+private fun String.sha256Hex(): String =
+  MessageDigest.getInstance("SHA-256").digest(toByteArray()).joinToString("") { "%02x".format(it) }
