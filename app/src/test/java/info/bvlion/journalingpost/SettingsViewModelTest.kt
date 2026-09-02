@@ -1,8 +1,13 @@
 package info.bvlion.journalingpost
 
+import info.bvlion.journalingpost.debug.DebugFixtureSeeder
+import info.bvlion.journalingpost.journal.JournalEntry
+import info.bvlion.journalingpost.mood.Mood
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import info.bvlion.journalingpost.settings.NoteOnlyEntryRepository
+import java.time.Instant
+import java.time.ZoneOffset
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettings
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
@@ -238,12 +243,79 @@ class SettingsViewModelTest {
     webhookRepository: WebhookSettingsRepository,
     noteOnlyEntryRepository: NoteOnlyEntryRepository = FakeNoteOnlyEntryRepository(),
     refreshWidgets: suspend () -> Unit = {},
+    debugFixtureSeeder: DebugFixtureSeeder? = null,
   ) = SettingsViewModel(
     analysisIntegrationRepository = integrationRepository,
     webhookSettingsRepository = webhookRepository,
     noteOnlyEntryRepository = noteOnlyEntryRepository,
     refreshWidgets = refreshWidgets,
+    debugFixtureSeeder = debugFixtureSeeder,
   )
+
+  @Test
+  fun `動作確認用fixtureを投入するとDebugFixturesSeededを通知する`() = runTest(dispatcher) {
+    val entries = mutableListOf<JournalEntry>()
+    val seeder = DebugFixtureSeeder(
+      journalEntryRepository = { entries += it; entries.size.toLong() },
+      analysisResultWriter = { 1L },
+      isAlreadySeeded = { false },
+      markSeeded = {},
+      moods = { listOf(Mood(id = "m", emoji = "😀", label = "嬉しい")) },
+      zoneId = { ZoneOffset.UTC },
+      now = { Instant.parse("2026-09-01T00:00:00Z") },
+    )
+    val viewModel = createViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+      debugFixtureSeeder = seeder,
+    )
+    val events = collectEvents(viewModel)
+
+    viewModel.seedDebugFixtures()
+    advanceUntilIdle()
+
+    val seeded = events.single() as SettingsEvent.DebugFixturesSeeded
+    assertEquals(entries.size, seeded.entryCount)
+    assertTrue(seeded.entryCount > 0)
+  }
+
+  @Test
+  fun `投入済みならDebugFixturesAlreadySeededを通知する`() = runTest(dispatcher) {
+    val seeder = DebugFixtureSeeder(
+      journalEntryRepository = { error("should not insert") },
+      analysisResultWriter = { error("should not save") },
+      isAlreadySeeded = { true },
+      markSeeded = {},
+      moods = { emptyList() },
+      zoneId = { ZoneOffset.UTC },
+      now = { Instant.parse("2026-09-01T00:00:00Z") },
+    )
+    val viewModel = createViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+      debugFixtureSeeder = seeder,
+    )
+    val events = collectEvents(viewModel)
+
+    viewModel.seedDebugFixtures()
+    advanceUntilIdle()
+
+    assertEquals(listOf(SettingsEvent.DebugFixturesAlreadySeeded), events)
+  }
+
+  @Test
+  fun `debugFixtureSeederが無ければseedDebugFixturesは何もしない`() = runTest(dispatcher) {
+    val viewModel = createViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+    val events = collectEvents(viewModel)
+
+    viewModel.seedDebugFixtures()
+    advanceUntilIdle()
+
+    assertTrue(events.isEmpty())
+  }
 
   @Test
   fun `メモだけ記録を有効にすると保存して配置済みWidgetも更新する`() = runTest(dispatcher) {

@@ -29,6 +29,13 @@
 
   <!-- ==== 記録履歴 ==== -->
   <string name="journal_history_empty">まだ記録がありません</string>
+  <string name="journal_history_day_empty">この日の記録はありません</string>
+  <string name="journal_history_previous_day">前の日</string>
+  <string name="journal_history_next_day">次の日</string>
+  <string name="journal_history_today">今日</string>
+  <!-- %1$s は表示中の日付。日付表示がそのまま日付指定の入口を兼ねるため読み上げで補う。 -->
+  <string name="journal_history_date_jump_description">%1$sを表示中。日付を指定します</string>
+  <string name="journal_history_date_jump_confirm">表示</string>
   <string name="journal_history_delete_failed">記録を削除できませんでした</string>
   <string name="journal_history_delete_confirm_title">この記録を削除しますか？</string>
   <string name="journal_history_delete_confirm_body">削除すると元に戻せません</string>
@@ -72,6 +79,15 @@
   <string name="settings_note_only_save_failed">「メモだけ記録」の設定を保存できませんでした</string>
   <string name="settings_webhook_item">Webhook設定</string>
   <string name="settings_webhook_destination_unknown">設定済み</string>
+
+  <!-- 開発者向け。debugビルドの設定画面でのみ表示する。 -->
+  <string name="settings_debug_heading">開発者向け</string>
+  <string name="settings_debug_seed_fixtures_item">動作確認用データを投入</string>
+  <string name="settings_debug_seed_fixtures_description">今日を含む過去7日分の記録と解析結果を作成します。debugビルドでのみ表示されます。</string>
+  <!-- %1$d は記録の件数、%2$d は解析結果の件数 -->
+  <string name="settings_debug_fixtures_seeded">動作確認用データを投入しました（記録%1$d件・解析%2$d件）</string>
+  <string name="settings_debug_fixtures_already_seeded">動作確認用データは投入済みです</string>
+  <string name="settings_debug_fixtures_seed_failed">動作確認用データを投入できませんでした</string>
 
   <!-- ==== Webhook設定 ==== -->
   <string name="webhook_settings_url_label">URL</string>

@@ -42,6 +42,8 @@ fun SettingsScreen(
   onNoteOnlyEntryChange: (Boolean) -> Unit,
   onMoodSettingsOpen: () -> Unit,
   onWebhookSettingsOpen: () -> Unit,
+  /** debugビルドでのみ非null。動作確認用fixtureの投入導線を出すかどうかを兼ねる。 */
+  onSeedDebugFixtures: (() -> Unit)? = null,
 ) {
   Column(modifier = Modifier.fillMaxSize()) {
     ScreenTopAppBar(title = stringResource(R.string.tab_settings))
@@ -118,6 +120,20 @@ fun SettingsScreen(
             Icon(painter = painterResource(R.drawable.ic_chevron_right), contentDescription = null)
           },
           modifier = Modifier.clickable(onClick = onWebhookSettingsOpen),
+        )
+      }
+
+      if (onSeedDebugFixtures != null) {
+        Column(modifier = Modifier.padding(16.dp)) {
+          Text(
+            text = stringResource(R.string.settings_debug_heading),
+            style = MaterialTheme.typography.titleSmall,
+          )
+        }
+        ListItem(
+          headlineContent = { Text(stringResource(R.string.settings_debug_seed_fixtures_item)) },
+          supportingContent = { Text(stringResource(R.string.settings_debug_seed_fixtures_description)) },
+          modifier = Modifier.clickable(onClick = onSeedDebugFixtures),
         )
       }
     }

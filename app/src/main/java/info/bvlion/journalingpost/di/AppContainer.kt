@@ -24,6 +24,8 @@ import info.bvlion.journalingpost.journal.JournalEntryReader
 import info.bvlion.journalingpost.journal.JournalRecorder
 import info.bvlion.journalingpost.journal.LocalOnlyJournalRecorder
 import info.bvlion.journalingpost.journal.PeriodJournalEntryReader
+import info.bvlion.journalingpost.debug.DebugFixtureSeeder
+import info.bvlion.journalingpost.debug.DebugFixtureStateStore
 import info.bvlion.journalingpost.journal.db.JournalDatabase
 import info.bvlion.journalingpost.journal.db.RoomJournalEntryRepository
 import info.bvlion.journalingpost.mood.DataStoreMoodRepository
@@ -45,6 +47,9 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
+import java.time.Instant
+import java.time.ZoneId
+import kotlinx.coroutines.flow.first
 
 /**
  * process内で共有する依存関係の生成場所。JournalingPostApplicationが1つだけ保持する。
@@ -160,6 +165,27 @@ internal class AppContainer(context: Context) {
     )
   }
 
+  /**
+   * debugビルドのみ非nullになる動作確認用fixtureの投入口。releaseでは常にnullで、R8が
+   * [DebugFixtureSeeder]生成ごと除去する。設定画面の導線もこのnull有無で出し分ける。
+   */
+  val debugFixtureSeeder: DebugFixtureSeeder? by lazy {
+    if (!BuildConfig.DEBUG) {
+      null
+    } else {
+      val stateStore = DebugFixtureStateStore(createPreferenceDataStore(DEBUG_FIXTURE_STATE_FILE_NAME))
+      DebugFixtureSeeder(
+        journalEntryRepository = journalEntryRepository,
+        analysisResultWriter = analysisResultRepository,
+        isAlreadySeeded = stateStore::isSeeded,
+        markSeeded = stateStore::markSeeded,
+        moods = { moodRepository.moods.first() },
+        zoneId = ZoneId::systemDefault,
+        now = Instant::now,
+      )
+    }
+  }
+
   suspend fun refreshMoodWidgets() {
     try {
       MoodWidget().updateAll(context)
@@ -195,5 +221,7 @@ internal class AppContainer(context: Context) {
 
     /** Idempotency-Keyの一時保存先。秘密値ではないためbackup対象で構わない。 */
     const val HOSTED_IDEMPOTENCY_FILE_NAME = "hosted_idempotency"
+
+    const val DEBUG_FIXTURE_STATE_FILE_NAME = "debug_fixture_state"
   }
 }

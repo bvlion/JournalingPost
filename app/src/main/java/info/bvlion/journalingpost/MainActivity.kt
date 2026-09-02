@@ -52,6 +52,7 @@ import info.bvlion.journalingpost.settings.WebhookSettingsScreen
 import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -255,6 +256,10 @@ class MainActivity : ComponentActivity() {
                       deleteFailures = historyViewModel.deleteFailures,
                       onShowMessage = showMessage,
                       onDelete = historyViewModel::deleteEntry,
+                      onPreviousDay = historyViewModel::showPreviousDay,
+                      onNextDay = historyViewModel::showNextDay,
+                      onToday = historyViewModel::showToday,
+                      onSelectDate = historyViewModel::selectDate,
                     )
                   }
 
@@ -278,6 +283,12 @@ class MainActivity : ComponentActivity() {
                       stringResource(R.string.settings_integration_save_failed)
                     val noteOnlySaveFailedMessage =
                       stringResource(R.string.settings_note_only_save_failed)
+                    val debugFixturesSeededTemplate =
+                      stringResource(R.string.settings_debug_fixtures_seeded)
+                    val debugFixturesAlreadySeededMessage =
+                      stringResource(R.string.settings_debug_fixtures_already_seeded)
+                    val debugFixturesSeedFailedMessage =
+                      stringResource(R.string.settings_debug_fixtures_seed_failed)
 
                     // Snackbar表示と下位画面への遷移はこの画面の外側が持つため、Settingsの
                     // 一時的な結果はここで受け取る。
@@ -287,6 +298,18 @@ class MainActivity : ComponentActivity() {
                         SettingsEvent.NoteOnlyEntrySaveFailed -> showMessage(noteOnlySaveFailedMessage)
                         SettingsEvent.WebhookSetupRequested -> openWebhookSettings(true)
                         SettingsEvent.HostedConsentRequested -> showHostedConsent = true
+                        is SettingsEvent.DebugFixturesSeeded -> showMessage(
+                          String.format(
+                            Locale.getDefault(),
+                            debugFixturesSeededTemplate,
+                            event.entryCount,
+                            event.analysisResultCount,
+                          ),
+                        )
+                        SettingsEvent.DebugFixturesAlreadySeeded ->
+                          showMessage(debugFixturesAlreadySeededMessage)
+                        SettingsEvent.DebugFixturesSeedFailed ->
+                          showMessage(debugFixturesSeedFailedMessage)
                       }
                     }
 
@@ -296,6 +319,7 @@ class MainActivity : ComponentActivity() {
                       onNoteOnlyEntryChange = settingsViewModel::setNoteOnlyEntryEnabled,
                       onMoodSettingsOpen = openMoodSettings,
                       onWebhookSettingsOpen = { openWebhookSettings(false) },
+                      onSeedDebugFixtures = if (BuildConfig.DEBUG) settingsViewModel::seedDebugFixtures else null,
                     )
 
                     if (showHostedConsent) {
