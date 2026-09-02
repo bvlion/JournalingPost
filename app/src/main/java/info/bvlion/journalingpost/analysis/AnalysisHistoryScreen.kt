@@ -173,6 +173,9 @@ private fun AnalysisTrigger(
       selectableDates = selectableDates,
     )
     val pickedDay = datePickerState.selectedDateMillis?.toLocalDateFromUtc()
+    // ダイアログを開いている間に自動解析が完了して選択中の日が対象外になることがあるため、
+    // 最新の[selectableDays]に含まれるときだけ実行できるようにする(解析済みの日への重複実行を防ぐ)。
+    val confirmableDay = pickedDay?.takeIf { it in selectableDays }
 
     fun close() {
       showDatePicker = false
@@ -182,9 +185,9 @@ private fun AnalysisTrigger(
       onDismissRequest = { close() },
       confirmButton = {
         TextButton(
-          enabled = pickedDay != null,
+          enabled = confirmableDay != null,
           onClick = {
-            if (pickedDay != null) onAnalyze(pickedDay)
+            if (confirmableDay != null) onAnalyze(confirmableDay)
             close()
           },
         ) {

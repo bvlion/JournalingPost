@@ -15,7 +15,8 @@ import kotlinx.coroutines.flow.first
  *
  * 設定の有効/無効・実効[AnalysisIntegration]・対象日(当日/前日)を実行時点で解決し、対象日の
  * JournalEntryを手動解析と同じ解析先へ送って、成功結果を[AnalysisResult]として端末へ保存する。
- * timezone・対象日の境界は実行時点の端末timezoneで解決する(移動でtimezoneが変わっても正しい日を解析する)。
+ * 対象日と期間境界はWorkerが実際に起動したローカル日付・端末timezoneで決める。予約時刻からの
+ * 遅延がローカル日付を跨いだ場合や、timezone変更を跨いだ場合の対象日の厳密な扱いは#61で扱う。
  *
  * 一時的な失敗でも再試行はしない。次回の予約実行に委ねる。
  *

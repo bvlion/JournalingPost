@@ -20,8 +20,10 @@ import kotlinx.coroutines.flow.first
  *
  * 「その時刻ごろ」の1回きりの[AutoAnalysisWorker]を予約し、Workerが実行の最後に翌日以降の直近の
  * 指定時刻へ予約し直すことで日次のrecurrenceを作る。次回時刻は予約のたびに実行時点の端末timezoneで
- * 計算するため、移動でtimezoneが変わっても指定時刻へ寄せ直せる。厳密な実行保証ではなく、
- * network制約・省電力・background実行で前後する。
+ * 計算する。厳密な実行保証ではなく、network制約・省電力・background実行で前後する。
+ *
+ * 予約後に端末timezoneが変わると、次にWorkerが起動して予約し直すまでは、その1回の予約は
+ * 旧timezoneで計算した時刻のまま残る。この場合の対象日の扱いは#61で扱う。
  */
 internal class AutoAnalysisScheduler(
   context: Context,
