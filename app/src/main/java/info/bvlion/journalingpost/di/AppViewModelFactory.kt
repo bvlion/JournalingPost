@@ -42,6 +42,7 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
     AnalysisHistoryViewModel(
       reader = container.analysisResultReader,
       analysisIntegrationRepository = container.analysisIntegrationRepository,
+      journalEntryReader = container.journalEntryReader,
       periodJournalEntryReader = container.periodJournalEntryReader,
       periodAnalyzer = container.periodAnalyzer,
       analysisResultWriter = container.analysisResultWriter,

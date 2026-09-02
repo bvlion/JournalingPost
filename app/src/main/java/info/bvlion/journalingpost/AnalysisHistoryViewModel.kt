@@ -10,6 +10,7 @@ import info.bvlion.journalingpost.analysis.AnalysisResultWriter
 import info.bvlion.journalingpost.analysis.PeriodAnalysisOutcome
 import info.bvlion.journalingpost.analysis.PeriodAnalyzer
 import info.bvlion.journalingpost.analysis.toAnalysisHistoryItems
+import info.bvlion.journalingpost.journal.JournalEntryReader
 import info.bvlion.journalingpost.journal.PeriodJournalEntryReader
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
@@ -31,6 +32,7 @@ import kotlinx.coroutines.launch
 class AnalysisHistoryViewModel(
   reader: AnalysisResultReader,
   analysisIntegrationRepository: AnalysisIntegrationRepository,
+  journalEntryReader: JournalEntryReader,
   private val periodJournalEntryReader: PeriodJournalEntryReader,
   private val periodAnalyzer: PeriodAnalyzer,
   private val analysisResultWriter: AnalysisResultWriter,
@@ -49,6 +51,17 @@ class AnalysisHistoryViewModel(
   val canRunAnalysis: StateFlow<Boolean> = analysisIntegrationRepository.analysisIntegration
     .map { it == AnalysisIntegration.CUSTOM_WEBHOOK || it == AnalysisIntegration.HOSTED }
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+  /**
+   * JournalEntryが1件以上ある日([currentZoneId]でのカレンダー日)。手動解析の日付選択で、記録のある日
+   * だけを選べるようにするために使う。境界は選択日と同じく端末timezoneで解決する。
+   */
+  val recordedDays: StateFlow<Set<LocalDate>> = journalEntryReader.observeAll()
+    .map { entries ->
+      val zoneId = currentZoneId()
+      entries.mapTo(mutableSetOf()) { it.timestamp.atZone(zoneId).toLocalDate() }
+    }
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
   /** 解析実行中かどうか。実行中の表示と二重実行の抑止に使う継続的な状態。 */
   private val _isAnalysisRunning = MutableStateFlow(false)

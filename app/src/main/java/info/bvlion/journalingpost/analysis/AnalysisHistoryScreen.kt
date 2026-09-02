@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -21,9 +22,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,11 +39,8 @@ import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
-import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
-import java.time.ZoneId
-import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.flow.Flow
@@ -54,25 +54,48 @@ private val analysisDayFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日"
 /**
  * 解析履歴の遷移先。#37で保存したAnalysisResultを新しい順の一覧で表示する。
  *
- * Custom Webhookが解析先として有効な場合([canRunAnalysis])だけ、上部に「解析する」導線を出し、
- * 対象日を1日選んで手動解析を実行できる。実行結果はSnackbarで伝える。対象日の記録が0件かどうかは
- * 実行後の解析処理側で判定する。
+ * 解析先(Custom WebhookまたはHosted)が有効な場合([canRunAnalysis])だけ、上部に「解析する」導線を
+ * 出し、記録のある日([recordedDays])から1日選んで手動解析を実行できる。実行結果はSnackbarで伝える。
+ * 対象日の記録が0件かどうかは実行後の解析処理側でも判定する(防御的なエラーハンドリングは残す)。
+ *
+ * 解析に成功して新しいAnalysisResultが一覧の先頭へ追加されたら、一覧を先頭へスクロールして、
+ * 生成された結果をそのまま確認できる状態にする。
  */
 @Composable
 fun AnalysisHistoryScreen(
   uiState: AnalysisHistoryUiState,
   canRunAnalysis: Boolean,
   isRunning: Boolean,
+  recordedDays: Set<LocalDate>,
   runResults: Flow<AnalysisRunResult>,
   onShowMessage: (String) -> Unit,
   onAnalyze: (LocalDate) -> Unit,
 ) {
   val resources = LocalResources.current
   val completedMessage = stringResource(R.string.analysis_completed)
+  val listState = rememberLazyListState()
+
+  // 追加された結果はRoomのFlow経由で一覧へ反映されるため、成功時点の先頭idを控えておき、
+  // それが入れ替わってから先頭へ寄せる。成功しても先頭が変わらなければスクロールしない。
+  val firstItemId = (uiState as? AnalysisHistoryUiState.Content)?.items?.firstOrNull()?.id
+  val currentFirstItemId by rememberUpdatedState(firstItemId)
+  var firstItemIdAtSuccess by remember { mutableStateOf<Long?>(null) }
+  var awaitingScrollToTop by remember { mutableStateOf(false) }
   EventEffect(runResults) { result ->
     when (result) {
-      AnalysisRunResult.Succeeded -> onShowMessage(completedMessage)
+      AnalysisRunResult.Succeeded -> {
+        onShowMessage(completedMessage)
+        firstItemIdAtSuccess = currentFirstItemId
+        awaitingScrollToTop = true
+      }
+
       is AnalysisRunResult.Failed -> onShowMessage(resources.failureMessage(result))
+    }
+  }
+  LaunchedEffect(awaitingScrollToTop, firstItemId) {
+    if (awaitingScrollToTop && firstItemId != null && firstItemId != firstItemIdAtSuccess) {
+      listState.animateScrollToItem(0)
+      awaitingScrollToTop = false
     }
   }
 
@@ -83,6 +106,7 @@ fun AnalysisHistoryScreen(
       AnalysisTrigger(
         canRunAnalysis = canRunAnalysis,
         isRunning = isRunning,
+        recordedDays = recordedDays,
         onAnalyze = onAnalyze,
       )
     }
@@ -100,6 +124,7 @@ fun AnalysisHistoryScreen(
       }
 
       is AnalysisHistoryUiState.Content -> LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -117,6 +142,7 @@ fun AnalysisHistoryScreen(
 private fun AnalysisTrigger(
   canRunAnalysis: Boolean,
   isRunning: Boolean,
+  recordedDays: Set<LocalDate>,
   onAnalyze: (LocalDate) -> Unit,
 ) {
   var showDatePicker by remember { mutableStateOf(false) }
@@ -142,9 +168,11 @@ private fun AnalysisTrigger(
   }
 
   if (showDatePicker && canRunAnalysis) {
-    val zoneId = remember { ZoneId.systemDefault() }
+    // 記録のある日だけを選べるようにし、初期選択は直近の記録日にする。記録が無ければ選択なしで開く。
+    val selectableDates = remember(recordedDays) { recordedDaySelectableDates(recordedDays) }
     val datePickerState = rememberDatePickerState(
-      initialSelectedDateMillis = LocalDate.now(zoneId).toUtcMillis(),
+      initialSelectedDateMillis = recordedDays.maxOrNull()?.toUtcMillis(),
+      selectableDates = selectableDates,
     )
     val pickedDay = datePickerState.selectedDateMillis?.toLocalDateFromUtc()
 
@@ -175,12 +203,6 @@ private fun AnalysisTrigger(
     }
   }
 }
-
-// Material3 DatePickerはUTC基準のmillisで日付を扱う。端末timezoneのカレンダー日と相互変換する。
-private fun LocalDate.toUtcMillis(): Long = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-
-private fun Long.toLocalDateFromUtc(): LocalDate =
-  Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
 
 /** 対象日をSnackbar側で持ち直さず、失敗結果に含まれる日をそのまま文言へ入れる。 */
 private fun Resources.failureMessage(failed: AnalysisRunResult.Failed): String = when (failed.failure) {
@@ -244,6 +266,7 @@ fun AnalysisHistoryScreenPreview() {
       ),
       canRunAnalysis = true,
       isRunning = false,
+      recordedDays = setOf(LocalDate.of(2026, 8, 23), LocalDate.of(2026, 8, 24)),
       runResults = emptyFlow(),
       onShowMessage = {},
       onAnalyze = {},
