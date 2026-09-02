@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
   private val historyViewModel: JournalHistoryViewModel by viewModels { appViewModelFactory }
   private val analysisHistoryViewModel: AnalysisHistoryViewModel by viewModels { appViewModelFactory }
   private val settingsViewModel: SettingsViewModel by viewModels { appViewModelFactory }
+  private val autoAnalysisSettingsViewModel: AutoAnalysisSettingsViewModel by viewModels { appViewModelFactory }
   private val moodViewModel: MoodViewModel by viewModels { appViewModelFactory }
   private val noteOnlyEntryViewModel: NoteOnlyEntryViewModel by viewModels { appViewModelFactory }
   private val moodSettingsViewModel: MoodSettingsViewModel by viewModels { appViewModelFactory }
@@ -71,6 +72,11 @@ class MainActivity : ComponentActivity() {
 
     // Widget pickerのgenerated preview(Android 15+)登録。通常UI/入力フローには影響しない。
     lifecycleScope.launch { registerMoodWidgetPreviewOnce(applicationContext) }
+
+    // 自動解析(#59)の予約を現在の設定へ合わせる。既存の予約は時刻を計算し直さない。
+    lifecycleScope.launch {
+      (application as JournalingPostApplication).container.autoAnalysisScheduler.syncFromSettings()
+    }
 
     setContent {
       JournalingPostTheme {
@@ -267,12 +273,12 @@ class MainActivity : ComponentActivity() {
                     val analysisHistoryUiState by analysisHistoryViewModel.uiState.collectAsStateWithLifecycle()
                     val canRunAnalysis by analysisHistoryViewModel.canRunAnalysis.collectAsStateWithLifecycle()
                     val isAnalysisRunning by analysisHistoryViewModel.isAnalysisRunning.collectAsStateWithLifecycle()
-                    val recordedDays by analysisHistoryViewModel.recordedDays.collectAsStateWithLifecycle()
+                    val selectableDays by analysisHistoryViewModel.selectableDays.collectAsStateWithLifecycle()
                     AnalysisHistoryScreen(
                       uiState = analysisHistoryUiState,
                       canRunAnalysis = canRunAnalysis,
                       isRunning = isAnalysisRunning,
-                      recordedDays = recordedDays,
+                      selectableDays = selectableDays,
                       runResults = analysisHistoryViewModel.runResults,
                       onShowMessage = showMessage,
                       onAnalyze = analysisHistoryViewModel::analyze,
@@ -281,8 +287,11 @@ class MainActivity : ComponentActivity() {
 
                   MainDestination.SETTINGS -> {
                     val settingsUiState by settingsViewModel.uiState.collectAsStateWithLifecycle()
+                    val autoAnalysisUiState by autoAnalysisSettingsViewModel.uiState.collectAsStateWithLifecycle()
                     val integrationSaveFailedMessage =
                       stringResource(R.string.settings_integration_save_failed)
+                    val autoAnalysisSaveFailedMessage =
+                      stringResource(R.string.settings_auto_analysis_save_failed)
                     val noteOnlySaveFailedMessage =
                       stringResource(R.string.settings_note_only_save_failed)
                     val debugFixturesSeededTemplate =
@@ -294,6 +303,11 @@ class MainActivity : ComponentActivity() {
 
                     // Snackbar表示と下位画面への遷移はこの画面の外側が持つため、Settingsの
                     // 一時的な結果はここで受け取る。
+                    EventEffect(autoAnalysisSettingsViewModel.events) { event ->
+                      when (event) {
+                        AutoAnalysisSettingsEvent.SaveFailed -> showMessage(autoAnalysisSaveFailedMessage)
+                      }
+                    }
                     EventEffect(settingsViewModel.events) { event ->
                       when (event) {
                         SettingsEvent.IntegrationSaveFailed -> showMessage(integrationSaveFailedMessage)
@@ -317,8 +331,12 @@ class MainActivity : ComponentActivity() {
 
                     SettingsScreen(
                       uiState = settingsUiState,
+                      autoAnalysisUiState = autoAnalysisUiState,
                       onAnalysisIntegrationChange = settingsViewModel::setAnalysisIntegration,
                       onNoteOnlyEntryChange = settingsViewModel::setNoteOnlyEntryEnabled,
+                      onAutoAnalysisEnabledChange = autoAnalysisSettingsViewModel::setEnabled,
+                      onAutoAnalysisTimeChange = autoAnalysisSettingsViewModel::setTimeOfDay,
+                      onAutoAnalysisTargetDayChange = autoAnalysisSettingsViewModel::setTargetDay,
                       onMoodSettingsOpen = openMoodSettings,
                       onWebhookSettingsOpen = { openWebhookSettings(false) },
                       onSeedDebugFixtures = if (BuildConfig.DEBUG) settingsViewModel::seedDebugFixtures else null,

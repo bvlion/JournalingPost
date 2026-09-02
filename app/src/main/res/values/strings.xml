@@ -72,6 +72,16 @@
   <string name="settings_hosted_consent_title">記録を外部へ送信します</string>
   <string name="settings_hosted_consent_body">JournalingPost Hostedを有効にすると、手動で解析するたびに、その対象期間の記録がAI解析のためJournalingPostのサーバーへ送信されます。記録の原本と解析結果は引き続き端末に保存され、サーバーには恒久保存されません。</string>
   <string name="settings_hosted_consent_confirm">同意して有効にする</string>
+  <!-- 自動解析(#59)。解析先が有効なときだけ表示する。 -->
+  <string name="settings_auto_analysis_heading">自動解析</string>
+  <string name="settings_auto_analysis_item">自動で解析する</string>
+  <string name="settings_auto_analysis_item_description">選んだ解析先へ、対象日の記録を指定の時刻ごろに自動で送って解析します</string>
+  <string name="settings_auto_analysis_time_item">解析する時刻</string>
+  <string name="settings_auto_analysis_time_note">指定した時刻ちょうどではなく、その時刻ごろに実行されます。端末の状態や通信状況で前後します。</string>
+  <string name="settings_auto_analysis_target_day_heading">対象の日</string>
+  <string name="settings_auto_analysis_target_day_today">当日</string>
+  <string name="settings_auto_analysis_target_day_yesterday">前日</string>
+  <string name="settings_auto_analysis_save_failed">自動解析の設定を保存できませんでした</string>
   <string name="settings_mood_item">Mood設定</string>
   <string name="settings_mood_item_description">表示内容・順序・件数を変更</string>
   <string name="settings_note_only_item">「メモだけ記録」を表示</string>

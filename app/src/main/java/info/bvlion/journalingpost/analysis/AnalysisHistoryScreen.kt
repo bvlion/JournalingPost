@@ -54,7 +54,7 @@ private val analysisDayFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日"
  * 解析履歴の遷移先。#37で保存したAnalysisResultを新しい順の一覧で表示する。
  *
  * 解析先(Custom WebhookまたはHosted)が有効な場合([canRunAnalysis])だけ、上部に「解析する」導線を
- * 出し、記録のある日([recordedDays])から1日選んで手動解析を実行できる。実行結果はSnackbarで伝える。
+ * 出し、選択可能な日([selectableDays])から1日選んで手動解析を実行できる。実行結果はSnackbarで伝える。
  * 対象日の記録が0件かどうかは実行後の解析処理側でも判定する(防御的なエラーハンドリングは残す)。
  *
  * 解析に成功して新しいAnalysisResultが一覧の先頭へ追加されたら、一覧を先頭へスクロールして、
@@ -65,7 +65,7 @@ fun AnalysisHistoryScreen(
   uiState: AnalysisHistoryUiState,
   canRunAnalysis: Boolean,
   isRunning: Boolean,
-  recordedDays: Set<LocalDate>,
+  selectableDays: Set<LocalDate>,
   runResults: Flow<AnalysisRunResult>,
   onShowMessage: (String) -> Unit,
   onAnalyze: (LocalDate) -> Unit,
@@ -98,11 +98,13 @@ fun AnalysisHistoryScreen(
   Column(modifier = Modifier.fillMaxSize()) {
     ScreenTopAppBar(title = stringResource(R.string.tab_analysis_history))
 
-    if (canRunAnalysis || isRunning) {
+    // 選べる日が無いときは「解析する」を出さない。Hostedでは当日と解析済みの日を除くと
+    // 対象が無くなることがある(その場合は自動解析か翌日以降に委ねる)。
+    if ((canRunAnalysis && selectableDays.isNotEmpty()) || isRunning) {
       AnalysisTrigger(
         canRunAnalysis = canRunAnalysis,
         isRunning = isRunning,
-        recordedDays = recordedDays,
+        selectableDays = selectableDays,
         onAnalyze = onAnalyze,
       )
     }
@@ -138,7 +140,7 @@ fun AnalysisHistoryScreen(
 private fun AnalysisTrigger(
   canRunAnalysis: Boolean,
   isRunning: Boolean,
-  recordedDays: Set<LocalDate>,
+  selectableDays: Set<LocalDate>,
   onAnalyze: (LocalDate) -> Unit,
 ) {
   var showDatePicker by remember { mutableStateOf(false) }
@@ -164,10 +166,10 @@ private fun AnalysisTrigger(
   }
 
   if (showDatePicker && canRunAnalysis) {
-    // 記録のある日だけを選べるようにし、初期選択は直近の記録日にする。記録が無ければ選択なしで開く。
-    val selectableDates = remember(recordedDays) { recordedDaySelectableDates(recordedDays) }
+    // 選べる日だけを選択可能にし、初期選択は選べる日のうち直近の日にする。無ければ選択なしで開く。
+    val selectableDates = remember(selectableDays) { analysisSelectableDates(selectableDays) }
     val datePickerState = rememberDatePickerState(
-      initialSelectedDateMillis = recordedDays.maxOrNull()?.toUtcMillis(),
+      initialSelectedDateMillis = selectableDays.maxOrNull()?.toUtcMillis(),
       selectableDates = selectableDates,
     )
     val pickedDay = datePickerState.selectedDateMillis?.toLocalDateFromUtc()
@@ -262,7 +264,7 @@ fun AnalysisHistoryScreenPreview() {
       ),
       canRunAnalysis = true,
       isRunning = false,
-      recordedDays = setOf(LocalDate.of(2026, 8, 23), LocalDate.of(2026, 8, 24)),
+      selectableDays = setOf(LocalDate.of(2026, 8, 23), LocalDate.of(2026, 8, 24)),
       runResults = emptyFlow(),
       onShowMessage = {},
       onAnalyze = {},

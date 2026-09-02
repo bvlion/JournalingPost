@@ -11,6 +11,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
@@ -18,17 +19,26 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimeInput
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import info.bvlion.journalingpost.AutoAnalysisSettingsUiState
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.SettingsUiState
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 /**
  * Mood・記録導線と解析・連携の各設定への入口。JournalEntryが常にローカル保存されることや、DataStoreの
@@ -38,8 +48,13 @@ import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 @Composable
 fun SettingsScreen(
   uiState: SettingsUiState,
+  /** 「自動解析」セクションの状態。読み込み確定前はnullで、その間はセクションを出さない。 */
+  autoAnalysisUiState: AutoAnalysisSettingsUiState?,
   onAnalysisIntegrationChange: (AnalysisIntegration) -> Unit,
   onNoteOnlyEntryChange: (Boolean) -> Unit,
+  onAutoAnalysisEnabledChange: (Boolean) -> Unit,
+  onAutoAnalysisTimeChange: (LocalTime) -> Unit,
+  onAutoAnalysisTargetDayChange: (AutoAnalysisTargetDay) -> Unit,
   onMoodSettingsOpen: () -> Unit,
   onWebhookSettingsOpen: () -> Unit,
   /** debugビルドでのみ非null。動作確認用fixtureの投入導線を出すかどうかを兼ねる。 */
@@ -123,6 +138,20 @@ fun SettingsScreen(
         )
       }
 
+      // 解析先(Custom WebhookまたはHosted)が有効なときだけ「自動解析」を出す。
+      val integration = uiState.selectedIntegration
+      if (
+        autoAnalysisUiState != null &&
+        (integration == AnalysisIntegration.CUSTOM_WEBHOOK || integration == AnalysisIntegration.HOSTED)
+      ) {
+        AutoAnalysisSection(
+          uiState = autoAnalysisUiState,
+          onEnabledChange = onAutoAnalysisEnabledChange,
+          onTimeChange = onAutoAnalysisTimeChange,
+          onTargetDayChange = onAutoAnalysisTargetDayChange,
+        )
+      }
+
       if (onSeedDebugFixtures != null) {
         Column(modifier = Modifier.padding(16.dp)) {
           Text(
@@ -152,6 +181,120 @@ private fun AnalysisIntegrationOption(
     supportingContent = description?.let { { Text(it) } },
     leadingContent = { RadioButton(selected = selected, onClick = null) },
     modifier = Modifier.selectable(selected = selected, onClick = onClick, role = Role.RadioButton),
+  )
+}
+
+private val autoAnalysisTimeFormatter = DateTimeFormatter.ofPattern("H:mm")
+
+/**
+ * 選んだ解析先へ対象日の記録を「指定の時刻ごろ」に自動で送るかどうかの設定(Issue #59)。
+ * 有効なときだけ時刻と対象日(当日/前日)を出す。時刻は厳密な実行保証ではないことを補足で示す。
+ */
+@Composable
+private fun AutoAnalysisSection(
+  uiState: AutoAnalysisSettingsUiState,
+  onEnabledChange: (Boolean) -> Unit,
+  onTimeChange: (LocalTime) -> Unit,
+  onTargetDayChange: (AutoAnalysisTargetDay) -> Unit,
+) {
+  var showTimePicker by remember { mutableStateOf(false) }
+
+  Column(modifier = Modifier.padding(top = 8.dp)) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+      Text(
+        text = stringResource(R.string.settings_auto_analysis_heading),
+        style = MaterialTheme.typography.titleSmall,
+      )
+    }
+
+    ListItem(
+      headlineContent = { Text(stringResource(R.string.settings_auto_analysis_item)) },
+      supportingContent = { Text(stringResource(R.string.settings_auto_analysis_item_description)) },
+      trailingContent = {
+        Switch(checked = uiState.enabled, onCheckedChange = null)
+      },
+      modifier = Modifier.toggleable(
+        value = uiState.enabled,
+        onValueChange = onEnabledChange,
+        role = Role.Switch,
+      ),
+    )
+
+    if (uiState.enabled) {
+      ListItem(
+        headlineContent = { Text(stringResource(R.string.settings_auto_analysis_time_item)) },
+        supportingContent = { Text(stringResource(R.string.settings_auto_analysis_time_note)) },
+        trailingContent = { Text(uiState.timeOfDay.format(autoAnalysisTimeFormatter)) },
+        modifier = Modifier.clickable { showTimePicker = true },
+      )
+
+      Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text(
+          text = stringResource(R.string.settings_auto_analysis_target_day_heading),
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Column(modifier = Modifier.padding(top = 4.dp).selectableGroup()) {
+          AutoAnalysisTargetDayOption(
+            title = stringResource(R.string.settings_auto_analysis_target_day_yesterday),
+            selected = uiState.targetDay == AutoAnalysisTargetDay.YESTERDAY,
+            onClick = { onTargetDayChange(AutoAnalysisTargetDay.YESTERDAY) },
+          )
+          AutoAnalysisTargetDayOption(
+            title = stringResource(R.string.settings_auto_analysis_target_day_today),
+            selected = uiState.targetDay == AutoAnalysisTargetDay.TODAY,
+            onClick = { onTargetDayChange(AutoAnalysisTargetDay.TODAY) },
+          )
+        }
+      }
+    }
+  }
+
+  if (showTimePicker) {
+    AutoAnalysisTimePickerDialog(
+      initial = uiState.timeOfDay,
+      onConfirm = {
+        onTimeChange(it)
+        showTimePicker = false
+      },
+      onDismiss = { showTimePicker = false },
+    )
+  }
+}
+
+@Composable
+private fun AutoAnalysisTargetDayOption(title: String, selected: Boolean, onClick: () -> Unit) {
+  ListItem(
+    headlineContent = { Text(title) },
+    leadingContent = { RadioButton(selected = selected, onClick = null) },
+    modifier = Modifier.selectable(selected = selected, onClick = onClick, role = Role.RadioButton),
+  )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AutoAnalysisTimePickerDialog(
+  initial: LocalTime,
+  onConfirm: (LocalTime) -> Unit,
+  onDismiss: () -> Unit,
+) {
+  val state = rememberTimePickerState(
+    initialHour = initial.hour,
+    initialMinute = initial.minute,
+    is24Hour = true,
+  )
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(stringResource(R.string.settings_auto_analysis_time_item)) },
+    text = { TimeInput(state = state) },
+    confirmButton = {
+      TextButton(onClick = { onConfirm(LocalTime.of(state.hour, state.minute)) }) {
+        Text(stringResource(R.string.action_save))
+      }
+    },
+    dismissButton = {
+      TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+    },
   )
 }
 
@@ -188,8 +331,16 @@ fun SettingsScreenPreview() {
         webhookDestinationLabel = "https://hooks.example.com",
         noteOnlyEntryEnabled = true,
       ),
+      autoAnalysisUiState = AutoAnalysisSettingsUiState(
+        enabled = true,
+        timeOfDay = LocalTime.of(8, 0),
+        targetDay = AutoAnalysisTargetDay.YESTERDAY,
+      ),
       onAnalysisIntegrationChange = {},
       onNoteOnlyEntryChange = {},
+      onAutoAnalysisEnabledChange = {},
+      onAutoAnalysisTimeChange = {},
+      onAutoAnalysisTargetDayChange = {},
       onMoodSettingsOpen = {},
       onWebhookSettingsOpen = {},
     )

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import info.bvlion.journalingpost.AnalysisHistoryViewModel
+import info.bvlion.journalingpost.AutoAnalysisSettingsViewModel
 import info.bvlion.journalingpost.JournalHistoryViewModel
 import info.bvlion.journalingpost.JournalingPostApplication
 import info.bvlion.journalingpost.MainViewModel
@@ -55,6 +56,12 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
       noteOnlyEntryRepository = container.noteOnlyEntryRepository,
       refreshWidgets = container::refreshMoodWidgets,
       debugFixtureSeeder = container.debugFixtureSeeder,
+    )
+  }
+  initializer {
+    AutoAnalysisSettingsViewModel(
+      repository = container.autoAnalysisSettingsRepository,
+      onSettingsChanged = container.autoAnalysisScheduler::reschedule,
     )
   }
   initializer {
