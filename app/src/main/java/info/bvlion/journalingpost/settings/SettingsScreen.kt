@@ -333,7 +333,7 @@ fun SettingsScreenPreview() {
       ),
       autoAnalysisUiState = AutoAnalysisSettingsUiState(
         enabled = true,
-        timeOfDay = LocalTime.of(8, 0),
+        timeOfDay = LocalTime.of(3, 0),
         targetDay = AutoAnalysisTargetDay.YESTERDAY,
       ),
       onAnalysisIntegrationChange = {},

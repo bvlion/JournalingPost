@@ -124,6 +124,79 @@ class AutoAnalyzerTest {
   }
 
   @Test
+  fun `Hostedはその実行日に既に試行済みなら成功後でも失敗後でも送らない`() = runTest {
+    val analyzer = FakePeriodAnalyzer { success() }
+    val outcome = createAnalyzer(
+      integration = AnalysisIntegration.HOSTED,
+      analyzer = analyzer,
+      attemptStore = FakeAutoAnalysisAttemptStore(initial = LocalDate.of(2026, 8, 31)),
+      currentDate = { LocalDate.of(2026, 8, 31) },
+    ).runOnce()
+
+    assertEquals(AutoAnalysisOutcome.SKIPPED_ALREADY_ATTEMPTED_TODAY, outcome)
+    assertEquals(0, analyzer.callCount)
+  }
+
+  @Test
+  fun `Hostedは前の実行日にしか試行していなければ送る`() = runTest {
+    val analyzer = FakePeriodAnalyzer { success() }
+    val outcome = createAnalyzer(
+      integration = AnalysisIntegration.HOSTED,
+      analyzer = analyzer,
+      attemptStore = FakeAutoAnalysisAttemptStore(initial = LocalDate.of(2026, 8, 30)),
+      currentDate = { LocalDate.of(2026, 8, 31) },
+    ).runOnce()
+
+    assertEquals(AutoAnalysisOutcome.ANALYZED, outcome)
+    assertEquals(1, analyzer.callCount)
+  }
+
+  @Test
+  fun `Hostedは送信前に実行日を試行済みとして記録し失敗しても残す`() = runTest {
+    val store = FakeAutoAnalysisAttemptStore()
+    createAnalyzer(
+      integration = AnalysisIntegration.HOSTED,
+      analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.NETWORK },
+      attemptStore = store,
+      currentDate = { LocalDate.of(2026, 8, 31) },
+    ).runOnce()
+
+    assertEquals(LocalDate.of(2026, 8, 31), store.lastHostedAttempt)
+  }
+
+  @Test
+  fun `Hostedは送らなかった場合は試行済みにしない`() = runTest {
+    val skippedByNoEntries = FakeAutoAnalysisAttemptStore()
+    createAnalyzer(
+      integration = AnalysisIntegration.HOSTED,
+      entryReader = FakePeriodJournalEntryReader(emptyList()),
+      attemptStore = skippedByNoEntries,
+    ).runOnce()
+    assertEquals(null, skippedByNoEntries.lastHostedAttempt)
+
+    val skippedByAlreadyAnalyzed = FakeAutoAnalysisAttemptStore()
+    createAnalyzer(
+      integration = AnalysisIntegration.HOSTED,
+      results = listOf(analysisResult(periodStart = "2026-08-30T00:00:00Z")),
+      attemptStore = skippedByAlreadyAnalyzed,
+      currentDate = { LocalDate.of(2026, 8, 31) },
+    ).runOnce()
+    assertEquals(null, skippedByAlreadyAnalyzed.lastHostedAttempt)
+  }
+
+  @Test
+  fun `Custom Webhookは試行済みを記録しない`() = runTest {
+    val store = FakeAutoAnalysisAttemptStore()
+    createAnalyzer(
+      integration = AnalysisIntegration.CUSTOM_WEBHOOK,
+      attemptStore = store,
+      currentDate = { LocalDate.of(2026, 8, 31) },
+    ).runOnce()
+
+    assertEquals(null, store.lastHostedAttempt)
+  }
+
+  @Test
   fun `解析先の失敗は再試行せずFAILEDを返す`() = runTest {
     val outcome = createAnalyzer(
       analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.NETWORK },
@@ -193,6 +266,7 @@ class AutoAnalyzerTest {
     entryReader: PeriodJournalEntryReader =
       FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z"))),
     results: List<AnalysisResult> = emptyList(),
+    attemptStore: FakeAutoAnalysisAttemptStore = FakeAutoAnalysisAttemptStore(),
     currentZoneId: () -> ZoneId = { ZoneOffset.UTC },
     currentDate: () -> LocalDate = { LocalDate.of(2026, 8, 31) },
   ) = AutoAnalyzer(
@@ -200,6 +274,7 @@ class AutoAnalyzerTest {
     analysisIntegrationRepository = FakeAnalysisIntegrationRepository(integration),
     periodJournalEntryReader = entryReader,
     analysisResultReader = AnalysisResultReader { MutableStateFlow(results) },
+    autoAnalysisAttemptStore = attemptStore,
     periodAnalysisRunner = PeriodAnalysisRunner(analyzer, writer),
     currentZoneId = currentZoneId,
     currentDate = currentDate,
@@ -243,6 +318,17 @@ class AutoAnalyzerTest {
 
   private class FakePeriodJournalEntryReader(private val entries: List<JournalEntry>) : PeriodJournalEntryReader {
     override suspend fun entriesInPeriod(periodStart: Instant, periodEnd: Instant): List<JournalEntry> = entries
+  }
+
+  private class FakeAutoAnalysisAttemptStore(initial: LocalDate? = null) : AutoAnalysisAttemptStore {
+    var lastHostedAttempt: LocalDate? = initial
+      private set
+
+    override suspend fun lastHostedAttemptDate(): LocalDate? = lastHostedAttempt
+
+    override suspend fun recordHostedAttempt(date: LocalDate) {
+      lastHostedAttempt = date
+    }
   }
 
   private class FakeAnalysisResultWriter(private val failOnSave: Boolean = false) : AnalysisResultWriter {

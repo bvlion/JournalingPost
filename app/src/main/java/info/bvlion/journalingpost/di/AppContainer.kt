@@ -10,7 +10,9 @@ import info.bvlion.journalingpost.AutoAnalysisScheduler
 import info.bvlion.journalingpost.BuildConfig
 import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.analysis.AnalysisResultWriter
+import info.bvlion.journalingpost.analysis.AutoAnalysisAttemptStore
 import info.bvlion.journalingpost.analysis.AutoAnalyzer
+import info.bvlion.journalingpost.analysis.DataStoreAutoAnalysisAttemptStore
 import info.bvlion.journalingpost.analysis.IntegrationRoutingPeriodAnalyzer
 import info.bvlion.journalingpost.analysis.PeriodAnalysisRunner
 import info.bvlion.journalingpost.analysis.PeriodAnalyzer
@@ -178,6 +180,10 @@ internal class AppContainer(context: Context) {
     DataStoreAutoAnalysisSettingsRepository(createPreferenceDataStore(AUTO_ANALYSIS_SETTINGS_FILE_NAME))
   }
 
+  private val autoAnalysisAttemptStore: AutoAnalysisAttemptStore by lazy {
+    DataStoreAutoAnalysisAttemptStore(createPreferenceDataStore(AUTO_ANALYSIS_STATE_FILE_NAME))
+  }
+
   /** 自動解析1回分の実行本体。[AutoAnalysisWorker]から使う。 */
   val autoAnalyzer: AutoAnalyzer by lazy {
     AutoAnalyzer(
@@ -185,6 +191,7 @@ internal class AppContainer(context: Context) {
       analysisIntegrationRepository = analysisIntegrationRepository,
       periodJournalEntryReader = journalEntryRepository,
       analysisResultReader = analysisResultRepository,
+      autoAnalysisAttemptStore = autoAnalysisAttemptStore,
       periodAnalysisRunner = periodAnalysisRunner,
     )
   }
@@ -247,6 +254,9 @@ internal class AppContainer(context: Context) {
 
     /** 自動解析の設定(有効/無効・時刻・対象日)。秘密値ではないためbackup対象で構わない。 */
     const val AUTO_ANALYSIS_SETTINGS_FILE_NAME = "auto_analysis_settings"
+
+    /** 自動解析の実行状態(Hostedを最後に試行した実行日)。秘密値ではないためbackup対象で構わない。 */
+    const val AUTO_ANALYSIS_STATE_FILE_NAME = "auto_analysis_state"
 
     /** Hosted API keyの暗号化保存先。backupから除外する(dataExtractionRulesと合わせる)。 */
     const val HOSTED_CREDENTIALS_FILE_NAME = "hosted_credentials"
