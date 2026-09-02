@@ -1,3 +1,4 @@
+import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -6,6 +7,18 @@ plugins {
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.kotlin.kotlinserialization)
   alias(libs.plugins.ksp)
+}
+
+// Hosted解析APIのBase URL。実ドメインは公開リポジトリへcommitしないため、`local.properties` の
+// `hostedAnalysisBaseUrl` か `-PhostedAnalysisBaseUrl=...` から注入する。未設定時は解決しない
+// プレースホルダを使い、release build では `verifyHostedAnalysisBaseUrl` が未設定を弾く。
+val placeholderHostedAnalysisBaseUrl = "https://hosted.invalid"
+val hostedAnalysisBaseUrl: String = run {
+  (project.findProperty("hostedAnalysisBaseUrl") as? String)?.trim()?.let { if (it.isNotEmpty()) return@run it }
+  val localProperties = rootProject.file("local.properties")
+  if (!localProperties.exists()) return@run ""
+  Properties().apply { localProperties.inputStream().use { load(it) } }
+    .getProperty("hostedAnalysisBaseUrl")?.trim().orEmpty()
 }
 
 android {
@@ -20,6 +33,12 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    buildConfigField(
+      "String",
+      "HOSTED_ANALYSIS_BASE_URL",
+      "\"${hostedAnalysisBaseUrl.ifEmpty { placeholderHostedAnalysisBaseUrl }}\"",
+    )
   }
 
   buildTypes {
@@ -44,6 +63,24 @@ android {
 ksp {
   arg("room.schemaLocation", "$projectDir/schemas")
 }
+
+// release build では Hosted の Base URL 未設定のまま APK/AAB を作らせない。
+// debug / local 開発ではプレースホルダのままで構わない(Hosted解析は失敗するだけ)。
+val verifyHostedAnalysisBaseUrl = tasks.register("verifyHostedAnalysisBaseUrl") {
+  doLast {
+    if (
+      hostedAnalysisBaseUrl.isEmpty() ||
+      hostedAnalysisBaseUrl == placeholderHostedAnalysisBaseUrl ||
+      !hostedAnalysisBaseUrl.startsWith("https://")
+    ) {
+      throw GradleException(
+        "hostedAnalysisBaseUrl が設定されていません。release build では local.properties に " +
+          "hostedAnalysisBaseUrl=https://... を設定するか、-PhostedAnalysisBaseUrl=https://... を渡してください。",
+      )
+    }
+  }
+}
+tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(verifyHostedAnalysisBaseUrl) }
 
 kotlin {
   compilerOptions {

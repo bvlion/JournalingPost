@@ -46,6 +46,7 @@ import info.bvlion.journalingpost.mood.MoodRecordOverlay
 import info.bvlion.journalingpost.mood.MoodRecordScreen
 import info.bvlion.journalingpost.mood.MoodSettingsScreen
 import info.bvlion.journalingpost.mood.MoodSnapshot
+import info.bvlion.journalingpost.settings.HostedConsentDialog
 import info.bvlion.journalingpost.settings.SettingsScreen
 import info.bvlion.journalingpost.settings.WebhookSettingsScreen
 import info.bvlion.journalingpost.ui.EventEffect
@@ -84,6 +85,7 @@ class MainActivity : ComponentActivity() {
         // Settingsで保存済み設定が無いままCustom Webhookを選んで来た場合、Webhook設定画面で既存設定が
         // 見つかればその場で有効化する。利用者が自分で設定項目を開いた場合は有効化しない。
         var webhookSetupPending by rememberSaveable { mutableStateOf(false) }
+        var showHostedConsent by rememberSaveable { mutableStateOf(false) }
         var selectedMoodId by rememberSaveable { mutableStateOf<String?>(null) }
         // 「メモだけ記録」はMoodを持たないため、Mood選択とは別の状態として扱う。
         var isNoteOnlyRecording by rememberSaveable { mutableStateOf(false) }
@@ -133,7 +135,10 @@ class MainActivity : ComponentActivity() {
         }
 
         LaunchedEffect(destination) {
-          if (destination == MainDestination.SETTINGS) settingsViewModel.onSettingsOpened()
+          if (destination == MainDestination.SETTINGS) {
+            showHostedConsent = false
+            settingsViewModel.onSettingsOpened()
+          }
         }
 
         BackHandler(
@@ -292,6 +297,7 @@ class MainActivity : ComponentActivity() {
                         SettingsEvent.IntegrationSaveFailed -> showMessage(integrationSaveFailedMessage)
                         SettingsEvent.NoteOnlyEntrySaveFailed -> showMessage(noteOnlySaveFailedMessage)
                         SettingsEvent.WebhookSetupRequested -> openWebhookSettings(true)
+                        SettingsEvent.HostedConsentRequested -> showHostedConsent = true
                         is SettingsEvent.DebugFixturesSeeded -> showMessage(
                           String.format(
                             Locale.getDefault(),
@@ -315,6 +321,19 @@ class MainActivity : ComponentActivity() {
                       onWebhookSettingsOpen = { openWebhookSettings(false) },
                       onSeedDebugFixtures = if (BuildConfig.DEBUG) settingsViewModel::seedDebugFixtures else null,
                     )
+
+                    if (showHostedConsent) {
+                      HostedConsentDialog(
+                        onConfirm = {
+                          settingsViewModel.confirmHostedIntegration()
+                          showHostedConsent = false
+                        },
+                        onDismiss = {
+                          settingsViewModel.dismissHostedConsent()
+                          showHostedConsent = false
+                        },
+                      )
+                    }
                   }
                 }
               }

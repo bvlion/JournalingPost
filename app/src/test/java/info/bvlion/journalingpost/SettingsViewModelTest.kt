@@ -178,6 +178,52 @@ class SettingsViewModelTest {
   }
 
   @Test
+  fun `Hostedを選ぶと保存前に外部送信の同意を要求する`() = runTest(dispatcher) {
+    val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE)
+    val viewModel = createViewModel(integrationRepository, FakeWebhookSettingsRepository())
+    collectUiState(viewModel)
+    val events = collectEvents(viewModel)
+
+    viewModel.setAnalysisIntegration(AnalysisIntegration.HOSTED)
+    advanceUntilIdle()
+
+    assertEquals(listOf(SettingsEvent.HostedConsentRequested), events)
+    assertEquals(AnalysisIntegration.NONE, integrationRepository.current)
+    // 同意前でもradioは利用者の選択を示す。
+    assertEquals(AnalysisIntegration.HOSTED, viewModel.uiState.value.selectedIntegration)
+  }
+
+  @Test
+  fun `Hostedの同意でHOSTEDを保存する`() = runTest(dispatcher) {
+    val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE)
+    val viewModel = createViewModel(integrationRepository, FakeWebhookSettingsRepository())
+    collectUiState(viewModel)
+
+    viewModel.setAnalysisIntegration(AnalysisIntegration.HOSTED)
+    advanceUntilIdle()
+    viewModel.confirmHostedIntegration()
+    advanceUntilIdle()
+
+    assertEquals(AnalysisIntegration.HOSTED, integrationRepository.current)
+    assertEquals(AnalysisIntegration.HOSTED, viewModel.uiState.value.selectedIntegration)
+  }
+
+  @Test
+  fun `Hostedの同意を閉じると保留していた選択表示は解除される`() = runTest(dispatcher) {
+    val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE)
+    val viewModel = createViewModel(integrationRepository, FakeWebhookSettingsRepository())
+    collectUiState(viewModel)
+
+    viewModel.setAnalysisIntegration(AnalysisIntegration.HOSTED)
+    advanceUntilIdle()
+    viewModel.dismissHostedConsent()
+    advanceUntilIdle()
+
+    assertEquals(AnalysisIntegration.NONE, integrationRepository.current)
+    assertEquals(AnalysisIntegration.NONE, viewModel.uiState.value.selectedIntegration)
+  }
+
+  @Test
   fun `Webhook設定画面から戻ると保留していた選択表示は解除される`() = runTest(dispatcher) {
     val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE)
     val viewModel = createViewModel(integrationRepository, FakeWebhookSettingsRepository())

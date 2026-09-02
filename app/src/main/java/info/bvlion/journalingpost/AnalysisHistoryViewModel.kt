@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import info.bvlion.journalingpost.analysis.AnalysisHistoryUiState
 import info.bvlion.journalingpost.analysis.AnalysisResult
+import info.bvlion.journalingpost.analysis.AnalysisResultPersistenceListener
 import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.analysis.AnalysisResultWriter
 import info.bvlion.journalingpost.analysis.PeriodAnalysisOutcome
@@ -44,9 +45,9 @@ class AnalysisHistoryViewModel(
     }
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AnalysisHistoryUiState.Loading)
 
-  /** Custom Webhookが解析先として有効なときだけ、手動解析の導線を出す。 */
+  /** 解析先(Custom WebhookまたはHosted)が選ばれているときだけ、手動解析の導線を出す。 */
   val canRunAnalysis: StateFlow<Boolean> = analysisIntegrationRepository.analysisIntegration
-    .map { it == AnalysisIntegration.CUSTOM_WEBHOOK }
+    .map { it == AnalysisIntegration.CUSTOM_WEBHOOK || it == AnalysisIntegration.HOSTED }
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
   /** 解析実行中かどうか。実行中の表示と二重実行の抑止に使う継続的な状態。 */
@@ -106,6 +107,7 @@ class AnalysisHistoryViewModel(
               body = outcome.body,
             ),
           )
+          notifyResultPersisted(periodStart, periodEnd)
           AnalysisRunResult.Succeeded
         }
 
@@ -116,6 +118,22 @@ class AnalysisHistoryViewModel(
     } catch (e: Exception) {
       // AnalysisResult保存の失敗。JournalEntryには触れていないため、同じ日を再実行できる。
       AnalysisRunResult.Failed(null, day)
+    }
+  }
+
+  /**
+   * AnalysisResultの端末保存が確定したことを、retry stateを持つanalyzer(現状Hosted)へ伝える。
+   * ここでの失敗は保存済みの結果へ影響しないため飲み込む。共通の解析フローはこの一点だけで
+   * Hosted固有の概念に触れる。
+   */
+  private suspend fun notifyResultPersisted(periodStart: Instant, periodEnd: Instant) {
+    try {
+      (periodAnalyzer as? AnalysisResultPersistenceListener)
+        ?.onAnalysisResultPersisted(periodStart, periodEnd)
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      // no-op
     }
   }
 }

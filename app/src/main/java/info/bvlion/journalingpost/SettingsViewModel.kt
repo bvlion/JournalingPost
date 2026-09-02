@@ -37,14 +37,22 @@ class SettingsViewModel(
   /** 未設定からCustom Webhookを選んだ直後は、保存完了前でもradioだけは利用者の選択を示す。 */
   private val pendingCustomWebhookSelection = MutableStateFlow(false)
 
+  /** Hostedを選んで外部送信の同意ダイアログを表示している間、radioだけは利用者の選択を示す。 */
+  private val pendingHostedSelection = MutableStateFlow(false)
+
   val uiState: StateFlow<SettingsUiState> = combine(
     analysisIntegrationRepository.analysisIntegration,
     webhookSettingsRepository.settings,
     pendingCustomWebhookSelection,
+    pendingHostedSelection,
     noteOnlyEntryRepository.isNoteOnlyEntryEnabled,
-  ) { integration, webhookSettings, pendingCustomWebhook, noteOnlyEntryEnabled ->
+  ) { integration, webhookSettings, pendingCustomWebhook, pendingHosted, noteOnlyEntryEnabled ->
     SettingsUiState(
-      selectedIntegration = if (pendingCustomWebhook) AnalysisIntegration.CUSTOM_WEBHOOK else integration,
+      selectedIntegration = when {
+        pendingCustomWebhook -> AnalysisIntegration.CUSTOM_WEBHOOK
+        pendingHosted -> AnalysisIntegration.HOSTED
+        else -> integration
+      },
       webhookConfigured = integration == AnalysisIntegration.CUSTOM_WEBHOOK &&
         webhookSettings is WebhookSettingsState.Configured,
       webhookDestinationLabel = if (integration == AnalysisIntegration.CUSTOM_WEBHOOK) {
@@ -68,11 +76,12 @@ class SettingsViewModel(
 
   /**
    * 前回のSettings表示中に開始したCustom Webhook判定が後から完了して、次回表示を勝手に遷移させないよう
-   * sessionを切り替えて無効化する。
+   * sessionを切り替えて無効化する。保留していた選択表示も解除する。
    */
   fun onSettingsOpened() {
     selectionSession = Any()
     pendingCustomWebhookSelection.value = false
+    pendingHostedSelection.value = false
     // 前回の表示中に発生して画面へ届かなかった結果は、次回表示へ持ち越さない。
     while (_events.tryReceive().isSuccess) Unit
   }
@@ -85,27 +94,55 @@ class SettingsViewModel(
   /**
    * Custom Webhookは保存済み設定がある場合だけ有効化する。未設定または一時的に読み込めない場合は、
    * 選択を保留して[SettingsEvent.WebhookSetupRequested]でWebhook設定画面へ進める。
+   * Hostedは外部送信の同意を[SettingsEvent.HostedConsentRequested]で確認してから有効化する。
    */
   fun setAnalysisIntegration(integration: AnalysisIntegration) {
     val session = Any()
     selectionSession = session
-    if (integration != AnalysisIntegration.CUSTOM_WEBHOOK) {
-      pendingCustomWebhookSelection.value = false
-      viewModelScope.launch { persistAnalysisIntegration(integration, session) }
-      return
-    }
 
-    pendingCustomWebhookSelection.value = true
-    viewModelScope.launch {
-      val current = webhookSettingsRepository.settings.first()
-      if (session !== selectionSession) return@launch
-      if (current is WebhookSettingsState.Configured) {
-        persistAnalysisIntegration(integration, session)
-        if (session === selectionSession) pendingCustomWebhookSelection.value = false
-      } else {
-        _events.send(SettingsEvent.WebhookSetupRequested)
+    when (integration) {
+      AnalysisIntegration.NONE -> {
+        pendingCustomWebhookSelection.value = false
+        pendingHostedSelection.value = false
+        viewModelScope.launch { persistAnalysisIntegration(integration, session) }
+      }
+
+      AnalysisIntegration.CUSTOM_WEBHOOK -> {
+        pendingHostedSelection.value = false
+        pendingCustomWebhookSelection.value = true
+        viewModelScope.launch {
+          val current = webhookSettingsRepository.settings.first()
+          if (session !== selectionSession) return@launch
+          if (current is WebhookSettingsState.Configured) {
+            persistAnalysisIntegration(integration, session)
+            if (session === selectionSession) pendingCustomWebhookSelection.value = false
+          } else {
+            _events.send(SettingsEvent.WebhookSetupRequested)
+          }
+        }
+      }
+
+      AnalysisIntegration.HOSTED -> {
+        pendingCustomWebhookSelection.value = false
+        pendingHostedSelection.value = true
+        viewModelScope.launch { _events.send(SettingsEvent.HostedConsentRequested) }
       }
     }
+  }
+
+  /** Hostedの外部送信に同意した。ここで初めて永続化する。 */
+  fun confirmHostedIntegration() {
+    val session = Any()
+    selectionSession = session
+    viewModelScope.launch {
+      persistAnalysisIntegration(AnalysisIntegration.HOSTED, session)
+      if (session === selectionSession) pendingHostedSelection.value = false
+    }
+  }
+
+  /** 同意ダイアログを閉じた(同意しなかった)。保留していた選択表示は解除する。 */
+  fun dismissHostedConsent() {
+    pendingHostedSelection.value = false
   }
 
   /** 「メモだけ記録」の表示設定は記録画面とWidgetで共有するため、保存後に配置済みWidgetも更新する。 */
@@ -182,6 +219,9 @@ sealed interface SettingsEvent {
 
   /** Custom Webhookを選んだが保存済み設定が無く、Webhook設定画面へ進める必要がある。 */
   data object WebhookSetupRequested : SettingsEvent
+
+  /** Hostedを選んだので、JournalEntryが外部送信されることへの同意を確認する。 */
+  data object HostedConsentRequested : SettingsEvent
 
   /** debugビルドの動作確認用fixtureを投入した。 */
   data class DebugFixturesSeeded(val entryCount: Int, val analysisResultCount: Int) : SettingsEvent

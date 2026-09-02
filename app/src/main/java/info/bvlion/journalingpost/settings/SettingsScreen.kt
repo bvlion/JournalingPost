@@ -10,12 +10,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -98,6 +100,12 @@ fun SettingsScreen(
             selected = uiState.selectedIntegration == AnalysisIntegration.CUSTOM_WEBHOOK,
             onClick = { onAnalysisIntegrationChange(AnalysisIntegration.CUSTOM_WEBHOOK) },
           )
+          AnalysisIntegrationOption(
+            title = stringResource(R.string.settings_integration_hosted),
+            description = stringResource(R.string.settings_integration_hosted_description),
+            selected = uiState.selectedIntegration == AnalysisIntegration.HOSTED,
+            onClick = { onAnalysisIntegrationChange(AnalysisIntegration.HOSTED) },
+          )
         }
       }
 
@@ -137,11 +145,35 @@ private fun AnalysisIntegrationOption(
   title: String,
   selected: Boolean,
   onClick: () -> Unit,
+  description: String? = null,
 ) {
   ListItem(
     headlineContent = { Text(title) },
+    supportingContent = description?.let { { Text(it) } },
     leadingContent = { RadioButton(selected = selected, onClick = null) },
     modifier = Modifier.selectable(selected = selected, onClick = onClick, role = Role.RadioButton),
+  )
+}
+
+/**
+ * Hostedを選んだときに一度だけ確認する外部送信の同意ダイアログ。対象期間のJournalEntryが
+ * AI解析のためJournalingPostのサーバーへ送信されること、原本と解析結果は端末に残ることを伝える。
+ */
+@Composable
+fun HostedConsentDialog(
+  onConfirm: () -> Unit,
+  onDismiss: () -> Unit,
+) {
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(stringResource(R.string.settings_hosted_consent_title)) },
+    text = { Text(stringResource(R.string.settings_hosted_consent_body)) },
+    confirmButton = {
+      TextButton(onClick = onConfirm) { Text(stringResource(R.string.settings_hosted_consent_confirm)) }
+    },
+    dismissButton = {
+      TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+    },
   )
 }
 

@@ -11,4 +11,7 @@ enum class AnalysisIntegration {
 
   /** 端末内に記録し、利用者が期間を指定して手動で解析するときだけCustom Webhookへ送信する。 */
   CUSTOM_WEBHOOK,
+
+  /** 端末内に記録し、手動解析のときだけ対象期間の記録をJournalingPost Hostedへ送信する。 */
+  HOSTED,
 }

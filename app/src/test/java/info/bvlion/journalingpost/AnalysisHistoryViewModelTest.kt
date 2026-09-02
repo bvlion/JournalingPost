@@ -2,6 +2,7 @@ package info.bvlion.journalingpost
 
 import info.bvlion.journalingpost.analysis.AnalysisHistoryUiState
 import info.bvlion.journalingpost.analysis.AnalysisResult
+import info.bvlion.journalingpost.analysis.AnalysisResultPersistenceListener
 import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.analysis.AnalysisResultWriter
 import info.bvlion.journalingpost.analysis.PeriodAnalysisOutcome
@@ -108,10 +109,15 @@ class AnalysisHistoryViewModelTest {
   }
 
   @Test
-  fun `canRunAnalysisはCUSTOM_WEBHOOKのときだけtrueになる`() = runTest(testDispatcher) {
+  fun `canRunAnalysisは解析先が選ばれているときtrueになる`() = runTest(testDispatcher) {
     val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK)
     val viewModel = createViewModel(integrationRepository = integrationRepository)
     val collectJob = CoroutineScope(testDispatcher).launch { viewModel.canRunAnalysis.collect {} }
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertTrue(viewModel.canRunAnalysis.value)
+
+    integrationRepository.set(AnalysisIntegration.HOSTED)
     testDispatcher.scheduler.advanceUntilIdle()
 
     assertTrue(viewModel.canRunAnalysis.value)
@@ -246,6 +252,38 @@ class AnalysisHistoryViewModelTest {
     testDispatcher.scheduler.advanceUntilIdle()
 
     assertEquals(listOf(AnalysisRunResult.Failed(null, LocalDate.of(2026, 8, 30))), results)
+  }
+
+  @Test
+  fun `保存成功後にanalyzerへ端末保存の確定を対象期間つきで通知する`() = runTest(testDispatcher) {
+    val analyzer = FakePersistenceAwarePeriodAnalyzer { success() }
+    val viewModel = createViewModel(analyzer = analyzer, currentZoneId = { ZoneOffset.UTC })
+    val results = collectRunResults(viewModel)
+
+    viewModel.analyze(LocalDate.of(2026, 8, 30))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(listOf(AnalysisRunResult.Succeeded), results)
+    assertEquals(
+      listOf(Instant.parse("2026-08-30T00:00:00Z") to Instant.parse("2026-08-31T00:00:00Z")),
+      analyzer.persistedPeriods,
+    )
+  }
+
+  @Test
+  fun `保存に失敗した場合はanalyzerへ端末保存の確定を通知しない`() = runTest(testDispatcher) {
+    val analyzer = FakePersistenceAwarePeriodAnalyzer { success() }
+    val viewModel = createViewModel(
+      analyzer = analyzer,
+      writer = FakeAnalysisResultWriter(failOnSave = true),
+    )
+    val results = collectRunResults(viewModel)
+
+    viewModel.analyze(LocalDate.of(2026, 8, 30))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(listOf(AnalysisRunResult.Failed(null, LocalDate.of(2026, 8, 30))), results)
+    assertTrue(analyzer.persistedPeriods.isEmpty())
   }
 
   @Test
@@ -385,6 +423,22 @@ class AnalysisHistoryViewModelTest {
 
     override suspend fun setAnalysisIntegration(integration: AnalysisIntegration) {
       state.value = integration
+    }
+  }
+
+  private class FakePersistenceAwarePeriodAnalyzer(
+    private val outcome: () -> PeriodAnalysisOutcome,
+  ) : PeriodAnalyzer, AnalysisResultPersistenceListener {
+    val persistedPeriods = mutableListOf<Pair<Instant, Instant>>()
+
+    override suspend fun analyze(
+      periodStart: Instant,
+      periodEnd: Instant,
+      entries: List<JournalEntry>,
+    ): PeriodAnalysisOutcome = outcome()
+
+    override suspend fun onAnalysisResultPersisted(periodStart: Instant, periodEnd: Instant) {
+      persistedPeriods += periodStart to periodEnd
     }
   }
 
