@@ -129,7 +129,7 @@ class AutoAnalyzerTest {
     val outcome = createAnalyzer(
       integration = AnalysisIntegration.HOSTED,
       analyzer = analyzer,
-      attemptStore = FakeAutoAnalysisAttemptStore(initial = LocalDate.of(2026, 8, 31)),
+      hostedAttempt = LocalDate.of(2026, 8, 31),
       currentDate = { LocalDate.of(2026, 8, 31) },
     ).runOnce()
 
@@ -143,7 +143,7 @@ class AutoAnalyzerTest {
     val outcome = createAnalyzer(
       integration = AnalysisIntegration.HOSTED,
       analyzer = analyzer,
-      attemptStore = FakeAutoAnalysisAttemptStore(initial = LocalDate.of(2026, 8, 30)),
+      hostedAttempt = LocalDate.of(2026, 8, 30),
       currentDate = { LocalDate.of(2026, 8, 31) },
     ).runOnce()
 
@@ -153,11 +153,11 @@ class AutoAnalyzerTest {
 
   @Test
   fun `Hostedは送信前に実行日を試行済みとして記録し失敗しても残す`() = runTest {
-    val store = FakeAutoAnalysisAttemptStore()
+    val store = FakeAutoAnalysisStateStore(zoneId = ZoneOffset.UTC.id)
     createAnalyzer(
       integration = AnalysisIntegration.HOSTED,
       analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.NETWORK },
-      attemptStore = store,
+      stateStore = store,
       currentDate = { LocalDate.of(2026, 8, 31) },
     ).runOnce()
 
@@ -166,19 +166,19 @@ class AutoAnalyzerTest {
 
   @Test
   fun `Hostedは送らなかった場合は試行済みにしない`() = runTest {
-    val skippedByNoEntries = FakeAutoAnalysisAttemptStore()
+    val skippedByNoEntries = FakeAutoAnalysisStateStore(zoneId = ZoneOffset.UTC.id)
     createAnalyzer(
       integration = AnalysisIntegration.HOSTED,
       entryReader = FakePeriodJournalEntryReader(emptyList()),
-      attemptStore = skippedByNoEntries,
+      stateStore = skippedByNoEntries,
     ).runOnce()
     assertEquals(null, skippedByNoEntries.lastHostedAttempt)
 
-    val skippedByAlreadyAnalyzed = FakeAutoAnalysisAttemptStore()
+    val skippedByAlreadyAnalyzed = FakeAutoAnalysisStateStore(zoneId = ZoneOffset.UTC.id)
     createAnalyzer(
       integration = AnalysisIntegration.HOSTED,
       results = listOf(analysisResult(periodStart = "2026-08-30T00:00:00Z")),
-      attemptStore = skippedByAlreadyAnalyzed,
+      stateStore = skippedByAlreadyAnalyzed,
       currentDate = { LocalDate.of(2026, 8, 31) },
     ).runOnce()
     assertEquals(null, skippedByAlreadyAnalyzed.lastHostedAttempt)
@@ -186,14 +186,52 @@ class AutoAnalyzerTest {
 
   @Test
   fun `Custom Webhookは試行済みを記録しない`() = runTest {
-    val store = FakeAutoAnalysisAttemptStore()
+    val store = FakeAutoAnalysisStateStore(zoneId = ZoneOffset.UTC.id)
     createAnalyzer(
       integration = AnalysisIntegration.CUSTOM_WEBHOOK,
-      attemptStore = store,
+      stateStore = store,
       currentDate = { LocalDate.of(2026, 8, 31) },
     ).runOnce()
 
     assertEquals(null, store.lastHostedAttempt)
+  }
+
+  @Test
+  fun `予約時からtimezoneが変わっていれば解析せずSKIPPED_STALE_ZONEを返す`() = runTest {
+    val analyzer = FakePeriodAnalyzer { success() }
+    val outcome = createAnalyzer(
+      analyzer = analyzer,
+      currentZoneId = { ZoneId.of("Asia/Tokyo") },
+      scheduledZoneId = "Europe/London",
+      currentDate = { LocalDate.of(2026, 8, 31) },
+    ).runOnce()
+
+    assertEquals(AutoAnalysisOutcome.SKIPPED_STALE_ZONE, outcome)
+    assertEquals(0, analyzer.callCount)
+  }
+
+  @Test
+  fun `予約timezoneが不明なら解析しない`() = runTest {
+    val analyzer = FakePeriodAnalyzer { success() }
+    val outcome = createAnalyzer(analyzer = analyzer, scheduledZoneId = null).runOnce()
+
+    assertEquals(AutoAnalysisOutcome.SKIPPED_STALE_ZONE, outcome)
+    assertEquals(0, analyzer.callCount)
+  }
+
+  @Test
+  fun `予約timezoneと現在のtimezoneが一致していれば解析する`() = runTest {
+    val analyzer = FakePeriodAnalyzer { success() }
+    val outcome = createAnalyzer(
+      analyzer = analyzer,
+      currentZoneId = { ZoneId.of("Asia/Tokyo") },
+      scheduledZoneId = "Asia/Tokyo",
+      entryReader = FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z"))),
+      currentDate = { LocalDate.of(2026, 8, 31) },
+    ).runOnce()
+
+    assertEquals(AutoAnalysisOutcome.ANALYZED, outcome)
+    assertEquals(1, analyzer.callCount)
   }
 
   @Test
@@ -266,15 +304,19 @@ class AutoAnalyzerTest {
     entryReader: PeriodJournalEntryReader =
       FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z"))),
     results: List<AnalysisResult> = emptyList(),
-    attemptStore: FakeAutoAnalysisAttemptStore = FakeAutoAnalysisAttemptStore(),
     currentZoneId: () -> ZoneId = { ZoneOffset.UTC },
+    // 既定は「予約時と同じtimezone」= ずれていない。
+    scheduledZoneId: String? = currentZoneId().id,
+    hostedAttempt: LocalDate? = null,
+    stateStore: FakeAutoAnalysisStateStore =
+      FakeAutoAnalysisStateStore(hostedAttempt = hostedAttempt, zoneId = scheduledZoneId),
     currentDate: () -> LocalDate = { LocalDate.of(2026, 8, 31) },
   ) = AutoAnalyzer(
     autoAnalysisSettingsRepository = FakeAutoAnalysisSettingsRepository(settings),
     analysisIntegrationRepository = FakeAnalysisIntegrationRepository(integration),
     periodJournalEntryReader = entryReader,
     analysisResultReader = AnalysisResultReader { MutableStateFlow(results) },
-    autoAnalysisAttemptStore = attemptStore,
+    stateStore = stateStore,
     periodAnalysisRunner = PeriodAnalysisRunner(analyzer, writer),
     currentZoneId = currentZoneId,
     currentDate = currentDate,
@@ -320,14 +362,27 @@ class AutoAnalyzerTest {
     override suspend fun entriesInPeriod(periodStart: Instant, periodEnd: Instant): List<JournalEntry> = entries
   }
 
-  private class FakeAutoAnalysisAttemptStore(initial: LocalDate? = null) : AutoAnalysisAttemptStore {
-    var lastHostedAttempt: LocalDate? = initial
+  private class FakeAutoAnalysisStateStore(
+    hostedAttempt: LocalDate? = null,
+    private var zoneId: String? = null,
+  ) : AutoAnalysisStateStore {
+    var lastHostedAttempt: LocalDate? = hostedAttempt
       private set
 
     override suspend fun lastHostedAttemptDate(): LocalDate? = lastHostedAttempt
 
     override suspend fun recordHostedAttempt(date: LocalDate) {
       lastHostedAttempt = date
+    }
+
+    override suspend fun scheduledZoneId(): String? = zoneId
+
+    override suspend fun setScheduledZoneId(zoneId: String) {
+      this.zoneId = zoneId
+    }
+
+    override suspend fun clearScheduledZoneId() {
+      zoneId = null
     }
   }
 

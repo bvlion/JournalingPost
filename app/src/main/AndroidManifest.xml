@@ -48,5 +48,18 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_mood_info" />
         </receiver>
+
+        <!--
+            端末timezone変更で自動解析(#59)の予約を現在のtimezoneでの指定時刻へ立て直す。
+            ACTION_TIMEZONE_CHANGED はimplicit broadcast制限の対象外で、systemからの送信のため
+            exported=false でも届く。
+        -->
+        <receiver
+            android:name=".TimeZoneChangedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

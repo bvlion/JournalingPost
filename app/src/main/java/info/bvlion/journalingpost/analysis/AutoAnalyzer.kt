@@ -15,12 +15,17 @@ import kotlinx.coroutines.flow.first
  *
  * 設定の有効/無効・実効[AnalysisIntegration]・対象日(当日/前日)を実行時点で解決し、対象日の
  * JournalEntryを手動解析と同じ解析先へ送って、成功結果を[AnalysisResult]として端末へ保存する。
- * timezone・対象日の境界は実行時点の端末timezoneで解決する(移動でtimezoneが変わっても正しい日を解析する)。
+ * timezone・対象日の境界は実行時点の端末timezoneで解決する。
+ *
+ * 予約後に端末timezoneが変わっていた場合(予約に使ったtimezoneと現在のtimezoneが違う場合)は、
+ * この実行の時刻は指定ローカル時刻から外れている可能性が高いため解析しない。Worker側が現在の
+ * timezoneで次回を予約し直す。移動して「当日」対象で日の途中までを解析し、その日を解析済みに
+ * してしまうのを防ぐ。
  *
  * 一時的な失敗でも再試行はしない。次回の予約実行に委ねる。
  *
  * Hostedの自動解析は成功・失敗にかかわらず実行日ごとに最大1回。実際にHostedへ送る直前に実行日を
- * [AutoAnalysisAttemptStore]へ記録し、同じ実行日の2回目以降は送らない。加えて、対象日が既に解析済み
+ * [AutoAnalysisStateStore]へ記録し、同じ実行日の2回目以降は送らない。加えて、対象日が既に解析済み
  * (同じ日を対象期間とする[AnalysisResult]が存在する)なら送らず、試行済みにもしない。
  */
 internal class AutoAnalyzer(
@@ -28,7 +33,7 @@ internal class AutoAnalyzer(
   private val analysisIntegrationRepository: AnalysisIntegrationRepository,
   private val periodJournalEntryReader: PeriodJournalEntryReader,
   private val analysisResultReader: AnalysisResultReader,
-  private val autoAnalysisAttemptStore: AutoAnalysisAttemptStore,
+  private val stateStore: AutoAnalysisStateStore,
   private val periodAnalysisRunner: PeriodAnalysisRunner,
   private val currentZoneId: () -> ZoneId = { ZoneId.systemDefault() },
   private val currentDate: () -> LocalDate = { LocalDate.now(currentZoneId()) },
@@ -41,6 +46,8 @@ internal class AutoAnalyzer(
     if (integration == AnalysisIntegration.NONE) return AutoAnalysisOutcome.SKIPPED_NO_INTEGRATION
 
     val zoneId = currentZoneId()
+    if (stateStore.scheduledZoneId() != zoneId.id) return AutoAnalysisOutcome.SKIPPED_STALE_ZONE
+
     val executionDate = currentDate()
     val targetDay = when (settings.targetDay) {
       AutoAnalysisTargetDay.TODAY -> executionDate
@@ -49,7 +56,7 @@ internal class AutoAnalyzer(
     val isHosted = integration == AnalysisIntegration.HOSTED
 
     if (isHosted) {
-      if (autoAnalysisAttemptStore.lastHostedAttemptDate() == executionDate) {
+      if (stateStore.lastHostedAttemptDate() == executionDate) {
         return AutoAnalysisOutcome.SKIPPED_ALREADY_ATTEMPTED_TODAY
       }
       if (isAlreadyAnalyzed(targetDay, zoneId)) {
@@ -72,7 +79,7 @@ internal class AutoAnalyzer(
     if (isHosted) {
       // ここから実際にHostedへ送る。送信前に実行日を記録し、以降の失敗やプロセス終了があっても
       // 同じ実行日に2回目の試行を行わない。
-      autoAnalysisAttemptStore.recordHostedAttempt(executionDate)
+      stateStore.recordHostedAttempt(executionDate)
     }
 
     return when (periodAnalysisRunner.run(periodStart, periodEnd, entries)) {
@@ -93,6 +100,9 @@ internal enum class AutoAnalysisOutcome {
   ANALYZED,
   SKIPPED_DISABLED,
   SKIPPED_NO_INTEGRATION,
+
+  /** 予約後に端末timezoneが変わっていたため、この実行では解析しない(次回を現在timezoneで予約し直す)。 */
+  SKIPPED_STALE_ZONE,
 
   /** Hostedで、その実行日に既に自動解析を試行済み。 */
   SKIPPED_ALREADY_ATTEMPTED_TODAY,

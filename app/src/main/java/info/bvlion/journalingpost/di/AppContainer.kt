@@ -10,9 +10,9 @@ import info.bvlion.journalingpost.AutoAnalysisScheduler
 import info.bvlion.journalingpost.BuildConfig
 import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.analysis.AnalysisResultWriter
-import info.bvlion.journalingpost.analysis.AutoAnalysisAttemptStore
+import info.bvlion.journalingpost.analysis.AutoAnalysisStateStore
 import info.bvlion.journalingpost.analysis.AutoAnalyzer
-import info.bvlion.journalingpost.analysis.DataStoreAutoAnalysisAttemptStore
+import info.bvlion.journalingpost.analysis.DataStoreAutoAnalysisStateStore
 import info.bvlion.journalingpost.analysis.IntegrationRoutingPeriodAnalyzer
 import info.bvlion.journalingpost.analysis.PeriodAnalysisRunner
 import info.bvlion.journalingpost.analysis.PeriodAnalyzer
@@ -180,13 +180,9 @@ internal class AppContainer(context: Context) {
     DataStoreAutoAnalysisSettingsRepository(createPreferenceDataStore(AUTO_ANALYSIS_SETTINGS_FILE_NAME))
   }
 
-  /** 自動解析の実行状態(Hostedを最後に試行した実行日 / 予約に使ったtimezone)。DataStoreは1ファイル1インスタンス。 */
-  private val autoAnalysisStateDataStore: DataStore<Preferences> by lazy {
-    createPreferenceDataStore(AUTO_ANALYSIS_STATE_FILE_NAME)
-  }
-
-  private val autoAnalysisAttemptStore: AutoAnalysisAttemptStore by lazy {
-    DataStoreAutoAnalysisAttemptStore(autoAnalysisStateDataStore)
+  /** 自動解析の実行状態(Hostedを最後に試行した実行日 / 予約に使ったtimezone)。 */
+  private val autoAnalysisStateStore: AutoAnalysisStateStore by lazy {
+    DataStoreAutoAnalysisStateStore(createPreferenceDataStore(AUTO_ANALYSIS_STATE_FILE_NAME))
   }
 
   /** 自動解析1回分の実行本体。[AutoAnalysisWorker]から使う。 */
@@ -196,7 +192,7 @@ internal class AppContainer(context: Context) {
       analysisIntegrationRepository = analysisIntegrationRepository,
       periodJournalEntryReader = journalEntryRepository,
       analysisResultReader = analysisResultRepository,
-      autoAnalysisAttemptStore = autoAnalysisAttemptStore,
+      stateStore = autoAnalysisStateStore,
       periodAnalysisRunner = periodAnalysisRunner,
     )
   }
@@ -206,7 +202,7 @@ internal class AppContainer(context: Context) {
     AutoAnalysisScheduler(
       context = context,
       autoAnalysisSettingsRepository = autoAnalysisSettingsRepository,
-      stateDataStore = autoAnalysisStateDataStore,
+      stateStore = autoAnalysisStateStore,
     )
   }
 

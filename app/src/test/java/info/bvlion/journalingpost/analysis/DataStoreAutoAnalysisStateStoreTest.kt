@@ -14,15 +14,15 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
-class DataStoreAutoAnalysisAttemptStoreTest {
+class DataStoreAutoAnalysisStateStoreTest {
   @get:Rule
   val tempFolder = TemporaryFolder()
 
-  private fun createStore(): DataStoreAutoAnalysisAttemptStore {
+  private fun createStore(): DataStoreAutoAnalysisStateStore {
     val dataStore = PreferenceDataStoreFactory.create(
       produceFile = { File(tempFolder.root, "auto_analysis_state.preferences_pb") },
     )
-    return DataStoreAutoAnalysisAttemptStore(dataStore)
+    return DataStoreAutoAnalysisStateStore(dataStore)
   }
 
   @Test
@@ -50,10 +50,42 @@ class DataStoreAutoAnalysisAttemptStoreTest {
   }
 
   @Test
+  fun `未記録なら予約timezoneはnull`() = runTest {
+    assertNull(createStore().scheduledZoneId())
+  }
+
+  @Test
+  fun `記録した予約timezoneを再取得でき解除もできる`() = runTest {
+    val store = createStore()
+
+    store.setScheduledZoneId("Asia/Tokyo")
+    assertEquals("Asia/Tokyo", store.scheduledZoneId())
+
+    store.setScheduledZoneId("Europe/London")
+    assertEquals("Europe/London", store.scheduledZoneId())
+
+    store.clearScheduledZoneId()
+    assertNull(store.scheduledZoneId())
+  }
+
+  @Test
+  fun `試行日と予約timezoneは独立して保持する`() = runTest {
+    val store = createStore()
+
+    store.recordHostedAttempt(LocalDate.of(2026, 3, 1))
+    store.setScheduledZoneId("Asia/Tokyo")
+    store.clearScheduledZoneId()
+
+    assertEquals(LocalDate.of(2026, 3, 1), store.lastHostedAttemptDate())
+    assertNull(store.scheduledZoneId())
+  }
+
+  @Test
   fun `読み込みに失敗したらnullへ倒す`() = runTest {
-    val store = DataStoreAutoAnalysisAttemptStore(ThrowingDataStore(RuntimeException("disk error")))
+    val store = DataStoreAutoAnalysisStateStore(ThrowingDataStore(RuntimeException("disk error")))
 
     assertNull(store.lastHostedAttemptDate())
+    assertNull(store.scheduledZoneId())
   }
 
   private class ThrowingDataStore(private val error: Throwable) : DataStore<Preferences> {
