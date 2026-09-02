@@ -1,5 +1,6 @@
 package info.bvlion.journalingpost
 
+import androidx.work.ExistingWorkPolicy
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalTime
@@ -9,6 +10,54 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class AutoAnalysisSchedulerTest {
+  @Test
+  fun `設定変更やWorker実行後は無条件で予約を置き換える`() {
+    assertEquals(
+      ExistingWorkPolicy.REPLACE,
+      autoAnalysisWorkPolicy(
+        replaceUnconditionally = true,
+        scheduledZoneId = "Asia/Tokyo",
+        currentZoneId = "Asia/Tokyo",
+      ),
+    )
+  }
+
+  @Test
+  fun `アプリ起動時は予約時とtimezoneが同じなら維持する`() {
+    assertEquals(
+      ExistingWorkPolicy.KEEP,
+      autoAnalysisWorkPolicy(
+        replaceUnconditionally = false,
+        scheduledZoneId = "Asia/Tokyo",
+        currentZoneId = "Asia/Tokyo",
+      ),
+    )
+  }
+
+  @Test
+  fun `アプリ起動時に予約時からtimezoneが変わっていれば置き換える`() {
+    assertEquals(
+      ExistingWorkPolicy.REPLACE,
+      autoAnalysisWorkPolicy(
+        replaceUnconditionally = false,
+        scheduledZoneId = "Asia/Tokyo",
+        currentZoneId = "Europe/London",
+      ),
+    )
+  }
+
+  @Test
+  fun `予約時のtimezoneが不明なら置き換える`() {
+    assertEquals(
+      ExistingWorkPolicy.REPLACE,
+      autoAnalysisWorkPolicy(
+        replaceUnconditionally = false,
+        scheduledZoneId = null,
+        currentZoneId = "Asia/Tokyo",
+      ),
+    )
+  }
+
   @Test
   fun `指定時刻が同じ日のまだ先ならその日の時刻まで待つ`() {
     val delay = nextRunDelay(

@@ -180,8 +180,13 @@ internal class AppContainer(context: Context) {
     DataStoreAutoAnalysisSettingsRepository(createPreferenceDataStore(AUTO_ANALYSIS_SETTINGS_FILE_NAME))
   }
 
+  /** 自動解析の実行状態(Hostedを最後に試行した実行日 / 予約に使ったtimezone)。DataStoreは1ファイル1インスタンス。 */
+  private val autoAnalysisStateDataStore: DataStore<Preferences> by lazy {
+    createPreferenceDataStore(AUTO_ANALYSIS_STATE_FILE_NAME)
+  }
+
   private val autoAnalysisAttemptStore: AutoAnalysisAttemptStore by lazy {
-    DataStoreAutoAnalysisAttemptStore(createPreferenceDataStore(AUTO_ANALYSIS_STATE_FILE_NAME))
+    DataStoreAutoAnalysisAttemptStore(autoAnalysisStateDataStore)
   }
 
   /** 自動解析1回分の実行本体。[AutoAnalysisWorker]から使う。 */
@@ -201,6 +206,7 @@ internal class AppContainer(context: Context) {
     AutoAnalysisScheduler(
       context = context,
       autoAnalysisSettingsRepository = autoAnalysisSettingsRepository,
+      stateDataStore = autoAnalysisStateDataStore,
     )
   }
 
@@ -255,7 +261,7 @@ internal class AppContainer(context: Context) {
     /** 自動解析の設定(有効/無効・時刻・対象日)。秘密値ではないためbackup対象で構わない。 */
     const val AUTO_ANALYSIS_SETTINGS_FILE_NAME = "auto_analysis_settings"
 
-    /** 自動解析の実行状態(Hostedを最後に試行した実行日)。秘密値ではないためbackup対象で構わない。 */
+    /** 自動解析の実行状態(Hostedを最後に試行した実行日 / 予約に使ったtimezone)。秘密値ではないためbackup対象で構わない。 */
     const val AUTO_ANALYSIS_STATE_FILE_NAME = "auto_analysis_state"
 
     /** Hosted API keyの暗号化保存先。backupから除外する(dataExtractionRulesと合わせる)。 */
