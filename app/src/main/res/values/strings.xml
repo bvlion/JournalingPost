@@ -68,9 +68,9 @@
   <string name="settings_integration_none">使用しない</string>
   <string name="settings_integration_custom_webhook">Custom Webhook</string>
   <string name="settings_integration_hosted">JournalingPost Hosted</string>
-  <string name="settings_integration_hosted_description">手動解析のとき、対象期間の記録をJournalingPostのサーバーへ送信してAI解析します</string>
+  <string name="settings_integration_hosted_description">手動解析と、自動解析を有効にしている場合はその自動実行時に、対象期間の記録をJournalingPostのサーバーへ送信してAI解析します</string>
   <string name="settings_hosted_consent_title">記録を外部へ送信します</string>
-  <string name="settings_hosted_consent_body">JournalingPost Hostedを有効にすると、手動で解析するたびに、その対象期間の記録がAI解析のためJournalingPostのサーバーへ送信されます。記録の原本と解析結果は引き続き端末に保存され、サーバーには恒久保存されません。</string>
+  <string name="settings_hosted_consent_body">JournalingPost Hostedを有効にすると、手動で解析するたびに、その対象期間の記録がAI解析のためJournalingPostのサーバーへ送信されます。自動解析を有効にしている場合は、対象日の記録も設定した時刻ごろに自動で送信されます。記録の原本と解析結果は引き続き端末に保存され、サーバーには恒久保存されません。</string>
   <string name="settings_hosted_consent_confirm">同意して有効にする</string>
   <!-- 自動解析(#59)。解析先が有効なときだけ表示する。 -->
   <string name="settings_auto_analysis_heading">自動解析</string>
