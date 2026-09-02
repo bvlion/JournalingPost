@@ -8,6 +8,7 @@ import info.bvlion.journalingpost.analysis.AnalysisResultWriter
 import info.bvlion.journalingpost.analysis.PeriodAnalysisOutcome
 import info.bvlion.journalingpost.analysis.PeriodAnalyzer
 import info.bvlion.journalingpost.journal.JournalEntry
+import info.bvlion.journalingpost.journal.JournalEntryReader
 import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.PeriodJournalEntryReader
 import info.bvlion.journalingpost.settings.AnalysisIntegration
@@ -130,6 +131,44 @@ class AnalysisHistoryViewModelTest {
   }
 
   @Test
+  fun `recordedDaysはJournalEntryのある日を端末timezoneのカレンダー日で返す`() = runTest(testDispatcher) {
+    val journalEntryReader = FakeJournalEntryReader()
+    val viewModel = createViewModel(
+      journalEntryReader = journalEntryReader,
+      currentZoneId = { ZoneId.of("Asia/Tokyo") },
+    )
+    val collectJob = CoroutineScope(testDispatcher).launch { viewModel.recordedDays.collect {} }
+
+    journalEntryReader.emit(
+      listOf(
+        entry("2026-08-29T20:00:00Z"),
+        entry("2026-08-30T02:00:00Z"),
+        entry("2026-08-24T18:00:00Z"),
+      ),
+    )
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(
+      setOf(LocalDate.of(2026, 8, 30), LocalDate.of(2026, 8, 25)),
+      viewModel.recordedDays.value,
+    )
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `recordedDaysはJournalEntryが0件なら空になる`() = runTest(testDispatcher) {
+    val journalEntryReader = FakeJournalEntryReader()
+    val viewModel = createViewModel(journalEntryReader = journalEntryReader)
+    val collectJob = CoroutineScope(testDispatcher).launch { viewModel.recordedDays.collect {} }
+
+    journalEntryReader.emit(emptyList())
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertTrue(viewModel.recordedDays.value.isEmpty())
+    collectJob.cancel()
+  }
+
+  @Test
   fun `analyzeは選択日を端末timezoneの半開区間へ変換してentryを取得しanalyzerへ渡す`() = runTest(testDispatcher) {
     val analyzer = FakePeriodAnalyzer { success() }
     val reader = FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z")))
@@ -221,7 +260,18 @@ class AnalysisHistoryViewModelTest {
     assertEquals(responsePeriodEnd, saved.periodEnd)
     assertEquals(responseAnalyzedAt, saved.analyzedAt)
     assertEquals("今日は穏やかでした", saved.body)
-    assertEquals(listOf(AnalysisRunResult.Succeeded), results)
+    assertEquals(listOf(AnalysisRunResult.Succeeded(1L)), results)
+  }
+
+  @Test
+  fun `Succeededは保存したAnalysisResultの行idを持つ`() = runTest(testDispatcher) {
+    val viewModel = createViewModel(writer = FakeAnalysisResultWriter(savedId = 7L))
+    val results = collectRunResults(viewModel)
+
+    viewModel.analyze(LocalDate.of(2026, 8, 30))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(listOf(AnalysisRunResult.Succeeded(7L)), results)
   }
 
   @Test
@@ -263,7 +313,7 @@ class AnalysisHistoryViewModelTest {
     viewModel.analyze(LocalDate.of(2026, 8, 30))
     testDispatcher.scheduler.advanceUntilIdle()
 
-    assertEquals(listOf(AnalysisRunResult.Succeeded), results)
+    assertEquals(listOf(AnalysisRunResult.Succeeded(1L)), results)
     assertEquals(
       listOf(Instant.parse("2026-08-30T00:00:00Z") to Instant.parse("2026-08-31T00:00:00Z")),
       analyzer.persistedPeriods,
@@ -356,6 +406,7 @@ class AnalysisHistoryViewModelTest {
     reader: AnalysisResultReader = FakeAnalysisResultReader(),
     integrationRepository: AnalysisIntegrationRepository =
       FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK),
+    journalEntryReader: JournalEntryReader = FakeJournalEntryReader(),
     entryReader: PeriodJournalEntryReader = FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z"))),
     analyzer: PeriodAnalyzer = FakePeriodAnalyzer { success() },
     writer: AnalysisResultWriter = FakeAnalysisResultWriter(),
@@ -363,6 +414,7 @@ class AnalysisHistoryViewModelTest {
   ) = AnalysisHistoryViewModel(
     reader = reader,
     analysisIntegrationRepository = integrationRepository,
+    journalEntryReader = journalEntryReader,
     periodJournalEntryReader = entryReader,
     periodAnalyzer = analyzer,
     analysisResultWriter = writer,
@@ -403,13 +455,26 @@ class AnalysisHistoryViewModelTest {
     override fun observeAll(): Flow<List<AnalysisResult>> = results
   }
 
-  private class FakeAnalysisResultWriter(private val failOnSave: Boolean = false) : AnalysisResultWriter {
+  private class FakeJournalEntryReader(entries: List<JournalEntry> = emptyList()) : JournalEntryReader {
+    private val entries = MutableStateFlow(entries)
+
+    fun emit(entries: List<JournalEntry>) {
+      this.entries.value = entries
+    }
+
+    override fun observeAll(): Flow<List<JournalEntry>> = entries
+  }
+
+  private class FakeAnalysisResultWriter(
+    private val failOnSave: Boolean = false,
+    private val savedId: Long = 1L,
+  ) : AnalysisResultWriter {
     val saved = mutableListOf<AnalysisResult>()
 
     override suspend fun save(result: AnalysisResult): Long {
       if (failOnSave) throw RuntimeException("db boom")
       saved += result
-      return saved.size.toLong()
+      return savedId
     }
   }
 

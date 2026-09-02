@@ -267,10 +267,12 @@ class MainActivity : ComponentActivity() {
                     val analysisHistoryUiState by analysisHistoryViewModel.uiState.collectAsStateWithLifecycle()
                     val canRunAnalysis by analysisHistoryViewModel.canRunAnalysis.collectAsStateWithLifecycle()
                     val isAnalysisRunning by analysisHistoryViewModel.isAnalysisRunning.collectAsStateWithLifecycle()
+                    val recordedDays by analysisHistoryViewModel.recordedDays.collectAsStateWithLifecycle()
                     AnalysisHistoryScreen(
                       uiState = analysisHistoryUiState,
                       canRunAnalysis = canRunAnalysis,
                       isRunning = isAnalysisRunning,
+                      recordedDays = recordedDays,
                       runResults = analysisHistoryViewModel.runResults,
                       onShowMessage = showMessage,
                       onAnalyze = analysisHistoryViewModel::analyze,
