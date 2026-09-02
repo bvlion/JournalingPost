@@ -53,8 +53,7 @@ fun SettingsScreen(
   onAnalysisIntegrationChange: (AnalysisIntegration) -> Unit,
   onNoteOnlyEntryChange: (Boolean) -> Unit,
   onAutoAnalysisEnabledChange: (Boolean) -> Unit,
-  onAutoAnalysisTimeChange: (LocalTime) -> Unit,
-  onAutoAnalysisTargetDayChange: (AutoAnalysisTargetDay) -> Unit,
+  onAutoAnalysisScheduleChange: (LocalTime, AutoAnalysisTargetDay) -> Unit,
   onMoodSettingsOpen: () -> Unit,
   onWebhookSettingsOpen: () -> Unit,
   /** debugビルドでのみ非null。動作確認用fixtureの投入導線を出すかどうかを兼ねる。 */
@@ -147,8 +146,7 @@ fun SettingsScreen(
         AutoAnalysisSection(
           uiState = autoAnalysisUiState,
           onEnabledChange = onAutoAnalysisEnabledChange,
-          onTimeChange = onAutoAnalysisTimeChange,
-          onTargetDayChange = onAutoAnalysisTargetDayChange,
+          onScheduleChange = onAutoAnalysisScheduleChange,
         )
       }
 
@@ -186,18 +184,25 @@ private fun AnalysisIntegrationOption(
 
 private val autoAnalysisTimeFormatter = DateTimeFormatter.ofPattern("H:mm")
 
+@Composable
+private fun autoAnalysisTargetDayLabel(targetDay: AutoAnalysisTargetDay): String = stringResource(
+  when (targetDay) {
+    AutoAnalysisTargetDay.YESTERDAY -> R.string.settings_auto_analysis_target_day_yesterday
+    AutoAnalysisTargetDay.TODAY -> R.string.settings_auto_analysis_target_day_today
+  },
+)
+
 /**
  * 選んだ解析先へ対象日の記録を「指定の時刻ごろ」に自動で送るかどうかの設定(Issue #59)。
- * 有効なときだけ時刻と対象日(当日/前日)を出す。時刻は厳密な実行保証ではないことを補足で示す。
+ * 有効なときだけ、時刻と対象日(当日/前日)を1つのダイアログでまとめて設定できる。
  */
 @Composable
 private fun AutoAnalysisSection(
   uiState: AutoAnalysisSettingsUiState,
   onEnabledChange: (Boolean) -> Unit,
-  onTimeChange: (LocalTime) -> Unit,
-  onTargetDayChange: (AutoAnalysisTargetDay) -> Unit,
+  onScheduleChange: (LocalTime, AutoAnalysisTargetDay) -> Unit,
 ) {
-  var showTimePicker by remember { mutableStateOf(false) }
+  var showScheduleDialog by remember { mutableStateOf(false) }
 
   Column(modifier = Modifier.padding(top = 8.dp)) {
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -222,44 +227,86 @@ private fun AutoAnalysisSection(
 
     if (uiState.enabled) {
       ListItem(
-        headlineContent = { Text(stringResource(R.string.settings_auto_analysis_time_item)) },
+        headlineContent = { Text(stringResource(R.string.settings_auto_analysis_schedule_item)) },
         supportingContent = { Text(stringResource(R.string.settings_auto_analysis_time_note)) },
-        trailingContent = { Text(uiState.timeOfDay.format(autoAnalysisTimeFormatter)) },
-        modifier = Modifier.clickable { showTimePicker = true },
+        trailingContent = {
+          Text(
+            stringResource(
+              R.string.settings_auto_analysis_schedule_summary,
+              uiState.timeOfDay.format(autoAnalysisTimeFormatter),
+              autoAnalysisTargetDayLabel(uiState.targetDay),
+            ),
+          )
+        },
+        modifier = Modifier.clickable { showScheduleDialog = true },
       )
+    }
+  }
 
-      Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+  if (showScheduleDialog) {
+    AutoAnalysisScheduleDialog(
+      initialTime = uiState.timeOfDay,
+      initialTargetDay = uiState.targetDay,
+      onConfirm = { time, targetDay ->
+        onScheduleChange(time, targetDay)
+        showScheduleDialog = false
+      },
+      onDismiss = { showScheduleDialog = false },
+    )
+  }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AutoAnalysisScheduleDialog(
+  initialTime: LocalTime,
+  initialTargetDay: AutoAnalysisTargetDay,
+  onConfirm: (LocalTime, AutoAnalysisTargetDay) -> Unit,
+  onDismiss: () -> Unit,
+) {
+  val timeState = rememberTimePickerState(
+    initialHour = initialTime.hour,
+    initialMinute = initialTime.minute,
+    is24Hour = true,
+  )
+  var targetDay by remember { mutableStateOf(initialTargetDay) }
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(stringResource(R.string.settings_auto_analysis_schedule_item)) },
+    text = {
+      Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+        TimeInput(state = timeState)
+
         Text(
           text = stringResource(R.string.settings_auto_analysis_target_day_heading),
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.padding(top = 8.dp),
         )
         Column(modifier = Modifier.padding(top = 4.dp).selectableGroup()) {
           AutoAnalysisTargetDayOption(
             title = stringResource(R.string.settings_auto_analysis_target_day_yesterday),
-            selected = uiState.targetDay == AutoAnalysisTargetDay.YESTERDAY,
-            onClick = { onTargetDayChange(AutoAnalysisTargetDay.YESTERDAY) },
+            selected = targetDay == AutoAnalysisTargetDay.YESTERDAY,
+            onClick = { targetDay = AutoAnalysisTargetDay.YESTERDAY },
           )
           AutoAnalysisTargetDayOption(
             title = stringResource(R.string.settings_auto_analysis_target_day_today),
-            selected = uiState.targetDay == AutoAnalysisTargetDay.TODAY,
-            onClick = { onTargetDayChange(AutoAnalysisTargetDay.TODAY) },
+            selected = targetDay == AutoAnalysisTargetDay.TODAY,
+            onClick = { targetDay = AutoAnalysisTargetDay.TODAY },
           )
         }
       }
-    }
-  }
-
-  if (showTimePicker) {
-    AutoAnalysisTimePickerDialog(
-      initial = uiState.timeOfDay,
-      onConfirm = {
-        onTimeChange(it)
-        showTimePicker = false
-      },
-      onDismiss = { showTimePicker = false },
-    )
-  }
+    },
+    confirmButton = {
+      TextButton(onClick = { onConfirm(LocalTime.of(timeState.hour, timeState.minute), targetDay) }) {
+        Text(stringResource(R.string.action_save))
+      }
+    },
+    dismissButton = {
+      TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+    },
+  )
 }
 
 @Composable
@@ -268,33 +315,6 @@ private fun AutoAnalysisTargetDayOption(title: String, selected: Boolean, onClic
     headlineContent = { Text(title) },
     leadingContent = { RadioButton(selected = selected, onClick = null) },
     modifier = Modifier.selectable(selected = selected, onClick = onClick, role = Role.RadioButton),
-  )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AutoAnalysisTimePickerDialog(
-  initial: LocalTime,
-  onConfirm: (LocalTime) -> Unit,
-  onDismiss: () -> Unit,
-) {
-  val state = rememberTimePickerState(
-    initialHour = initial.hour,
-    initialMinute = initial.minute,
-    is24Hour = true,
-  )
-  AlertDialog(
-    onDismissRequest = onDismiss,
-    title = { Text(stringResource(R.string.settings_auto_analysis_time_item)) },
-    text = { TimeInput(state = state) },
-    confirmButton = {
-      TextButton(onClick = { onConfirm(LocalTime.of(state.hour, state.minute)) }) {
-        Text(stringResource(R.string.action_save))
-      }
-    },
-    dismissButton = {
-      TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
-    },
   )
 }
 
@@ -339,8 +359,7 @@ fun SettingsScreenPreview() {
       onAnalysisIntegrationChange = {},
       onNoteOnlyEntryChange = {},
       onAutoAnalysisEnabledChange = {},
-      onAutoAnalysisTimeChange = {},
-      onAutoAnalysisTargetDayChange = {},
+      onAutoAnalysisScheduleChange = { _, _ -> },
       onMoodSettingsOpen = {},
       onWebhookSettingsOpen = {},
     )

@@ -77,18 +77,19 @@ class AutoAnalysisSettingsViewModelTest {
   }
 
   @Test
-  fun `時刻と対象日の変更を保存する`() = runTest(testDispatcher) {
+  fun `時刻と対象日の変更を1回の書き込みで保存し再予約を依頼する`() = runTest(testDispatcher) {
     val repository = FakeRepository()
-    val viewModel = createViewModel(repository)
+    var rescheduleCount = 0
+    val viewModel = createViewModel(repository) { rescheduleCount++ }
     collectorScope.launch { viewModel.uiState.collect {} }
 
-    viewModel.setTimeOfDay(LocalTime.of(22, 15))
-    testDispatcher.scheduler.advanceUntilIdle()
-    viewModel.setTargetDay(AutoAnalysisTargetDay.TODAY)
+    viewModel.setSchedule(LocalTime.of(22, 15), AutoAnalysisTargetDay.TODAY)
     testDispatcher.scheduler.advanceUntilIdle()
 
     assertEquals(LocalTime.of(22, 15), repository.current.timeOfDay)
     assertEquals(AutoAnalysisTargetDay.TODAY, repository.current.targetDay)
+    assertEquals(1, repository.saveCount)
+    assertEquals(1, rescheduleCount)
   }
 
   @Test

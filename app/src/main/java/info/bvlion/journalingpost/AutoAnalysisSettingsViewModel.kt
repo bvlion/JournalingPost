@@ -38,9 +38,9 @@ class AutoAnalysisSettingsViewModel(
 
   fun setEnabled(enabled: Boolean) = update { it.copy(enabled = enabled) }
 
-  fun setTimeOfDay(timeOfDay: LocalTime) = update { it.copy(timeOfDay = timeOfDay) }
-
-  fun setTargetDay(targetDay: AutoAnalysisTargetDay) = update { it.copy(targetDay = targetDay) }
+  /** 時刻と対象日は1つのダイアログでまとめて設定するため、1回の書き込みで更新する。 */
+  fun setSchedule(timeOfDay: LocalTime, targetDay: AutoAnalysisTargetDay) =
+    update { it.copy(timeOfDay = timeOfDay, targetDay = targetDay) }
 
   /**
    * 複数のスイッチ/選択を続けて操作したときに、read-modify-writeが交錯して片方の変更を打ち消さないよう
