@@ -26,7 +26,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,27 +74,24 @@ fun AnalysisHistoryScreen(
   val completedMessage = stringResource(R.string.analysis_completed)
   val listState = rememberLazyListState()
 
-  // 追加された結果はRoomのFlow経由で一覧へ反映されるため、成功時点の先頭idを控えておき、
-  // それが入れ替わってから先頭へ寄せる。成功しても先頭が変わらなければスクロールしない。
+  // 保存した結果はRoomのFlow経由で一覧へ反映される。反映のタイミングは成功通知の前後どちらもあり得る
+  // ため、保存した行のidが先頭に来たことを条件にして、そこで初めて先頭へ寄せる。
   val firstItemId = (uiState as? AnalysisHistoryUiState.Content)?.items?.firstOrNull()?.id
-  val currentFirstItemId by rememberUpdatedState(firstItemId)
-  var firstItemIdAtSuccess by remember { mutableStateOf<Long?>(null) }
-  var awaitingScrollToTop by remember { mutableStateOf(false) }
+  var scrollToTopTargetId by remember { mutableStateOf<Long?>(null) }
   EventEffect(runResults) { result ->
     when (result) {
-      AnalysisRunResult.Succeeded -> {
+      is AnalysisRunResult.Succeeded -> {
         onShowMessage(completedMessage)
-        firstItemIdAtSuccess = currentFirstItemId
-        awaitingScrollToTop = true
+        scrollToTopTargetId = result.savedResultId
       }
 
       is AnalysisRunResult.Failed -> onShowMessage(resources.failureMessage(result))
     }
   }
-  LaunchedEffect(awaitingScrollToTop, firstItemId) {
-    if (awaitingScrollToTop && firstItemId != null && firstItemId != firstItemIdAtSuccess) {
+  LaunchedEffect(scrollToTopTargetId, firstItemId) {
+    if (scrollToTopTargetId != null && firstItemId == scrollToTopTargetId) {
       listState.animateScrollToItem(0)
-      awaitingScrollToTop = false
+      scrollToTopTargetId = null
     }
   }
 

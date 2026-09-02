@@ -260,7 +260,18 @@ class AnalysisHistoryViewModelTest {
     assertEquals(responsePeriodEnd, saved.periodEnd)
     assertEquals(responseAnalyzedAt, saved.analyzedAt)
     assertEquals("今日は穏やかでした", saved.body)
-    assertEquals(listOf(AnalysisRunResult.Succeeded), results)
+    assertEquals(listOf(AnalysisRunResult.Succeeded(1L)), results)
+  }
+
+  @Test
+  fun `Succeededは保存したAnalysisResultの行idを持つ`() = runTest(testDispatcher) {
+    val viewModel = createViewModel(writer = FakeAnalysisResultWriter(savedId = 7L))
+    val results = collectRunResults(viewModel)
+
+    viewModel.analyze(LocalDate.of(2026, 8, 30))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(listOf(AnalysisRunResult.Succeeded(7L)), results)
   }
 
   @Test
@@ -302,7 +313,7 @@ class AnalysisHistoryViewModelTest {
     viewModel.analyze(LocalDate.of(2026, 8, 30))
     testDispatcher.scheduler.advanceUntilIdle()
 
-    assertEquals(listOf(AnalysisRunResult.Succeeded), results)
+    assertEquals(listOf(AnalysisRunResult.Succeeded(1L)), results)
     assertEquals(
       listOf(Instant.parse("2026-08-30T00:00:00Z") to Instant.parse("2026-08-31T00:00:00Z")),
       analyzer.persistedPeriods,
@@ -454,13 +465,16 @@ class AnalysisHistoryViewModelTest {
     override fun observeAll(): Flow<List<JournalEntry>> = entries
   }
 
-  private class FakeAnalysisResultWriter(private val failOnSave: Boolean = false) : AnalysisResultWriter {
+  private class FakeAnalysisResultWriter(
+    private val failOnSave: Boolean = false,
+    private val savedId: Long = 1L,
+  ) : AnalysisResultWriter {
     val saved = mutableListOf<AnalysisResult>()
 
     override suspend fun save(result: AnalysisResult): Long {
       if (failOnSave) throw RuntimeException("db boom")
       saved += result
-      return saved.size.toLong()
+      return savedId
     }
   }
 

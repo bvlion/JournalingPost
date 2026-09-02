@@ -112,7 +112,7 @@ class AnalysisHistoryViewModel(
       when (val outcome = periodAnalyzer.analyze(periodStart, periodEnd, entries)) {
         is PeriodAnalysisOutcome.Success -> {
           // 対象期間・解析日時・本文はいずれもresponseの値を保存元にする(Custom Webhook契約)。
-          analysisResultWriter.save(
+          val savedResultId = analysisResultWriter.save(
             AnalysisResult(
               periodStart = outcome.periodStart,
               periodEnd = outcome.periodEnd,
@@ -121,7 +121,7 @@ class AnalysisHistoryViewModel(
             ),
           )
           notifyResultPersisted(periodStart, periodEnd)
-          AnalysisRunResult.Succeeded
+          AnalysisRunResult.Succeeded(savedResultId)
         }
 
         is PeriodAnalysisOutcome.Failure -> AnalysisRunResult.Failed(outcome, day)
@@ -152,7 +152,11 @@ class AnalysisHistoryViewModel(
 }
 
 sealed interface AnalysisRunResult {
-  data object Succeeded : AnalysisRunResult
+  /**
+   * 解析が成功しAnalysisResultを保存した。[savedResultId]は保存した行のidで、一覧へ反映された
+   * この結果が先頭に来たとき画面を先頭へ寄せ、生成された結果をそのまま見せるために使う。
+   */
+  data class Succeeded(val savedResultId: Long) : AnalysisRunResult
 
   /**
    * 失敗した解析実行。[day]は実行対象に選んだ日で、対象日を含むメッセージ(NO_ENTRIES等)を
