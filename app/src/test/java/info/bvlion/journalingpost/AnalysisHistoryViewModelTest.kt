@@ -131,40 +131,83 @@ class AnalysisHistoryViewModelTest {
   }
 
   @Test
-  fun `recordedDaysはJournalEntryのある日を端末timezoneのカレンダー日で返す`() = runTest(testDispatcher) {
-    val journalEntryReader = FakeJournalEntryReader()
-    val viewModel = createViewModel(
-      journalEntryReader = journalEntryReader,
-      currentZoneId = { ZoneId.of("Asia/Tokyo") },
-    )
-    val collectJob = CoroutineScope(testDispatcher).launch { viewModel.recordedDays.collect {} }
+  fun `selectableDaysはCustom WebhookではJournalEntryのある日を端末timezoneのカレンダー日で返す`() =
+    runTest(testDispatcher) {
+      val journalEntryReader = FakeJournalEntryReader()
+      val reader = FakeAnalysisResultReader()
+      val viewModel = createViewModel(
+        reader = reader,
+        integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK),
+        journalEntryReader = journalEntryReader,
+        currentZoneId = { ZoneId.of("Asia/Tokyo") },
+      )
+      val collectJob = CoroutineScope(testDispatcher).launch { viewModel.selectableDays.collect {} }
 
+      reader.emit(emptyList())
+      journalEntryReader.emit(
+        listOf(
+          entry("2026-08-29T20:00:00Z"),
+          entry("2026-08-30T02:00:00Z"),
+          entry("2026-08-24T18:00:00Z"),
+        ),
+      )
+      testDispatcher.scheduler.advanceUntilIdle()
+
+      assertEquals(
+        setOf(LocalDate.of(2026, 8, 30), LocalDate.of(2026, 8, 25)),
+        viewModel.selectableDays.value,
+      )
+      collectJob.cancel()
+    }
+
+  @Test
+  fun `selectableDaysはJournalEntryが0件なら空になる`() = runTest(testDispatcher) {
+    val journalEntryReader = FakeJournalEntryReader()
+    val reader = FakeAnalysisResultReader()
+    val viewModel = createViewModel(reader = reader, journalEntryReader = journalEntryReader)
+    val collectJob = CoroutineScope(testDispatcher).launch { viewModel.selectableDays.collect {} }
+
+    reader.emit(emptyList())
+    journalEntryReader.emit(emptyList())
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertTrue(viewModel.selectableDays.value.isEmpty())
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `selectableDaysはHostedでは当日と解析済みの日を除いた前日以前の記録日だけになる`() = runTest(testDispatcher) {
+    val journalEntryReader = FakeJournalEntryReader()
+    val reader = FakeAnalysisResultReader()
+    val viewModel = createViewModel(
+      reader = reader,
+      integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.HOSTED),
+      journalEntryReader = journalEntryReader,
+      currentZoneId = { ZoneOffset.UTC },
+      currentDate = { LocalDate.of(2026, 8, 30) },
+    )
+    val collectJob = CoroutineScope(testDispatcher).launch { viewModel.selectableDays.collect {} }
+
+    reader.emit(
+      listOf(
+        result(id = 1, analyzedAt = "2026-08-29T07:00:00Z", body = "既に解析済み")
+          .copy(periodStart = Instant.parse("2026-08-28T00:00:00Z")),
+      ),
+    )
     journalEntryReader.emit(
       listOf(
-        entry("2026-08-29T20:00:00Z"),
-        entry("2026-08-30T02:00:00Z"),
-        entry("2026-08-24T18:00:00Z"),
+        entry("2026-08-27T05:00:00Z"),
+        entry("2026-08-28T05:00:00Z"),
+        entry("2026-08-29T05:00:00Z"),
+        entry("2026-08-30T05:00:00Z"),
       ),
     )
     testDispatcher.scheduler.advanceUntilIdle()
 
     assertEquals(
-      setOf(LocalDate.of(2026, 8, 30), LocalDate.of(2026, 8, 25)),
-      viewModel.recordedDays.value,
+      setOf(LocalDate.of(2026, 8, 27), LocalDate.of(2026, 8, 29)),
+      viewModel.selectableDays.value,
     )
-    collectJob.cancel()
-  }
-
-  @Test
-  fun `recordedDaysはJournalEntryが0件なら空になる`() = runTest(testDispatcher) {
-    val journalEntryReader = FakeJournalEntryReader()
-    val viewModel = createViewModel(journalEntryReader = journalEntryReader)
-    val collectJob = CoroutineScope(testDispatcher).launch { viewModel.recordedDays.collect {} }
-
-    journalEntryReader.emit(emptyList())
-    testDispatcher.scheduler.advanceUntilIdle()
-
-    assertTrue(viewModel.recordedDays.value.isEmpty())
     collectJob.cancel()
   }
 
@@ -411,6 +454,7 @@ class AnalysisHistoryViewModelTest {
     analyzer: PeriodAnalyzer = FakePeriodAnalyzer { success() },
     writer: AnalysisResultWriter = FakeAnalysisResultWriter(),
     currentZoneId: () -> ZoneId = { ZoneOffset.UTC },
+    currentDate: () -> LocalDate = { LocalDate.of(2026, 9, 1) },
   ) = AnalysisHistoryViewModel(
     reader = reader,
     analysisIntegrationRepository = integrationRepository,
@@ -419,6 +463,7 @@ class AnalysisHistoryViewModelTest {
     periodAnalyzer = analyzer,
     analysisResultWriter = writer,
     currentZoneId = currentZoneId,
+    currentDate = currentDate,
   )
 
   private fun entry(at: String) = JournalEntry(

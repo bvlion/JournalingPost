@@ -6,10 +6,15 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.glance.appwidget.updateAll
+import info.bvlion.journalingpost.AutoAnalysisScheduler
 import info.bvlion.journalingpost.BuildConfig
 import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.analysis.AnalysisResultWriter
+import info.bvlion.journalingpost.analysis.AutoAnalysisAttemptStore
+import info.bvlion.journalingpost.analysis.AutoAnalyzer
+import info.bvlion.journalingpost.analysis.DataStoreAutoAnalysisAttemptStore
 import info.bvlion.journalingpost.analysis.IntegrationRoutingPeriodAnalyzer
+import info.bvlion.journalingpost.analysis.PeriodAnalysisRunner
 import info.bvlion.journalingpost.analysis.PeriodAnalyzer
 import info.bvlion.journalingpost.analysis.WebhookPeriodAnalyzer
 import info.bvlion.journalingpost.analysis.db.RoomAnalysisResultRepository
@@ -33,7 +38,9 @@ import info.bvlion.journalingpost.mood.MoodRepository
 import info.bvlion.journalingpost.mood.createInitialMoodCatalog
 import info.bvlion.journalingpost.security.AndroidKeystoreCipher
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
+import info.bvlion.journalingpost.settings.AutoAnalysisSettingsRepository
 import info.bvlion.journalingpost.settings.DataStoreAnalysisIntegrationRepository
+import info.bvlion.journalingpost.settings.DataStoreAutoAnalysisSettingsRepository
 import info.bvlion.journalingpost.settings.DataStoreNoteOnlyEntryRepository
 import info.bvlion.journalingpost.settings.NoteOnlyEntryRepository
 import info.bvlion.journalingpost.settings.WebhookAwareAnalysisIntegrationRepository
@@ -165,6 +172,38 @@ internal class AppContainer(context: Context) {
     )
   }
 
+  private val periodAnalysisRunner: PeriodAnalysisRunner by lazy {
+    PeriodAnalysisRunner(periodAnalyzer = periodAnalyzer, analysisResultWriter = analysisResultRepository)
+  }
+
+  val autoAnalysisSettingsRepository: AutoAnalysisSettingsRepository by lazy {
+    DataStoreAutoAnalysisSettingsRepository(createPreferenceDataStore(AUTO_ANALYSIS_SETTINGS_FILE_NAME))
+  }
+
+  private val autoAnalysisAttemptStore: AutoAnalysisAttemptStore by lazy {
+    DataStoreAutoAnalysisAttemptStore(createPreferenceDataStore(AUTO_ANALYSIS_STATE_FILE_NAME))
+  }
+
+  /** 自動解析1回分の実行本体。[AutoAnalysisWorker]から使う。 */
+  val autoAnalyzer: AutoAnalyzer by lazy {
+    AutoAnalyzer(
+      autoAnalysisSettingsRepository = autoAnalysisSettingsRepository,
+      analysisIntegrationRepository = analysisIntegrationRepository,
+      periodJournalEntryReader = journalEntryRepository,
+      analysisResultReader = analysisResultRepository,
+      autoAnalysisAttemptStore = autoAnalysisAttemptStore,
+      periodAnalysisRunner = periodAnalysisRunner,
+    )
+  }
+
+  /** 自動解析の実行タイミングをAndroid側で管理するscheduler。 */
+  val autoAnalysisScheduler: AutoAnalysisScheduler by lazy {
+    AutoAnalysisScheduler(
+      context = context,
+      autoAnalysisSettingsRepository = autoAnalysisSettingsRepository,
+    )
+  }
+
   /**
    * debugビルドのみ非nullになる動作確認用fixtureの投入口。releaseでは常にnullで、R8が
    * [DebugFixtureSeeder]生成ごと除去する。設定画面の導線もこのnull有無で出し分ける。
@@ -212,6 +251,12 @@ internal class AppContainer(context: Context) {
     const val MOOD_SETTINGS_FILE_NAME = "mood_settings"
 
     const val NOTE_ONLY_ENTRY_FILE_NAME = "note_only_entry_settings"
+
+    /** 自動解析の設定(有効/無効・時刻・対象日)。秘密値ではないためbackup対象で構わない。 */
+    const val AUTO_ANALYSIS_SETTINGS_FILE_NAME = "auto_analysis_settings"
+
+    /** 自動解析の実行状態(Hostedを最後に試行した実行日)。秘密値ではないためbackup対象で構わない。 */
+    const val AUTO_ANALYSIS_STATE_FILE_NAME = "auto_analysis_state"
 
     /** Hosted API keyの暗号化保存先。backupから除外する(dataExtractionRulesと合わせる)。 */
     const val HOSTED_CREDENTIALS_FILE_NAME = "hosted_credentials"

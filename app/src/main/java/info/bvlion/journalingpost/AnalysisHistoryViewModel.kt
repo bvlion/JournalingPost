@@ -3,12 +3,12 @@ package info.bvlion.journalingpost
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import info.bvlion.journalingpost.analysis.AnalysisHistoryUiState
-import info.bvlion.journalingpost.analysis.AnalysisResult
-import info.bvlion.journalingpost.analysis.AnalysisResultPersistenceListener
 import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.analysis.AnalysisResultWriter
 import info.bvlion.journalingpost.analysis.PeriodAnalysisOutcome
+import info.bvlion.journalingpost.analysis.PeriodAnalysisRunner
 import info.bvlion.journalingpost.analysis.PeriodAnalyzer
+import info.bvlion.journalingpost.analysis.manualAnalysisSelectableDays
 import info.bvlion.journalingpost.analysis.toAnalysisHistoryItems
 import info.bvlion.journalingpost.journal.JournalEntryReader
 import info.bvlion.journalingpost.journal.PeriodJournalEntryReader
@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -34,12 +35,14 @@ class AnalysisHistoryViewModel(
   analysisIntegrationRepository: AnalysisIntegrationRepository,
   journalEntryReader: JournalEntryReader,
   private val periodJournalEntryReader: PeriodJournalEntryReader,
-  private val periodAnalyzer: PeriodAnalyzer,
-  private val analysisResultWriter: AnalysisResultWriter,
+  periodAnalyzer: PeriodAnalyzer,
+  analysisResultWriter: AnalysisResultWriter,
   // 端末timezoneは解析開始・一覧生成のたびに解決する。ViewModel生成時に固定すると、移動などで
   // timezoneが変わったあと選択日の境界が古いオフセットで計算されてしまうため。
   private val currentZoneId: () -> ZoneId = { ZoneId.systemDefault() },
+  private val currentDate: () -> LocalDate = { LocalDate.now(currentZoneId()) },
 ) : ViewModel() {
+  private val periodAnalysisRunner = PeriodAnalysisRunner(periodAnalyzer, analysisResultWriter)
   val uiState: StateFlow<AnalysisHistoryUiState> = reader.observeAll()
     .map { results ->
       val items = results.toAnalysisHistoryItems(currentZoneId())
@@ -53,15 +56,22 @@ class AnalysisHistoryViewModel(
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
   /**
-   * JournalEntryが1件以上ある日([currentZoneId]でのカレンダー日)。手動解析の日付選択で、記録のある日
-   * だけを選べるようにするために使う。境界は選択日と同じく端末timezoneで解決する。
+   * 手動解析の日付選択で選べる日([currentZoneId]でのカレンダー日)。Custom Webhookは記録のある日すべて、
+   * Hostedは当日と解析済みの日を除いた前日以前の記録日だけ。境界は選択日と同じく端末timezoneで解決する。
    */
-  val recordedDays: StateFlow<Set<LocalDate>> = journalEntryReader.observeAll()
-    .map { entries ->
-      val zoneId = currentZoneId()
-      entries.mapTo(mutableSetOf()) { it.timestamp.atZone(zoneId).toLocalDate() }
-    }
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+  val selectableDays: StateFlow<Set<LocalDate>> = combine(
+    analysisIntegrationRepository.analysisIntegration,
+    journalEntryReader.observeAll(),
+    reader.observeAll(),
+  ) { integration, entries, results ->
+    val zoneId = currentZoneId()
+    manualAnalysisSelectableDays(
+      integration = integration,
+      recordedDays = entries.mapTo(mutableSetOf()) { it.timestamp.atZone(zoneId).toLocalDate() },
+      analyzedDays = results.mapTo(mutableSetOf()) { it.periodStart.atZone(zoneId).toLocalDate() },
+      today = currentDate(),
+    )
+  }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
   /** 解析実行中かどうか。実行中の表示と二重実行の抑止に使う継続的な状態。 */
   private val _isAnalysisRunning = MutableStateFlow(false)
@@ -108,45 +118,12 @@ class AnalysisHistoryViewModel(
     }
     if (entries.isEmpty()) return AnalysisRunResult.Failed(PeriodAnalysisOutcome.Failure.NO_ENTRIES, day)
 
-    return try {
-      when (val outcome = periodAnalyzer.analyze(periodStart, periodEnd, entries)) {
-        is PeriodAnalysisOutcome.Success -> {
-          // 対象期間・解析日時・本文はいずれもresponseの値を保存元にする(Custom Webhook契約)。
-          val savedResultId = analysisResultWriter.save(
-            AnalysisResult(
-              periodStart = outcome.periodStart,
-              periodEnd = outcome.periodEnd,
-              analyzedAt = outcome.analyzedAt,
-              body = outcome.body,
-            ),
-          )
-          notifyResultPersisted(periodStart, periodEnd)
-          AnalysisRunResult.Succeeded(savedResultId)
-        }
-
-        is PeriodAnalysisOutcome.Failure -> AnalysisRunResult.Failed(outcome, day)
-      }
-    } catch (e: CancellationException) {
-      throw e
-    } catch (e: Exception) {
-      // AnalysisResult保存の失敗。JournalEntryには触れていないため、同じ日を再実行できる。
-      AnalysisRunResult.Failed(null, day)
-    }
-  }
-
-  /**
-   * AnalysisResultの端末保存が確定したことを、retry stateを持つanalyzer(現状Hosted)へ伝える。
-   * ここでの失敗は保存済みの結果へ影響しないため飲み込む。共通の解析フローはこの一点だけで
-   * Hosted固有の概念に触れる。
-   */
-  private suspend fun notifyResultPersisted(periodStart: Instant, periodEnd: Instant) {
-    try {
-      (periodAnalyzer as? AnalysisResultPersistenceListener)
-        ?.onAnalysisResultPersisted(periodStart, periodEnd)
-    } catch (e: CancellationException) {
-      throw e
-    } catch (e: Exception) {
-      // no-op
+    // 対象期間・解析日時・本文はいずれもresponseの値を保存元にする(Custom Webhook契約)。保存と、
+    // 端末保存確定のretry stateを持つanalyzerへの通知は[PeriodAnalysisRunner]へ閉じている。
+    return when (val outcome = periodAnalysisRunner.run(periodStart, periodEnd, entries)) {
+      is PeriodAnalysisRunner.Outcome.Saved -> AnalysisRunResult.Succeeded(outcome.savedResultId)
+      is PeriodAnalysisRunner.Outcome.Failed -> AnalysisRunResult.Failed(outcome.failure, day)
+      PeriodAnalysisRunner.Outcome.SaveFailed -> AnalysisRunResult.Failed(null, day)
     }
   }
 }
