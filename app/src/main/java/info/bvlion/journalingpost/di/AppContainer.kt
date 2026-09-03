@@ -18,8 +18,10 @@ import info.bvlion.journalingpost.analysis.PeriodAnalysisRunner
 import info.bvlion.journalingpost.analysis.PeriodAnalyzer
 import info.bvlion.journalingpost.analysis.WebhookPeriodAnalyzer
 import info.bvlion.journalingpost.analysis.db.RoomAnalysisResultRepository
+import info.bvlion.journalingpost.hosted.DataStoreHostedConsentRepository
 import info.bvlion.journalingpost.hosted.DataStoreHostedCredentialsRepository
 import info.bvlion.journalingpost.hosted.DataStoreHostedIdempotencyKeyStore
+import info.bvlion.journalingpost.hosted.HostedConsentRepository
 import info.bvlion.journalingpost.hosted.HostedCredentialsRepository
 import info.bvlion.journalingpost.hosted.HostedIdempotencyKeyStore
 import info.bvlion.journalingpost.hosted.HostedInstallationRegistrar
@@ -36,6 +38,12 @@ import info.bvlion.journalingpost.journal.db.RoomJournalEntryRepository
 import info.bvlion.journalingpost.mood.DataStoreMoodRepository
 import info.bvlion.journalingpost.mood.MoodRepository
 import info.bvlion.journalingpost.mood.createInitialMoodCatalog
+import info.bvlion.journalingpost.onboarding.AnalysisIntroductionRepository
+import info.bvlion.journalingpost.onboarding.DataStoreAnalysisIntroductionRepository
+import info.bvlion.journalingpost.onboarding.DataStoreFirstRecordRepository
+import info.bvlion.journalingpost.onboarding.DataStoreWelcomeRepository
+import info.bvlion.journalingpost.onboarding.FirstRecordRepository
+import info.bvlion.journalingpost.onboarding.WelcomeRepository
 import info.bvlion.journalingpost.security.AndroidKeystoreCipher
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import info.bvlion.journalingpost.settings.AutoAnalysisSettingsRepository
@@ -108,6 +116,18 @@ internal class AppContainer(context: Context) {
     DataStoreNoteOnlyEntryRepository(createPreferenceDataStore(NOTE_ONLY_ENTRY_FILE_NAME))
   }
 
+  val analysisIntroductionRepository: AnalysisIntroductionRepository by lazy {
+    DataStoreAnalysisIntroductionRepository(createPreferenceDataStore(ANALYSIS_INTRODUCTION_FILE_NAME))
+  }
+
+  val firstRecordRepository: FirstRecordRepository by lazy {
+    DataStoreFirstRecordRepository(createPreferenceDataStore(FIRST_RECORD_FILE_NAME))
+  }
+
+  val welcomeRepository: WelcomeRepository by lazy {
+    DataStoreWelcomeRepository(createPreferenceDataStore(WELCOME_FILE_NAME))
+  }
+
   val journalEntryReader: JournalEntryReader get() = journalEntryRepository
 
   val journalEntryDeleter: JournalEntryDeleter get() = journalEntryRepository
@@ -134,6 +154,10 @@ internal class AppContainer(context: Context) {
 
   private val hostedIdempotencyKeyStore: HostedIdempotencyKeyStore by lazy {
     DataStoreHostedIdempotencyKeyStore(createPreferenceDataStore(HOSTED_IDEMPOTENCY_FILE_NAME))
+  }
+
+  val hostedConsentRepository: HostedConsentRepository by lazy {
+    DataStoreHostedConsentRepository(createPreferenceDataStore(HOSTED_CONSENT_FILE_NAME))
   }
 
   /**
@@ -252,6 +276,15 @@ internal class AppContainer(context: Context) {
 
     const val NOTE_ONLY_ENTRY_FILE_NAME = "note_only_entry_settings"
 
+    /** AI振り返りの初回案内(#67)を見たかどうか。秘密値ではないためbackup対象で構わない。 */
+    const val ANALYSIS_INTRODUCTION_FILE_NAME = "analysis_introduction_state"
+
+    /** fresh install後、アプリ内で最初の記録が完了したか(#67)。秘密値ではないためbackup対象で構わない。 */
+    const val FIRST_RECORD_FILE_NAME = "first_record_state"
+
+    /** 記録を促すウェルカムダイアログ(#67)を見たかどうか。秘密値ではないためbackup対象で構わない。 */
+    const val WELCOME_FILE_NAME = "welcome_state"
+
     /** 自動解析の設定(有効/無効・時刻・対象日)。秘密値ではないためbackup対象で構わない。 */
     const val AUTO_ANALYSIS_SETTINGS_FILE_NAME = "auto_analysis_settings"
 
@@ -266,6 +299,9 @@ internal class AppContainer(context: Context) {
 
     /** Idempotency-Keyの一時保存先。秘密値ではないためbackup対象で構わない。 */
     const val HOSTED_IDEMPOTENCY_FILE_NAME = "hosted_idempotency"
+
+    /** 「アプリが用意する解析先」の外部送信への同意済みか(#67)。秘密値ではないためbackup対象で構わない。 */
+    const val HOSTED_CONSENT_FILE_NAME = "hosted_consent_state"
 
     const val DEBUG_FIXTURE_STATE_FILE_NAME = "debug_fixture_state"
   }

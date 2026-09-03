@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import info.bvlion.journalingpost.debug.DebugFixtureSeedResult
 import info.bvlion.journalingpost.debug.DebugFixtureSeeder
+import info.bvlion.journalingpost.hosted.HostedConsentRepository
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import info.bvlion.journalingpost.settings.NoteOnlyEntryRepository
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -30,6 +32,7 @@ class SettingsViewModel(
   private val analysisIntegrationRepository: AnalysisIntegrationRepository,
   private val webhookSettingsRepository: WebhookSettingsRepository,
   private val noteOnlyEntryRepository: NoteOnlyEntryRepository,
+  private val hostedConsentRepository: HostedConsentRepository,
   private val refreshWidgets: suspend () -> Unit,
   /** debugビルドでのみ非null。動作確認用fixtureの投入導線を出すかどうかの判定にも使う。 */
   private val debugFixtureSeeder: DebugFixtureSeeder? = null,
@@ -39,6 +42,13 @@ class SettingsViewModel(
 
   /** Hostedを選んで外部送信の同意ダイアログを表示している間、radioだけは利用者の選択を示す。 */
   private val pendingHostedSelection = MutableStateFlow(false)
+
+  /**
+   * 初回案内(#67)から「設定する」で遷移した直後だけtrue。解析・連携セクションの場所を一度だけ示す
+   * 短い補助表示に使う。他のUiStateとは更新頻度も購読先も異なるため、combine対象へは含めない。
+   */
+  private val _highlightAnalysisIntegration = MutableStateFlow(false)
+  val highlightAnalysisIntegration: StateFlow<Boolean> = _highlightAnalysisIntegration.asStateFlow()
 
   val uiState: StateFlow<SettingsUiState> = combine(
     analysisIntegrationRepository.analysisIntegration,
@@ -77,11 +87,15 @@ class SettingsViewModel(
   /**
    * 前回のSettings表示中に開始したCustom Webhook判定が後から完了して、次回表示を勝手に遷移させないよう
    * sessionを切り替えて無効化する。保留していた選択表示も解除する。
+   *
+   * [highlightAnalysisIntegration]は初回案内から遷移した今回の表示でだけ立てる。次に表示を開いたとき
+   * (デフォルト引数のfalse)には出さない。
    */
-  fun onSettingsOpened() {
+  fun onSettingsOpened(highlightAnalysisIntegration: Boolean = false) {
     selectionSession = Any()
     pendingCustomWebhookSelection.value = false
     pendingHostedSelection.value = false
+    _highlightAnalysisIntegration.value = highlightAnalysisIntegration
     // 前回の表示中に発生して画面へ届かなかった結果は、次回表示へ持ち越さない。
     while (_events.tryReceive().isSuccess) Unit
   }
@@ -94,9 +108,11 @@ class SettingsViewModel(
   /**
    * Custom Webhookは保存済み設定がある場合だけ有効化する。未設定または一時的に読み込めない場合は、
    * 選択を保留して[SettingsEvent.WebhookSetupRequested]でWebhook設定画面へ進める。
-   * Hostedは外部送信の同意を[SettingsEvent.HostedConsentRequested]で確認してから有効化する。
+   * Hostedは初回有効化時だけ外部送信の同意を[SettingsEvent.HostedConsentRequested]で確認する。
+   * 一度同意していれば、以後は同じ確認を繰り返さずそのまま有効化する。
    */
   fun setAnalysisIntegration(integration: AnalysisIntegration) {
+    _highlightAnalysisIntegration.value = false
     val session = Any()
     selectionSession = session
 
@@ -125,16 +141,37 @@ class SettingsViewModel(
       AnalysisIntegration.HOSTED -> {
         pendingCustomWebhookSelection.value = false
         pendingHostedSelection.value = true
-        viewModelScope.launch { _events.send(SettingsEvent.HostedConsentRequested) }
+        viewModelScope.launch {
+          val consented = hostedConsentRepository.hasConsented.first()
+          if (session !== selectionSession) return@launch
+          if (consented) {
+            persistAnalysisIntegration(integration, session)
+            if (session === selectionSession) pendingHostedSelection.value = false
+          } else {
+            _events.send(SettingsEvent.HostedConsentRequested)
+          }
+        }
       }
     }
   }
 
-  /** Hostedの外部送信に同意した。ここで初めて永続化する。 */
+  /**
+   * Hostedの外部送信に初めて同意した。同意を記録してから永続化する。
+   * 同意の記録中に選び直された場合、その後のsessionチェックで古い同意によるHOSTEDの
+   * 永続化を止め、後から選ばれた値を上書きしないようにする。
+   */
   fun confirmHostedIntegration() {
     val session = Any()
     selectionSession = session
     viewModelScope.launch {
+      try {
+        hostedConsentRepository.markConsented()
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        // 同意記録に失敗しても今回の有効化は進める。次に選び直す際は再度この確認を経る。
+      }
+      if (session !== selectionSession) return@launch
       persistAnalysisIntegration(AnalysisIntegration.HOSTED, session)
       if (session === selectionSession) pendingHostedSelection.value = false
     }

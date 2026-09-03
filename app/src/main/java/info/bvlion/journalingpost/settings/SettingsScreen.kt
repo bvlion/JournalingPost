@@ -36,6 +36,7 @@ import info.bvlion.journalingpost.AutoAnalysisSettingsUiState
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.SettingsUiState
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
+import info.bvlion.journalingpost.ui.highlightedSection
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -50,6 +51,11 @@ fun SettingsScreen(
   uiState: SettingsUiState,
   /** 「自動解析」セクションの状態。読み込み確定前はnullで、その間はセクションを出さない。 */
   autoAnalysisUiState: AutoAnalysisSettingsUiState?,
+  /**
+   * 初回案内(#67)から「設定する」で遷移した直後だけtrue。「AIによる振り返り」セクションそのものを
+   * 枠線・背景色で一時的に強調し、場所が一目で分かるようにする。
+   */
+  highlightAnalysisIntegration: Boolean,
   onAnalysisIntegrationChange: (AnalysisIntegration) -> Unit,
   onNoteOnlyEntryChange: (Boolean) -> Unit,
   onAutoAnalysisEnabledChange: (Boolean) -> Unit,
@@ -97,7 +103,11 @@ fun SettingsScreen(
         ),
       )
 
-      Column(modifier = Modifier.padding(16.dp)) {
+      Column(
+        modifier = Modifier
+          .highlightedSection(highlightAnalysisIntegration)
+          .padding(16.dp),
+      ) {
         Text(
           text = stringResource(R.string.settings_analysis_integration_heading),
           style = MaterialTheme.typography.titleSmall,
@@ -111,6 +121,7 @@ fun SettingsScreen(
           )
           AnalysisIntegrationOption(
             title = stringResource(R.string.settings_integration_custom_webhook),
+            description = stringResource(R.string.settings_integration_custom_webhook_description),
             selected = uiState.selectedIntegration == AnalysisIntegration.CUSTOM_WEBHOOK,
             onClick = { onAnalysisIntegrationChange(AnalysisIntegration.CUSTOM_WEBHOOK) },
           )
@@ -319,8 +330,10 @@ private fun AutoAnalysisTargetDayOption(title: String, selected: Boolean, onClic
 }
 
 /**
- * Hostedを選んだときに一度だけ確認する外部送信の同意ダイアログ。対象期間のJournalEntryが
- * AI解析のためJournalingPostのサーバーへ送信されること、原本と解析結果は端末に残ることを伝える。
+ * 「アプリが用意する解析先」を初めて有効化するときだけ確認するダイアログ(#67)。一度確認すれば、
+ * 以後は同じ確認を繰り返さない。入力の労力を減らす方針に沿って文面は必要最小限にし、利用すると
+ * 気分やメモが別の解析先で解析されることだけを伝える。保存場所や自動解析のON/OFF・時刻・対象日等は
+ * 別の設定(自動解析セクション)や既存の理解に委ね、ここでは説明しない。
  */
 @Composable
 fun HostedConsentDialog(
@@ -356,6 +369,7 @@ fun SettingsScreenPreview() {
         timeOfDay = LocalTime.of(3, 0),
         targetDay = AutoAnalysisTargetDay.YESTERDAY,
       ),
+      highlightAnalysisIntegration = false,
       onAnalysisIntegrationChange = {},
       onNoteOnlyEntryChange = {},
       onAutoAnalysisEnabledChange = {},

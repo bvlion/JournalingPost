@@ -46,6 +46,8 @@ import info.bvlion.journalingpost.mood.MoodRecordOverlay
 import info.bvlion.journalingpost.mood.MoodRecordScreen
 import info.bvlion.journalingpost.mood.MoodSettingsScreen
 import info.bvlion.journalingpost.mood.MoodSnapshot
+import info.bvlion.journalingpost.onboarding.AnalysisIntroductionDialog
+import info.bvlion.journalingpost.onboarding.WelcomeDialog
 import info.bvlion.journalingpost.settings.HostedConsentDialog
 import info.bvlion.journalingpost.settings.SettingsScreen
 import info.bvlion.journalingpost.settings.WebhookSettingsScreen
@@ -53,6 +55,7 @@ import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
 import java.util.Locale
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -65,6 +68,7 @@ class MainActivity : ComponentActivity() {
   private val noteOnlyEntryViewModel: NoteOnlyEntryViewModel by viewModels { appViewModelFactory }
   private val moodSettingsViewModel: MoodSettingsViewModel by viewModels { appViewModelFactory }
   private val webhookSettingsViewModel: WebhookSettingsViewModel by viewModels { appViewModelFactory }
+  private val onboardingViewModel: OnboardingViewModel by viewModels { appViewModelFactory }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -83,6 +87,7 @@ class MainActivity : ComponentActivity() {
         val uiState by viewModel.uiState.collectAsStateWithLifecycle()
         val moods by moodViewModel.moods.collectAsStateWithLifecycle()
         val isNoteOnlyEntryEnabled by noteOnlyEntryViewModel.isEnabled.collectAsStateWithLifecycle()
+        val onboardingUiState by onboardingViewModel.uiState.collectAsStateWithLifecycle()
 
         var destination by rememberSaveable { mutableStateOf(MainDestination.RECORD) }
         var showWebhookSettings by rememberSaveable { mutableStateOf(false) }
@@ -92,6 +97,9 @@ class MainActivity : ComponentActivity() {
         // 見つかればその場で有効化する。利用者が自分で設定項目を開いた場合は有効化しない。
         var webhookSetupPending by rememberSaveable { mutableStateOf(false) }
         var showHostedConsent by rememberSaveable { mutableStateOf(false) }
+        // 初回案内(#67)の「設定する」でSettingsへ遷移する回だけtrueにし、次のLaunchedEffect(destination)
+        // で解析・連携セクションのhighlight要求として使ったら消費する。
+        var highlightAnalysisIntegrationOnOpen by rememberSaveable { mutableStateOf(false) }
         var selectedMoodId by rememberSaveable { mutableStateOf<String?>(null) }
         // 「メモだけ記録」はMoodを持たないため、Mood選択とは別の状態として扱う。
         var isNoteOnlyRecording by rememberSaveable { mutableStateOf(false) }
@@ -143,7 +151,19 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(destination) {
           if (destination == MainDestination.SETTINGS) {
             showHostedConsent = false
-            settingsViewModel.onSettingsOpened()
+            settingsViewModel.onSettingsOpened(highlightAnalysisIntegrationOnOpen)
+            highlightAnalysisIntegrationOnOpen = false
+          }
+        }
+
+        EventEffect(onboardingViewModel.events) { event ->
+          when (event) {
+            OnboardingEvent.NavigateToAnalysisSettings -> {
+              selectedMoodId = null
+              isNoteOnlyRecording = false
+              highlightAnalysisIntegrationOnOpen = true
+              destination = MainDestination.SETTINGS
+            }
           }
         }
 
@@ -244,6 +264,7 @@ class MainActivity : ComponentActivity() {
                     MoodRecordScreen(
                       moods = requireNotNull(moods),
                       isNoteOnlyEntryVisible = isNoteOnlyEntryEnabled == true,
+                      highlightMoodSelection = onboardingUiState.highlightMoodSelection,
                       onMoodClick = { mood ->
                         viewModel.resetState()
                         selectedMoodId = mood.id
@@ -288,6 +309,8 @@ class MainActivity : ComponentActivity() {
                   MainDestination.SETTINGS -> {
                     val settingsUiState by settingsViewModel.uiState.collectAsStateWithLifecycle()
                     val autoAnalysisUiState by autoAnalysisSettingsViewModel.uiState.collectAsStateWithLifecycle()
+                    val highlightAnalysisIntegration by
+                      settingsViewModel.highlightAnalysisIntegration.collectAsStateWithLifecycle()
                     val integrationSaveFailedMessage =
                       stringResource(R.string.settings_integration_save_failed)
                     val autoAnalysisSaveFailedMessage =
@@ -332,6 +355,7 @@ class MainActivity : ComponentActivity() {
                     SettingsScreen(
                       uiState = settingsUiState,
                       autoAnalysisUiState = autoAnalysisUiState,
+                      highlightAnalysisIntegration = highlightAnalysisIntegration,
                       onAnalysisIntegrationChange = settingsViewModel::setAnalysisIntegration,
                       onNoteOnlyEntryChange = settingsViewModel::setNoteOnlyEntryEnabled,
                       onAutoAnalysisEnabledChange = autoAnalysisSettingsViewModel::setEnabled,
@@ -384,6 +408,13 @@ class MainActivity : ComponentActivity() {
                 MainViewModel.UiState.SUCCESS -> {
                   closeRecordOverlay()
                   showMessage(successMessage)
+                  // closeRecordOverlay()のresetState()でuiStateがINITへ変わり、この
+                  // LaunchedEffect自体がキャンセルされるため、遅延分は独立したscopeで行う。
+                  // 「記録しました」のSnackbarを見せてから、AI振り返り案内(#67)を出す。
+                  scope.launch {
+                    delay(ONBOARDING_RECORD_SUCCESS_DELAY_MILLIS)
+                    onboardingViewModel.onRecordSucceeded()
+                  }
                 }
 
                 MainViewModel.UiState.FAILURE -> {
@@ -411,11 +442,23 @@ class MainActivity : ComponentActivity() {
                 },
               ),
           )
+
+          if (onboardingUiState.showWelcomeDialog) {
+            WelcomeDialog(onDismiss = onboardingViewModel::onWelcomeDialogDismissed)
+          } else if (onboardingUiState.showAnalysisIntroduction) {
+            AnalysisIntroductionDialog(
+              onSetup = onboardingViewModel::onAnalysisIntroductionSetupSelected,
+              onDismiss = onboardingViewModel::onAnalysisIntroductionDismissed,
+            )
+          }
         }
       }
     }
   }
 }
+
+/** 「記録しました」のSnackbarを利用者が認識できるだけの猶予を置いてから、AI振り返り案内(#67)を出す。 */
+private const val ONBOARDING_RECORD_SUCCESS_DELAY_MILLIS = 1_350L
 
 enum class MainDestination(
   @param:StringRes val labelRes: Int,
