@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -39,6 +40,13 @@ class SettingsViewModel(
 
   /** Hostedを選んで外部送信の同意ダイアログを表示している間、radioだけは利用者の選択を示す。 */
   private val pendingHostedSelection = MutableStateFlow(false)
+
+  /**
+   * 初回案内(#67)から「設定する」で遷移した直後だけtrue。解析・連携セクションの場所を一度だけ示す
+   * 短い補助表示に使う。他のUiStateとは更新頻度も購読先も異なるため、combine対象へは含めない。
+   */
+  private val _highlightAnalysisIntegration = MutableStateFlow(false)
+  val highlightAnalysisIntegration: StateFlow<Boolean> = _highlightAnalysisIntegration.asStateFlow()
 
   val uiState: StateFlow<SettingsUiState> = combine(
     analysisIntegrationRepository.analysisIntegration,
@@ -77,11 +85,15 @@ class SettingsViewModel(
   /**
    * 前回のSettings表示中に開始したCustom Webhook判定が後から完了して、次回表示を勝手に遷移させないよう
    * sessionを切り替えて無効化する。保留していた選択表示も解除する。
+   *
+   * [highlightAnalysisIntegration]は初回案内から遷移した今回の表示でだけ立てる。次に表示を開いたとき
+   * (デフォルト引数のfalse)には出さない。
    */
-  fun onSettingsOpened() {
+  fun onSettingsOpened(highlightAnalysisIntegration: Boolean = false) {
     selectionSession = Any()
     pendingCustomWebhookSelection.value = false
     pendingHostedSelection.value = false
+    _highlightAnalysisIntegration.value = highlightAnalysisIntegration
     // 前回の表示中に発生して画面へ届かなかった結果は、次回表示へ持ち越さない。
     while (_events.tryReceive().isSuccess) Unit
   }
@@ -97,6 +109,7 @@ class SettingsViewModel(
    * Hostedは外部送信の同意を[SettingsEvent.HostedConsentRequested]で確認してから有効化する。
    */
   fun setAnalysisIntegration(integration: AnalysisIntegration) {
+    _highlightAnalysisIntegration.value = false
     val session = Any()
     selectionSession = session
 

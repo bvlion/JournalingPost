@@ -6,6 +6,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import info.bvlion.journalingpost.AnalysisHistoryViewModel
+import info.bvlion.journalingpost.AnalysisIntroductionViewModel
 import info.bvlion.journalingpost.AutoAnalysisSettingsViewModel
 import info.bvlion.journalingpost.JournalHistoryViewModel
 import info.bvlion.journalingpost.JournalingPostApplication
@@ -26,6 +27,9 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
   }
   initializer {
     NoteOnlyEntryViewModel(repository = container.noteOnlyEntryRepository)
+  }
+  initializer {
+    AnalysisIntroductionViewModel(repository = container.analysisIntroductionRepository)
   }
   initializer {
     MoodSettingsViewModel(

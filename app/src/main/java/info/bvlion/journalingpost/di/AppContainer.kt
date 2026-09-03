@@ -36,6 +36,8 @@ import info.bvlion.journalingpost.journal.db.RoomJournalEntryRepository
 import info.bvlion.journalingpost.mood.DataStoreMoodRepository
 import info.bvlion.journalingpost.mood.MoodRepository
 import info.bvlion.journalingpost.mood.createInitialMoodCatalog
+import info.bvlion.journalingpost.onboarding.AnalysisIntroductionRepository
+import info.bvlion.journalingpost.onboarding.DataStoreAnalysisIntroductionRepository
 import info.bvlion.journalingpost.security.AndroidKeystoreCipher
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import info.bvlion.journalingpost.settings.AutoAnalysisSettingsRepository
@@ -106,6 +108,10 @@ internal class AppContainer(context: Context) {
 
   val noteOnlyEntryRepository: NoteOnlyEntryRepository by lazy {
     DataStoreNoteOnlyEntryRepository(createPreferenceDataStore(NOTE_ONLY_ENTRY_FILE_NAME))
+  }
+
+  val analysisIntroductionRepository: AnalysisIntroductionRepository by lazy {
+    DataStoreAnalysisIntroductionRepository(createPreferenceDataStore(ANALYSIS_INTRODUCTION_FILE_NAME))
   }
 
   val journalEntryReader: JournalEntryReader get() = journalEntryRepository
@@ -251,6 +257,9 @@ internal class AppContainer(context: Context) {
     const val MOOD_SETTINGS_FILE_NAME = "mood_settings"
 
     const val NOTE_ONLY_ENTRY_FILE_NAME = "note_only_entry_settings"
+
+    /** AI解析の初回案内(#67)を見たかどうか。秘密値ではないためbackup対象で構わない。 */
+    const val ANALYSIS_INTRODUCTION_FILE_NAME = "analysis_introduction_state"
 
     /** 自動解析の設定(有効/無効・時刻・対象日)。秘密値ではないためbackup対象で構わない。 */
     const val AUTO_ANALYSIS_SETTINGS_FILE_NAME = "auto_analysis_settings"

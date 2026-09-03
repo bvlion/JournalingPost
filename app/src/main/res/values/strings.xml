@@ -62,16 +62,26 @@
   <string name="analysis_failure_invalid_response">解析結果を受け取れませんでした</string>
   <string name="analysis_failure_save">解析結果を保存できませんでした</string>
 
+  <!-- ==== 初回案内(#67) ==== -->
+  <!-- fresh install後の初回起動時に一度だけ表示する、AI解析機能の案内。 -->
+  <string name="analysis_introduction_title">記録をAIで振り返れます</string>
+  <string name="analysis_introduction_body">記録した内容を、あとからAIで振り返れます。利用するには設定でAI解析を有効にする必要があります。有効にすると、対象の記録が外部の解析サービスへ送信されます。今は送信していません。</string>
+  <string name="analysis_introduction_setup">設定する</string>
+  <string name="analysis_introduction_skip">今はしない</string>
+
   <!-- ==== 設定 ==== -->
   <string name="settings_analysis_integration_heading">解析・連携</string>
   <string name="settings_integration_save_failed">解析・連携の設定を保存できませんでした</string>
   <string name="settings_integration_none">使用しない</string>
   <string name="settings_integration_custom_webhook">Custom Webhook</string>
-  <string name="settings_integration_hosted">JournalingPost Hosted</string>
-  <string name="settings_integration_hosted_description">自動解析を基本の使い方とし、対象日の記録を設定した時刻ごろにJournalingPostのサーバーへ送信してAI解析します。自動で解析されなかった過去の日は手動解析で補えます</string>
+  <string name="settings_integration_custom_webhook_description">自分で用意した送信先へ記録を送って解析します</string>
+  <string name="settings_integration_hosted">AI解析</string>
+  <string name="settings_integration_hosted_description">自動解析を基本の使い方とし、対象日の記録を設定した時刻ごろにアプリが用意する解析サービスへ送信してAI解析します。自動で解析されなかった過去の日は手動解析で補えます</string>
   <string name="settings_hosted_consent_title">記録を外部へ送信します</string>
-  <string name="settings_hosted_consent_body">JournalingPost Hostedは、自動解析を基本の使い方とします。自動解析を有効にすると、対象日の記録が設定した時刻ごろにAI解析のためJournalingPostのサーバーへ送信されます。自動解析が行われなかった日や失敗した過去の日は、手動解析でその対象期間の記録をそのつど送信して補えます。どちらの場合も記録の原本と解析結果は端末に保存され、サーバーには恒久保存されません。</string>
+  <string name="settings_hosted_consent_body">AI解析では、自動解析を基本の使い方とします。自動解析を有効にすると、対象日の記録が設定した時刻ごろにAI解析のため外部の解析サービスへ送信されます。自動解析が行われなかった日や失敗した過去の日は、手動解析でその対象期間の記録をそのつど送信して補えます。どちらの場合も記録の原本と解析結果は端末に保存され、サーバーには恒久保存されません。</string>
   <string name="settings_hosted_consent_confirm">同意して有効にする</string>
+  <!-- 初回案内(#67)から遷移したときだけ、この見出しの下に一度だけ表示する短い補助表示。 -->
+  <string name="settings_analysis_integration_highlight">AI解析はこちら</string>
   <!-- 自動解析(#59)。解析先が有効なときだけ表示する。 -->
   <string name="settings_auto_analysis_heading">自動解析</string>
   <string name="settings_auto_analysis_item">自動で解析する</string>
@@ -84,10 +94,10 @@
   <string name="settings_auto_analysis_target_day_today">当日</string>
   <string name="settings_auto_analysis_target_day_yesterday">前日</string>
   <string name="settings_auto_analysis_save_failed">自動解析の設定を保存できませんでした</string>
-  <string name="settings_mood_item">Mood設定</string>
-  <string name="settings_mood_item_description">表示内容・順序・件数を変更</string>
+  <string name="settings_mood_item">気分の選択肢</string>
+  <string name="settings_mood_item_description">絵文字や名前、並び順を変更</string>
   <string name="settings_note_only_item">「メモだけ記録」を表示</string>
-  <string name="settings_note_only_item_description">記録画面とWidgetに、Moodを選ばずメモだけを記録する導線を追加</string>
+  <string name="settings_note_only_item_description">記録画面とWidgetに、気分を選ばずメモだけを記録する導線を追加</string>
   <string name="settings_note_only_save_failed">「メモだけ記録」の設定を保存できませんでした</string>
   <string name="settings_webhook_item">Webhook設定</string>
   <string name="settings_webhook_destination_unknown">設定済み</string>
@@ -137,20 +147,20 @@
   <string name="webhook_settings_entries_example">"[\n  {\n    \"recordedAt\": \"2026-08-29T09:15:00Z\",\n    \"mood\": { \"emoji\": \"🙂\", \"label\": \"嬉しい\" }\n  },\n  {\n    \"recordedAt\": \"2026-08-29T21:40:00Z\",\n    \"note\": \"メモ本文\"\n  }\n]"</string>
   <string name="webhook_settings_success_response_example">"{\n  \"analysis\": {\n    \"period\": {\n      \"start\": \"2026-08-29T00:00:00Z\",\n      \"end\": \"2026-08-30T00:00:00Z\"\n    },\n    \"analyzedAt\": \"2026-08-30T07:30:00Z\",\n    \"entryCount\": 2,\n    \"model\": \"example/analysis-model\",\n    \"text\": \"…\"\n  }\n}"</string>
 
-  <!-- ==== Mood設定 ==== -->
-  <string name="mood_settings_title">Mood設定</string>
+  <!-- ==== 気分の選択肢 ==== -->
+  <string name="mood_settings_title">気分の選択肢</string>
   <string name="mood_settings_description">絵文字と名称はどちらか一方だけでも使えます。絵文字には1つの絵文字を入力してください。</string>
-  <string name="mood_settings_item">Mood %1$d</string>
+  <string name="mood_settings_item">気分 %1$d</string>
   <string name="mood_settings_emoji_label">絵文字（任意）</string>
   <string name="mood_settings_name_label">名称（任意）</string>
   <string name="mood_settings_emoji_error">1つの絵文字を入力してください</string>
   <string name="mood_settings_content_error">絵文字または名称を入力してください</string>
   <string name="mood_settings_move_up">上へ</string>
   <string name="mood_settings_move_down">下へ</string>
-  <string name="mood_settings_add">Moodを追加</string>
+  <string name="mood_settings_add">気分を追加</string>
   <string name="mood_settings_count">%1$d / %2$d件</string>
-  <string name="mood_settings_save_succeeded">Mood設定を保存しました</string>
-  <string name="mood_settings_save_failed">Mood設定を保存できませんでした</string>
+  <string name="mood_settings_save_succeeded">気分の選択肢を保存しました</string>
+  <string name="mood_settings_save_failed">気分の選択肢を保存できませんでした</string>
   <string name="mood_accessibility_description">気分：%1$s</string>
 
   <!-- 初回Moodセット。emoji resourceはAndroid 15未満のWidget previewでも共用する。 -->

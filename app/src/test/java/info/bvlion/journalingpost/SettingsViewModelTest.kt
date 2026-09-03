@@ -238,6 +238,55 @@ class SettingsViewModelTest {
     assertEquals(AnalysisIntegration.NONE, viewModel.uiState.value.selectedIntegration)
   }
 
+  @Test
+  fun `初回案内からの遷移でSettingsを開くとhighlightをtrueにする`() = runTest(dispatcher) {
+    val viewModel = createViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+    collectHighlight(viewModel)
+
+    viewModel.onSettingsOpened(highlightAnalysisIntegration = true)
+    advanceUntilIdle()
+
+    assertTrue(viewModel.highlightAnalysisIntegration.value)
+  }
+
+  @Test
+  fun `通常のSettings表示ではhighlightをtrueにしない`() = runTest(dispatcher) {
+    val viewModel = createViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+    collectHighlight(viewModel)
+
+    viewModel.onSettingsOpened()
+    advanceUntilIdle()
+
+    assertEquals(false, viewModel.highlightAnalysisIntegration.value)
+  }
+
+  @Test
+  fun `解析連携を選び直すとhighlightを解除する`() = runTest(dispatcher) {
+    val viewModel = createViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+    )
+    collectHighlight(viewModel)
+    viewModel.onSettingsOpened(highlightAnalysisIntegration = true)
+    advanceUntilIdle()
+    assertTrue(viewModel.highlightAnalysisIntegration.value)
+
+    viewModel.setAnalysisIntegration(AnalysisIntegration.NONE)
+    advanceUntilIdle()
+
+    assertEquals(false, viewModel.highlightAnalysisIntegration.value)
+  }
+
+  private fun collectHighlight(viewModel: SettingsViewModel) {
+    collectorScope.launch { viewModel.highlightAnalysisIntegration.collect {} }
+  }
+
   private fun createViewModel(
     integrationRepository: AnalysisIntegrationRepository,
     webhookRepository: WebhookSettingsRepository,

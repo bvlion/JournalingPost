@@ -50,6 +50,8 @@ fun SettingsScreen(
   uiState: SettingsUiState,
   /** 「自動解析」セクションの状態。読み込み確定前はnullで、その間はセクションを出さない。 */
   autoAnalysisUiState: AutoAnalysisSettingsUiState?,
+  /** 初回案内(#67)から「設定する」で遷移した直後だけtrue。解析・連携セクションの場所を一度だけ示す。 */
+  highlightAnalysisIntegration: Boolean,
   onAnalysisIntegrationChange: (AnalysisIntegration) -> Unit,
   onNoteOnlyEntryChange: (Boolean) -> Unit,
   onAutoAnalysisEnabledChange: (Boolean) -> Unit,
@@ -102,6 +104,14 @@ fun SettingsScreen(
           text = stringResource(R.string.settings_analysis_integration_heading),
           style = MaterialTheme.typography.titleSmall,
         )
+        if (highlightAnalysisIntegration) {
+          Text(
+            text = stringResource(R.string.settings_analysis_integration_highlight),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(top = 4.dp),
+          )
+        }
 
         Column(modifier = Modifier.padding(top = 8.dp).selectableGroup()) {
           AnalysisIntegrationOption(
@@ -111,6 +121,7 @@ fun SettingsScreen(
           )
           AnalysisIntegrationOption(
             title = stringResource(R.string.settings_integration_custom_webhook),
+            description = stringResource(R.string.settings_integration_custom_webhook_description),
             selected = uiState.selectedIntegration == AnalysisIntegration.CUSTOM_WEBHOOK,
             onClick = { onAnalysisIntegrationChange(AnalysisIntegration.CUSTOM_WEBHOOK) },
           )
@@ -356,6 +367,7 @@ fun SettingsScreenPreview() {
         timeOfDay = LocalTime.of(3, 0),
         targetDay = AutoAnalysisTargetDay.YESTERDAY,
       ),
+      highlightAnalysisIntegration = false,
       onAnalysisIntegrationChange = {},
       onNoteOnlyEntryChange = {},
       onAutoAnalysisEnabledChange = {},
