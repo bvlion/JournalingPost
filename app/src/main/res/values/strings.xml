@@ -8,7 +8,7 @@
   <string name="action_save">保存</string>
   <string name="action_back">戻る</string>
 
-  <!-- 下部ナビゲーション。画面タイトルにも同じ文言を使う。 -->
+  <!-- 下部ナビゲーション。トップレベル画面は現在地を下部ナビが示すため、上部へ画面名を重複表示しない。 -->
   <string name="tab_record">記録</string>
   <string name="tab_journal_history">記録履歴</string>
   <string name="tab_analysis_history">解析履歴</string>
@@ -19,7 +19,6 @@
   <string name="record_welcome_title">インストールありがとうございます！</string>
   <string name="record_welcome_body">まずは今の気分を記録してみましょう！</string>
   <string name="record_welcome_confirm">はじめる</string>
-  <string name="record_screen_heading">今の気分を記録</string>
   <string name="record_note_only_entry">メモだけ記録</string>
   <!-- Widgetのcompact表示は1セルが狭いため、そこだけ短い文言を使う。読み上げはrecord_note_only_entry。 -->
   <string name="record_note_only_entry_short">メモ</string>

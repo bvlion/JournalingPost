@@ -5,7 +5,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -35,8 +34,9 @@ import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.AutoAnalysisSettingsUiState
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.SettingsUiState
-import info.bvlion.journalingpost.ui.ScreenTopAppBar
+import info.bvlion.journalingpost.ui.TopLevelScreen
 import info.bvlion.journalingpost.ui.highlightedSection
+import info.bvlion.journalingpost.ui.statusBarSpacing
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -65,14 +65,14 @@ fun SettingsScreen(
   /** debugビルドでのみ非null。動作確認用fixtureの投入導線を出すかどうかを兼ねる。 */
   onSeedDebugFixtures: (() -> Unit)? = null,
 ) {
-  Column(modifier = Modifier.fillMaxSize()) {
-    ScreenTopAppBar(title = stringResource(R.string.tab_settings))
-
+  TopLevelScreen {
+    // 下部NavigationBarが現在地(設定)を示すため画面名の固定タイトルは持たず、設定項目を上端から
+    // 始める。verticalScrollの内側でstatus barぶんの余白を確保し、スクロール時はその下を通過させる。
     Column(
       modifier = Modifier
-        .fillMaxWidth()
-        .weight(1f)
-        .verticalScroll(rememberScrollState()),
+        .fillMaxSize()
+        .verticalScroll(rememberScrollState())
+        .padding(top = statusBarSpacing()),
     ) {
       ListItem(
         headlineContent = { Text(stringResource(R.string.settings_mood_item)) },
