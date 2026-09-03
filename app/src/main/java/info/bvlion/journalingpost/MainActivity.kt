@@ -458,7 +458,7 @@ class MainActivity : ComponentActivity() {
 }
 
 /** 「記録しました」のSnackbarを利用者が認識できるだけの猶予を置いてから、AI振り返り案内(#67)を出す。 */
-private const val ONBOARDING_RECORD_SUCCESS_DELAY_MILLIS = 1_000L
+private const val ONBOARDING_RECORD_SUCCESS_DELAY_MILLIS = 1_350L
 
 enum class MainDestination(
   @param:StringRes val labelRes: Int,
