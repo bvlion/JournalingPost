@@ -86,7 +86,10 @@ class OnboardingViewModelTest {
   }
 
   @Test
-  fun `最初の記録より前に解析先を選んでいれば記録完了後もAI振り返り案内を出さない`() = runTest(dispatcher) {
+  fun `解析先が有効なままintroductionSeenが立っていなくても表示条件で案内を抑止する`() = runTest(dispatcher) {
+    // onRecordSucceeded()の新規既読化(下記の状態遷移テスト群)がI/O失敗等で反映されなかった場合の
+    // フォールバック。showAnalysisIntroductionの計算式自体がanalysisIntegration==NONEを条件に
+    // 含んでいるため、introductionSeenが未処理のままでも解析先が有効な間は案内を出さない。
     val viewModel = createViewModel(
       welcomeSeen = true,
       firstRecordCompleted = true,
@@ -94,6 +97,88 @@ class OnboardingViewModelTest {
       analysisIntegrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.HOSTED),
     )
     collectUiState(viewModel)
+    advanceUntilIdle()
+
+    assertEquals(false, viewModel.uiState.value.showAnalysisIntroduction)
+  }
+
+  @Test
+  fun `解析先が使用しないの状態で最初の記録が成功するとAI振り返り案内を表示する`() = runTest(dispatcher) {
+    val viewModel = createViewModel(
+      welcomeSeen = true,
+      analysisIntegrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+    )
+    collectUiState(viewModel)
+
+    viewModel.onRecordSucceeded()
+    advanceUntilIdle()
+
+    assertTrue(viewModel.uiState.value.showAnalysisIntroduction)
+  }
+
+  @Test
+  fun `最初の記録より前にアプリが用意する解析先が有効なら記録成功後もAI振り返り案内を表示しない`() = runTest(dispatcher) {
+    val viewModel = createViewModel(
+      welcomeSeen = true,
+      analysisIntegrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.HOSTED),
+    )
+    collectUiState(viewModel)
+
+    viewModel.onRecordSucceeded()
+    advanceUntilIdle()
+
+    assertEquals(false, viewModel.uiState.value.showAnalysisIntroduction)
+  }
+
+  @Test
+  fun `最初の記録より前に自分で用意する解析先が有効なら記録成功後もAI振り返り案内を表示しない`() = runTest(dispatcher) {
+    val viewModel = createViewModel(
+      welcomeSeen = true,
+      analysisIntegrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK),
+    )
+    collectUiState(viewModel)
+
+    viewModel.onRecordSucceeded()
+    advanceUntilIdle()
+
+    assertEquals(false, viewModel.uiState.value.showAnalysisIntroduction)
+  }
+
+  @Test
+  fun `記録成功時に解析先が有効だと判断した後使用しないへ戻してもAI振り返り案内を表示しない`() = runTest(dispatcher) {
+    val analysisIntegrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.HOSTED)
+    val viewModel = createViewModel(
+      welcomeSeen = true,
+      analysisIntegrationRepository = analysisIntegrationRepository,
+    )
+    collectUiState(viewModel)
+
+    viewModel.onRecordSucceeded()
+    advanceUntilIdle()
+    assertEquals(false, viewModel.uiState.value.showAnalysisIntroduction)
+
+    analysisIntegrationRepository.current = AnalysisIntegration.NONE
+    advanceUntilIdle()
+
+    assertEquals(false, viewModel.uiState.value.showAnalysisIntroduction)
+  }
+
+  @Test
+  fun `記録成功時に解析先が有効だと判断した後は別の解析先へ変えてもAI振り返り案内を表示しない`() = runTest(dispatcher) {
+    val analysisIntegrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.HOSTED)
+    val viewModel = createViewModel(
+      welcomeSeen = true,
+      analysisIntegrationRepository = analysisIntegrationRepository,
+    )
+    collectUiState(viewModel)
+
+    viewModel.onRecordSucceeded()
+    advanceUntilIdle()
+
+    // 一旦「使用しない」を経由してから、CUSTOM_WEBHOOKへ切り替えても再表示されないことを確認する。
+    analysisIntegrationRepository.current = AnalysisIntegration.NONE
+    advanceUntilIdle()
+    analysisIntegrationRepository.current = AnalysisIntegration.CUSTOM_WEBHOOK
     advanceUntilIdle()
 
     assertEquals(false, viewModel.uiState.value.showAnalysisIntroduction)
@@ -255,6 +340,13 @@ class OnboardingViewModelTest {
   ) : AnalysisIntegrationRepository {
     private val state = MutableStateFlow(initial)
     override val analysisIntegration: Flow<AnalysisIntegration> = state
+
+    /** テストから利用者の選び直しを模擬する。実装側のsetAnalysisIntegration経路は使わない。 */
+    var current: AnalysisIntegration
+      get() = state.value
+      set(value) {
+        state.value = value
+      }
 
     override suspend fun setAnalysisIntegration(integration: AnalysisIntegration) = error("not used in this test")
   }

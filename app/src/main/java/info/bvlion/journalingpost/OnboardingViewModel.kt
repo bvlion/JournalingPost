@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -64,16 +65,28 @@ class OnboardingViewModel(
 
   /**
    * 記録が成功するたびに呼ぶ。まだ最初の記録が完了していなければ、気分を選ぶ場所への視覚誘導を
-   * 終わらせてAI振り返りの案内へ進める。既に完了済みの記録では何も変わらない(繰り返し呼んでよい)。
+   * 終わらせる。既に完了済みの記録では[FirstRecordRepository]への書き込み以外は何もしない
+   * (繰り返し呼んでよい)。
+   *
+   * 「最初の記録」であった場合に限り、その時点の解析先も見てAI振り返り案内の要否をここで確定させる。
+   * 解析先が既に有効(NONE以外)なら、案内は不要と判断してその場で既読として扱う。これにより、
+   * 後で解析先を「使用しない」へ戻しても、一度不要と判断した初回案内が再度出てくることはない。
+   * 解析先が「使用しない」のままなら何もせず、[showAnalysisIntroduction]の通常条件で案内を出す。
    */
   fun onRecordSucceeded() {
     viewModelScope.launch {
+      val isFirstRecord = !firstRecordRepository.isFirstRecordCompleted.first()
       try {
         firstRecordRepository.markFirstRecordCompleted()
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {
         // 完了記録に失敗しても記録自体は成功しているため、次回の記録成功時に再度扱う。
+      }
+      if (isFirstRecord) {
+        val hasAnalysisDestination = analysisIntegrationRepository.analysisIntegration.first() !=
+          AnalysisIntegration.NONE
+        if (hasAnalysisDestination) markAnalysisIntroductionSeen()
       }
     }
   }
