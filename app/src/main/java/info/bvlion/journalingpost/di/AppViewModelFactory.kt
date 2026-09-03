@@ -6,7 +6,6 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import info.bvlion.journalingpost.AnalysisHistoryViewModel
-import info.bvlion.journalingpost.AnalysisIntroductionViewModel
 import info.bvlion.journalingpost.AutoAnalysisSettingsViewModel
 import info.bvlion.journalingpost.JournalHistoryViewModel
 import info.bvlion.journalingpost.JournalingPostApplication
@@ -14,6 +13,7 @@ import info.bvlion.journalingpost.MainViewModel
 import info.bvlion.journalingpost.MoodSettingsViewModel
 import info.bvlion.journalingpost.MoodViewModel
 import info.bvlion.journalingpost.NoteOnlyEntryViewModel
+import info.bvlion.journalingpost.OnboardingViewModel
 import info.bvlion.journalingpost.SettingsViewModel
 import info.bvlion.journalingpost.WebhookSettingsViewModel
 
@@ -29,7 +29,10 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
     NoteOnlyEntryViewModel(repository = container.noteOnlyEntryRepository)
   }
   initializer {
-    AnalysisIntroductionViewModel(repository = container.analysisIntroductionRepository)
+    OnboardingViewModel(
+      firstRecordRepository = container.firstRecordRepository,
+      analysisIntroductionRepository = container.analysisIntroductionRepository,
+    )
   }
   initializer {
     MoodSettingsViewModel(
@@ -58,6 +61,7 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
       analysisIntegrationRepository = container.analysisIntegrationRepository,
       webhookSettingsRepository = container.webhookSettingsRepository,
       noteOnlyEntryRepository = container.noteOnlyEntryRepository,
+      hostedConsentRepository = container.hostedConsentRepository,
       refreshWidgets = container::refreshMoodWidgets,
       debugFixtureSeeder = container.debugFixtureSeeder,
     )

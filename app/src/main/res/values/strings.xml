@@ -14,6 +14,8 @@
   <string name="tab_settings">設定</string>
 
   <!-- ==== 記録 ==== -->
+  <!-- fresh install後、最初の記録が完了するまでの間だけ見出しの上に出すウェルカム表示(#67)。 -->
+  <string name="record_welcome_message">インストールありがとうございます！まずは今の気分を記録してみましょう</string>
   <string name="record_screen_heading">今の気分を記録</string>
   <string name="record_note_only_entry">メモだけ記録</string>
   <!-- Widgetのcompact表示は1セルが狭いため、そこだけ短い文言を使う。読み上げはrecord_note_only_entry。 -->
@@ -63,9 +65,9 @@
   <string name="analysis_failure_save">解析結果を保存できませんでした</string>
 
   <!-- ==== 初回案内(#67) ==== -->
-  <!-- fresh install後の初回起動時に一度だけ表示する、AI解析機能の案内。 -->
+  <!-- 最初の記録が成功した直後に一度だけ表示する、AIによる振り返りの案内。 -->
   <string name="analysis_introduction_title">記録をAIで振り返れます</string>
-  <string name="analysis_introduction_body">記録した内容を、あとからAIで振り返れます。利用するには設定で解析先を選ぶ必要があります。選ぶと、対象の記録が外部の解析先へ送信されます。今は送信していません。</string>
+  <string name="analysis_introduction_body">記録した気分やメモは、あとからAIで振り返れます。AIによる振り返りは初期設定では使用しません。利用する場合は設定で解析先を選び、その解析先へ気分やメモを送って解析します。</string>
   <string name="analysis_introduction_setup">設定する</string>
   <string name="analysis_introduction_skip">今はしない</string>
 
@@ -77,9 +79,10 @@
   <string name="settings_integration_custom_webhook">自分で用意する解析先</string>
   <string name="settings_integration_custom_webhook_description">解析先のURLや形式を自分で設定します</string>
   <string name="settings_integration_hosted">アプリが用意する解析先</string>
-  <string name="settings_integration_hosted_description">自動解析を基本の使い方とし、対象日の記録を設定した時刻ごろに送信して振り返りを作ります。自動で解析されなかった過去の日は手動解析で補えます</string>
-  <string name="settings_hosted_consent_title">記録を外部へ送信します</string>
-  <string name="settings_hosted_consent_body">アプリが用意する解析先では、自動解析を基本の使い方とします。自動解析を有効にすると、対象日の記録が設定した時刻ごろにAIによる振り返りのため外部の解析先へ送信されます。自動解析が行われなかった日や失敗した過去の日は、手動解析でその対象期間の記録をそのつど送信して補えます。どちらの場合も記録の原本と解析結果は端末に保存され、サーバーには恒久保存されません。</string>
+  <!-- 解析先そのものの違いのみを説明する。自動解析のON/OFF・時刻・対象日の説明はsettings_auto_analysis_*側の責務。 -->
+  <string name="settings_integration_hosted_description">アプリがあらかじめ用意した解析先を使います</string>
+  <string name="settings_hosted_consent_title">気分やメモを外部へ送信します</string>
+  <string name="settings_hosted_consent_body">アプリが用意する解析先では、自動解析を基本の使い方とします。自動解析を有効にすると、対象日の気分やメモが設定した時刻ごろにAIによる振り返りのため外部の解析先へ送信されます。自動解析が行われなかった日や失敗した過去の日は、手動解析でその対象期間の気分やメモをそのつど送信して補えます。どちらの場合も記録の原本と解析結果は端末に保存され、サーバーには恒久保存されません。</string>
   <string name="settings_hosted_consent_confirm">同意して有効にする</string>
   <!-- 初回案内(#67)から遷移したときだけ、この見出しの下に一度だけ表示する短い補助表示。 -->
   <string name="settings_analysis_integration_highlight">ここで選べます</string>

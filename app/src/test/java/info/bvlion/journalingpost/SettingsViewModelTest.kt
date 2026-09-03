@@ -1,6 +1,7 @@
 package info.bvlion.journalingpost
 
 import info.bvlion.journalingpost.debug.DebugFixtureSeeder
+import info.bvlion.journalingpost.hosted.HostedConsentRepository
 import info.bvlion.journalingpost.journal.JournalEntry
 import info.bvlion.journalingpost.mood.Mood
 import info.bvlion.journalingpost.settings.AnalysisIntegration
@@ -194,9 +195,14 @@ class SettingsViewModelTest {
   }
 
   @Test
-  fun `Hostedの同意でHOSTEDを保存する`() = runTest(dispatcher) {
+  fun `Hostedの同意でHOSTEDを保存し同意状態も記録する`() = runTest(dispatcher) {
     val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE)
-    val viewModel = createViewModel(integrationRepository, FakeWebhookSettingsRepository())
+    val hostedConsentRepository = FakeHostedConsentRepository()
+    val viewModel = createViewModel(
+      integrationRepository,
+      FakeWebhookSettingsRepository(),
+      hostedConsentRepository = hostedConsentRepository,
+    )
     collectUiState(viewModel)
 
     viewModel.setAnalysisIntegration(AnalysisIntegration.HOSTED)
@@ -206,6 +212,46 @@ class SettingsViewModelTest {
 
     assertEquals(AnalysisIntegration.HOSTED, integrationRepository.current)
     assertEquals(AnalysisIntegration.HOSTED, viewModel.uiState.value.selectedIntegration)
+    assertTrue(hostedConsentRepository.current)
+  }
+
+  @Test
+  fun `同意済みならHostedを選ぶと確認なしでそのまま保存する`() = runTest(dispatcher) {
+    val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE)
+    val viewModel = createViewModel(
+      integrationRepository,
+      FakeWebhookSettingsRepository(),
+      hostedConsentRepository = FakeHostedConsentRepository(initial = true),
+    )
+    collectUiState(viewModel)
+    val events = collectEvents(viewModel)
+
+    viewModel.setAnalysisIntegration(AnalysisIntegration.HOSTED)
+    advanceUntilIdle()
+
+    assertEquals(AnalysisIntegration.HOSTED, integrationRepository.current)
+    assertEquals(AnalysisIntegration.HOSTED, viewModel.uiState.value.selectedIntegration)
+    assertTrue(events.isEmpty())
+  }
+
+  @Test
+  fun `同意記録に失敗しても選んだHOSTEDの保存は続ける`() = runTest(dispatcher) {
+    val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE)
+    val hostedConsentRepository = FakeHostedConsentRepository(failNextMarks = 1)
+    val viewModel = createViewModel(
+      integrationRepository,
+      FakeWebhookSettingsRepository(),
+      hostedConsentRepository = hostedConsentRepository,
+    )
+    collectUiState(viewModel)
+
+    viewModel.setAnalysisIntegration(AnalysisIntegration.HOSTED)
+    advanceUntilIdle()
+    viewModel.confirmHostedIntegration()
+    advanceUntilIdle()
+
+    assertEquals(AnalysisIntegration.HOSTED, integrationRepository.current)
+    assertEquals(false, hostedConsentRepository.current)
   }
 
   @Test
@@ -291,12 +337,14 @@ class SettingsViewModelTest {
     integrationRepository: AnalysisIntegrationRepository,
     webhookRepository: WebhookSettingsRepository,
     noteOnlyEntryRepository: NoteOnlyEntryRepository = FakeNoteOnlyEntryRepository(),
+    hostedConsentRepository: HostedConsentRepository = FakeHostedConsentRepository(),
     refreshWidgets: suspend () -> Unit = {},
     debugFixtureSeeder: DebugFixtureSeeder? = null,
   ) = SettingsViewModel(
     analysisIntegrationRepository = integrationRepository,
     webhookSettingsRepository = webhookRepository,
     noteOnlyEntryRepository = noteOnlyEntryRepository,
+    hostedConsentRepository = hostedConsentRepository,
     refreshWidgets = refreshWidgets,
     debugFixtureSeeder = debugFixtureSeeder,
   )
@@ -489,6 +537,23 @@ class SettingsViewModelTest {
         throw IOException("note only entry write failed")
       }
       state.value = enabled
+    }
+  }
+
+  private class FakeHostedConsentRepository(
+    initial: Boolean = false,
+    private var failNextMarks: Int = 0,
+  ) : HostedConsentRepository {
+    private val state = MutableStateFlow(initial)
+    override val hasConsented: Flow<Boolean> = state
+    val current: Boolean get() = state.value
+
+    override suspend fun markConsented() {
+      if (failNextMarks > 0) {
+        failNextMarks--
+        throw IOException("hosted consent write failed")
+      }
+      state.value = true
     }
   }
 

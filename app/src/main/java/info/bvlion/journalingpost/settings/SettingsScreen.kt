@@ -330,8 +330,9 @@ private fun AutoAnalysisTargetDayOption(title: String, selected: Boolean, onClic
 }
 
 /**
- * Hostedを選んだときに一度だけ確認する外部送信の同意ダイアログ。対象期間のJournalEntryが
- * AI解析のためJournalingPostのサーバーへ送信されること、原本と解析結果は端末に残ることを伝える。
+ * Hostedを初めて有効化するときだけ確認する外部送信の同意ダイアログ(#67)。一度同意すれば、
+ * 以後は同じ確認を繰り返さない。対象期間の気分やメモが外部の解析先へ送信されること、
+ * 原本と解析結果は端末に残ることを伝える。
  */
 @Composable
 fun HostedConsentDialog(

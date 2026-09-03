@@ -66,7 +66,7 @@ class MainActivity : ComponentActivity() {
   private val noteOnlyEntryViewModel: NoteOnlyEntryViewModel by viewModels { appViewModelFactory }
   private val moodSettingsViewModel: MoodSettingsViewModel by viewModels { appViewModelFactory }
   private val webhookSettingsViewModel: WebhookSettingsViewModel by viewModels { appViewModelFactory }
-  private val analysisIntroductionViewModel: AnalysisIntroductionViewModel by viewModels { appViewModelFactory }
+  private val onboardingViewModel: OnboardingViewModel by viewModels { appViewModelFactory }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -85,6 +85,7 @@ class MainActivity : ComponentActivity() {
         val uiState by viewModel.uiState.collectAsStateWithLifecycle()
         val moods by moodViewModel.moods.collectAsStateWithLifecycle()
         val isNoteOnlyEntryEnabled by noteOnlyEntryViewModel.isEnabled.collectAsStateWithLifecycle()
+        val onboardingUiState by onboardingViewModel.uiState.collectAsStateWithLifecycle()
 
         var destination by rememberSaveable { mutableStateOf(MainDestination.RECORD) }
         var showWebhookSettings by rememberSaveable { mutableStateOf(false) }
@@ -153,9 +154,9 @@ class MainActivity : ComponentActivity() {
           }
         }
 
-        EventEffect(analysisIntroductionViewModel.events) { event ->
+        EventEffect(onboardingViewModel.events) { event ->
           when (event) {
-            AnalysisIntroductionEvent.NavigateToAnalysisSettings -> {
+            OnboardingEvent.NavigateToAnalysisSettings -> {
               selectedMoodId = null
               isNoteOnlyRecording = false
               highlightAnalysisIntegrationOnOpen = true
@@ -261,6 +262,7 @@ class MainActivity : ComponentActivity() {
                     MoodRecordScreen(
                       moods = requireNotNull(moods),
                       isNoteOnlyEntryVisible = isNoteOnlyEntryEnabled == true,
+                      showWelcomeMessage = onboardingUiState.showWelcomeHint,
                       onMoodClick = { mood ->
                         viewModel.resetState()
                         selectedMoodId = mood.id
@@ -404,6 +406,7 @@ class MainActivity : ComponentActivity() {
                 MainViewModel.UiState.SUCCESS -> {
                   closeRecordOverlay()
                   showMessage(successMessage)
+                  onboardingViewModel.onRecordSucceeded()
                 }
 
                 MainViewModel.UiState.FAILURE -> {
@@ -432,12 +435,10 @@ class MainActivity : ComponentActivity() {
               ),
           )
 
-          val analysisIntroductionUiState by
-            analysisIntroductionViewModel.uiState.collectAsStateWithLifecycle()
-          if (analysisIntroductionUiState.shouldShow) {
+          if (onboardingUiState.showAnalysisIntroduction) {
             AnalysisIntroductionDialog(
-              onSetup = analysisIntroductionViewModel::onSetupSelected,
-              onDismiss = analysisIntroductionViewModel::onDismissed,
+              onSetup = onboardingViewModel::onAnalysisIntroductionSetupSelected,
+              onDismiss = onboardingViewModel::onAnalysisIntroductionDismissed,
             )
           }
         }

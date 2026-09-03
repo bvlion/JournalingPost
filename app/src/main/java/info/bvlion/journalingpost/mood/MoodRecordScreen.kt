@@ -31,11 +31,13 @@ import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
  * Widgetと同じ記録ダイアログを開く。選択したMoodの保持やViewModel連携は呼び出し元が持つ。
  *
  * @param isNoteOnlyEntryVisible 設定で有効にしている場合だけ、Mood一覧の末尾へ「メモだけ記録」を出す。
+ * @param showWelcomeMessage fresh install後、最初の記録が完了するまでの間だけtrue(#67)。
  */
 @Composable
 fun MoodRecordScreen(
   moods: List<Mood>,
   isNoteOnlyEntryVisible: Boolean,
+  showWelcomeMessage: Boolean,
   onMoodClick: (Mood) -> Unit,
   onNoteOnlyClick: () -> Unit,
   modifier: Modifier = Modifier,
@@ -45,6 +47,16 @@ fun MoodRecordScreen(
     contentPadding = PaddingValues(16.dp),
     verticalArrangement = Arrangement.spacedBy(4.dp),
   ) {
+    if (showWelcomeMessage) {
+      item {
+        Text(
+          text = stringResource(R.string.record_welcome_message),
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.padding(bottom = 8.dp),
+        )
+      }
+    }
     item {
       Text(
         text = stringResource(R.string.record_screen_heading),
@@ -117,6 +129,7 @@ fun MoodRecordScreenPreview() {
         Mood(id = "2", emoji = "", label = "集中"),
       ),
       isNoteOnlyEntryVisible = true,
+      showWelcomeMessage = true,
       onMoodClick = {},
       onNoteOnlyClick = {},
     )
