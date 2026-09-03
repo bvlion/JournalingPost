@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- Darkの下地に合わせた暗い背景。黒レベルを持ち上げない範囲で淡香の陰影側へ寄せる。 -->
+  <color name="usukou_window_background">#161317</color>
+</resources>

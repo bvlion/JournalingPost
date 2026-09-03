@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-  <style name="Theme.JournalingPost" parent="android:Theme.Material.Light.NoActionBar" />
+  <style name="Theme.JournalingPost" parent="android:Theme.Material.Light.NoActionBar">
+    <!--
+      起動時のsystem splashとCompose描画前のwindow背景。淡香を混ぜたCompose側の下地に合わせる。
+      色自体はvalues-nightを持つため、Light/Darkそれぞれの下地色へ解決される。
+    -->
+    <item name="android:windowBackground">@color/usukou_window_background</item>
+  </style>
 
   <!--
     Widgetからの一時入力Activity用。直前に見ていた画面を背後へ残すためtranslucentにし、

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!--
+    起動時のsystem splashとCompose描画前のwindow背景色。Compose側の面へ淡香を混ぜた
+    Lightの下地（surface相当）と合わせ、白から着色済みの画面へ切り替わる際のちらつきを抑える。
+  -->
+  <color name="usukou_window_background">#F8EDE1</color>
+</resources>
