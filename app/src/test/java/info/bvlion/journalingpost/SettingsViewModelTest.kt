@@ -255,6 +255,32 @@ class SettingsViewModelTest {
   }
 
   @Test
+  fun `同意記録が完了する前に選び直すと古い同意でHOSTEDへ上書きしない`() = runTest(dispatcher) {
+    val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE)
+    val hostedConsentRepository = GatedMarkHostedConsentRepository()
+    val viewModel = createViewModel(
+      integrationRepository,
+      FakeWebhookSettingsRepository(),
+      hostedConsentRepository = hostedConsentRepository,
+    )
+    collectUiState(viewModel)
+
+    viewModel.setAnalysisIntegration(AnalysisIntegration.HOSTED)
+    advanceUntilIdle()
+    viewModel.confirmHostedIntegration()
+    runCurrent()
+
+    // markConsented()が完了する前に、利用者が「使用しない」へ選び直す。
+    viewModel.setAnalysisIntegration(AnalysisIntegration.NONE)
+    advanceUntilIdle()
+    hostedConsentRepository.release()
+    advanceUntilIdle()
+
+    assertEquals(AnalysisIntegration.NONE, integrationRepository.current)
+    assertEquals(AnalysisIntegration.NONE, viewModel.uiState.value.selectedIntegration)
+  }
+
+  @Test
   fun `Hostedの同意を閉じると保留していた選択表示は解除される`() = runTest(dispatcher) {
     val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE)
     val viewModel = createViewModel(integrationRepository, FakeWebhookSettingsRepository())
@@ -554,6 +580,20 @@ class SettingsViewModelTest {
         throw IOException("hosted consent write failed")
       }
       state.value = true
+    }
+  }
+
+  /** [release]するまで[markConsented]が完了しない。書き込み遅延中の選び直しを再現する。 */
+  private class GatedMarkHostedConsentRepository : HostedConsentRepository {
+    private val gate = CompletableDeferred<Unit>()
+    override val hasConsented: Flow<Boolean> = MutableStateFlow(false)
+
+    override suspend fun markConsented() {
+      gate.await()
+    }
+
+    fun release() {
+      gate.complete(Unit)
     }
   }
 

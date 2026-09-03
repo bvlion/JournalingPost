@@ -3,6 +3,8 @@ package info.bvlion.journalingpost
 import info.bvlion.journalingpost.onboarding.AnalysisIntroductionRepository
 import info.bvlion.journalingpost.onboarding.FirstRecordRepository
 import info.bvlion.journalingpost.onboarding.WelcomeRepository
+import info.bvlion.journalingpost.settings.AnalysisIntegration
+import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -77,6 +79,20 @@ class OnboardingViewModelTest {
   @Test
   fun `AI振り返り案内が既読なら記録完了後も出さない`() = runTest(dispatcher) {
     val viewModel = createViewModel(welcomeSeen = true, firstRecordCompleted = true, introductionSeen = true)
+    collectUiState(viewModel)
+    advanceUntilIdle()
+
+    assertEquals(false, viewModel.uiState.value.showAnalysisIntroduction)
+  }
+
+  @Test
+  fun `最初の記録より前に解析先を選んでいれば記録完了後もAI振り返り案内を出さない`() = runTest(dispatcher) {
+    val viewModel = createViewModel(
+      welcomeSeen = true,
+      firstRecordCompleted = true,
+      introductionSeen = false,
+      analysisIntegrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.HOSTED),
+    )
     collectUiState(viewModel)
     advanceUntilIdle()
 
@@ -164,10 +180,13 @@ class OnboardingViewModelTest {
     firstRecordRepository: FirstRecordRepository = FakeFirstRecordRepository(initial = firstRecordCompleted),
     analysisIntroductionRepository: AnalysisIntroductionRepository =
       FakeAnalysisIntroductionRepository(initial = introductionSeen),
+    analysisIntegrationRepository: AnalysisIntegrationRepository =
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
   ) = OnboardingViewModel(
     welcomeRepository = welcomeRepository,
     firstRecordRepository = firstRecordRepository,
     analysisIntroductionRepository = analysisIntroductionRepository,
+    analysisIntegrationRepository = analysisIntegrationRepository,
   )
 
   private fun collectUiState(viewModel: OnboardingViewModel) {
@@ -229,5 +248,14 @@ class OnboardingViewModelTest {
       }
       state.value = true
     }
+  }
+
+  private class FakeAnalysisIntegrationRepository(
+    initial: AnalysisIntegration,
+  ) : AnalysisIntegrationRepository {
+    private val state = MutableStateFlow(initial)
+    override val analysisIntegration: Flow<AnalysisIntegration> = state
+
+    override suspend fun setAnalysisIntegration(integration: AnalysisIntegration) = error("not used in this test")
   }
 }

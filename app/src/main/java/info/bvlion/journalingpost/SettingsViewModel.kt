@@ -155,7 +155,11 @@ class SettingsViewModel(
     }
   }
 
-  /** Hostedの外部送信に初めて同意した。同意を記録してから永続化する。 */
+  /**
+   * Hostedの外部送信に初めて同意した。同意を記録してから永続化する。
+   * 同意の記録中に選び直された場合、その後のsessionチェックで古い同意によるHOSTEDの
+   * 永続化を止め、後から選ばれた値を上書きしないようにする。
+   */
   fun confirmHostedIntegration() {
     val session = Any()
     selectionSession = session
@@ -167,6 +171,7 @@ class SettingsViewModel(
       } catch (e: Exception) {
         // 同意記録に失敗しても今回の有効化は進める。次に選び直す際は再度この確認を経る。
       }
+      if (session !== selectionSession) return@launch
       persistAnalysisIntegration(AnalysisIntegration.HOSTED, session)
       if (session === selectionSession) pendingHostedSelection.value = false
     }

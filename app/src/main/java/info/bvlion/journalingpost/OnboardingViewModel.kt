@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import info.bvlion.journalingpost.onboarding.AnalysisIntroductionRepository
 import info.bvlion.journalingpost.onboarding.FirstRecordRepository
 import info.bvlion.journalingpost.onboarding.WelcomeRepository
+import info.bvlion.journalingpost.settings.AnalysisIntegration
+import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -26,16 +28,21 @@ class OnboardingViewModel(
   private val welcomeRepository: WelcomeRepository,
   private val firstRecordRepository: FirstRecordRepository,
   private val analysisIntroductionRepository: AnalysisIntroductionRepository,
+  private val analysisIntegrationRepository: AnalysisIntegrationRepository,
 ) : ViewModel() {
   val uiState: StateFlow<OnboardingUiState> = combine(
     welcomeRepository.isWelcomeDialogSeen,
     firstRecordRepository.isFirstRecordCompleted,
     analysisIntroductionRepository.isIntroductionSeen,
-  ) { welcomeSeen, firstRecordCompleted, introductionSeen ->
+    analysisIntegrationRepository.analysisIntegration,
+  ) { welcomeSeen, firstRecordCompleted, introductionSeen, analysisIntegration ->
     OnboardingUiState(
       showWelcomeDialog = !welcomeSeen,
       highlightMoodSelection = welcomeSeen && !firstRecordCompleted,
-      showAnalysisIntroduction = firstRecordCompleted && !introductionSeen,
+      // 最初の記録より前に利用者が自分で解析先を選んでいた場合、案内の文言(初期設定では
+      // 使用しない/設定で解析先を選ぶ)が現在の設定と食い違うため、その回は出さない。
+      showAnalysisIntroduction = firstRecordCompleted && !introductionSeen &&
+        analysisIntegration == AnalysisIntegration.NONE,
     )
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OnboardingUiState())
 

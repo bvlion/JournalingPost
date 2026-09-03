@@ -33,6 +33,7 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
       welcomeRepository = container.welcomeRepository,
       firstRecordRepository = container.firstRecordRepository,
       analysisIntroductionRepository = container.analysisIntroductionRepository,
+      analysisIntegrationRepository = container.analysisIntegrationRepository,
     )
   }
   initializer {
