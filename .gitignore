@@ -9,3 +9,6 @@
 .cxx
 /.kotlin/
 local.properties
+.envrc
+app/release/
+release.jks
