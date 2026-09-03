@@ -62,8 +62,9 @@ fun StatusBarProtection(modifier: Modifier = Modifier) {
 
 /**
  * 記録履歴の固定日付ナビゲーションなど、status bar直下へ固定する要素の背景色。
- * [StatusBarProtection]と同じ淡香の下地色を、やや強めの一様な半透明で使い、上端保護と地続きに
- * 見せつつ、その要素自体がわずかに識別できる程度の存在感に留める。
+ * [StatusBarProtection]と同じ淡香の下地色を一様な半透明で使い、上端保護と視覚的に地続きに見せる。
+ * 必要以上に目立たせず、日付ナビゲーションが自然に識別できる程度のわずかな存在感に留める。
+ * 実際の濃さ(alpha)は実機確認で調整する前提の暫定値。
  */
 @Composable
 fun fixedTopRegionBackgroundColor(): Color =

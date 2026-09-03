@@ -79,32 +79,34 @@ fun AnalysisHistoryScreen(
   val completedMessage = stringResource(R.string.analysis_completed)
   val listState = rememberLazyListState()
 
+  // 選べる日が無いときは「解析する」を出さない。Hostedでは当日と解析済みの日を除くと対象が
+  // 無くなることがある(その場合は自動解析か翌日以降に委ねる)。導線を出す場合は一覧の先頭itemが
+  // 導線になり、生成結果はその次のindexになる。
+  val showTrigger = (canRunAnalysis && selectableDays.isNotEmpty()) || isRunning
+
   // 保存した結果はRoomのFlow経由で一覧へ反映される。反映のタイミングは成功通知の前後どちらもあり得る
-  // ため、保存した行のidが先頭に来たことを条件にして、そこで初めて先頭へ寄せる。
+  // ため、保存した行のidが一覧の先頭に来たことを条件にして、そこで初めて生成結果itemへ寄せる。
   val firstItemId = (uiState as? AnalysisHistoryUiState.Content)?.items?.firstOrNull()?.id
-  var scrollToTopTargetId by remember { mutableStateOf<Long?>(null) }
+  var scrollToResultId by remember { mutableStateOf<Long?>(null) }
   EventEffect(runResults) { result ->
     when (result) {
       is AnalysisRunResult.Succeeded -> {
         onShowMessage(completedMessage)
-        scrollToTopTargetId = result.savedResultId
+        scrollToResultId = result.savedResultId
       }
 
       is AnalysisRunResult.Failed -> onShowMessage(resources.failureMessage(result))
     }
   }
-  LaunchedEffect(scrollToTopTargetId, firstItemId) {
-    if (scrollToTopTargetId != null && firstItemId == scrollToTopTargetId) {
-      listState.animateScrollToItem(0)
-      scrollToTopTargetId = null
+  LaunchedEffect(scrollToResultId, firstItemId, showTrigger) {
+    if (scrollToResultId != null && firstItemId == scrollToResultId) {
+      // 生成結果は一覧の先頭。「解析する」導線を出しているときはその1つ下。
+      listState.animateScrollToItem(if (showTrigger) 1 else 0)
+      scrollToResultId = null
     }
   }
 
   TopLevelScreen {
-    // 選べる日が無いときは「解析する」を出さない。Hostedでは当日と解析済みの日を除くと
-    // 対象が無くなることがある(その場合は自動解析か翌日以降に委ねる)。
-    val showTrigger = (canRunAnalysis && selectableDays.isNotEmpty()) || isRunning
-
     when (uiState) {
       AnalysisHistoryUiState.Loading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         CircularProgressIndicator()
