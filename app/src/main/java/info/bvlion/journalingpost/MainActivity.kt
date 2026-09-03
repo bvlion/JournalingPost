@@ -8,6 +8,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -33,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -208,7 +212,20 @@ class MainActivity : ComponentActivity() {
               }
             },
           ) { innerPadding ->
-            Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            // 詳細画面(Mood設定 / Webhook設定)はScaffoldのcontent paddingをそのまま使い、AppBarが
+            // status barの下へ収まる従来構成を保つ。トップレベル画面はコンテンツをstatus barの下まで
+            // 流すため上端のpaddingだけ渡さず、status bar領域の扱いは各画面側が持つ。
+            val layoutDirection = LocalLayoutDirection.current
+            val contentPadding = if (showMoodSettings || showWebhookSettings) {
+              innerPadding
+            } else {
+              PaddingValues(
+                start = innerPadding.calculateStartPadding(layoutDirection),
+                end = innerPadding.calculateEndPadding(layoutDirection),
+                bottom = innerPadding.calculateBottomPadding(),
+              )
+            }
+            Box(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
               if (showMoodSettings) {
                 LaunchedEffect(Unit) { moodSettingsViewModel.onScreenOpened(moodSettingsScreenSessionId) }
                 val moodSettingsUiState by moodSettingsViewModel.uiState.collectAsStateWithLifecycle()

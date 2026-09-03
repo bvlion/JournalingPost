@@ -1,11 +1,14 @@
 package info.bvlion.journalingpost.journal.history
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -33,16 +36,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.ui.EventEffect
-import info.bvlion.journalingpost.ui.ScreenTopAppBar
+import info.bvlion.journalingpost.ui.fixedTopRegionBackgroundColor
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import java.time.LocalDate
 import java.time.LocalTime
@@ -59,6 +65,10 @@ private val historyTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.J
 /**
  * 記録履歴の画面。1日分だけを表示し、日付ナビゲーション行・日付指定・左右スワイプで表示日を切り替える。
  * どの日へ移動できるかの判断はViewModelが持ち、この画面は操作を伝えるだけにする。
+ *
+ * 下部NavigationBarが現在地(記録履歴)を示すため画面名の固定タイトルは持たない。ただし日付
+ * ナビゲーションは画面タイトルではなく操作UIなので、status bar直下へ固定して常に見えるようにし、
+ * 履歴コンテンツはその背後を通過してスクロールする。
  */
 @Composable
 fun JournalHistoryScreen(
@@ -78,26 +88,33 @@ fun JournalHistoryScreen(
   val deleteFailedMessage = stringResource(R.string.journal_history_delete_failed)
   EventEffect(deleteFailures) { onShowMessage(deleteFailedMessage) }
 
-  Column(modifier = Modifier.fillMaxSize()) {
-    ScreenTopAppBar(title = stringResource(R.string.tab_journal_history))
-
+  Box(modifier = Modifier.fillMaxSize()) {
     when (uiState) {
       JournalHistoryUiState.Loading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         CircularProgressIndicator()
       }
 
       is JournalHistoryUiState.Content -> {
+        // 日付ナビゲーションはstatus bar直下へ固定し、履歴コンテンツはその背後を通過させる。
+        // 初期表示でコンテンツ先頭がナビの裏へ隠れないよう、実測したナビ高さぶんだけ上を空ける。
+        var dateNavigationHeight by remember { mutableStateOf(0.dp) }
+        val density = LocalDensity.current
+
+        JournalHistoryDayPager(
+          uiState = uiState,
+          topContentPadding = dateNavigationHeight,
+          onSelectDate = onSelectDate,
+          onDeleteRequest = { pendingDeleteId = it.id },
+        )
         JournalHistoryDateNavigation(
           uiState = uiState,
           onPreviousDay = onPreviousDay,
           onNextDay = onNextDay,
           onToday = onToday,
           onDateJumpRequest = { showDateJump = true },
-        )
-        JournalHistoryDayPager(
-          uiState = uiState,
-          onSelectDate = onSelectDate,
-          onDeleteRequest = { pendingDeleteId = it.id },
+          modifier = Modifier
+            .align(Alignment.TopCenter)
+            .onGloballyPositioned { dateNavigationHeight = with(density) { it.size.height.toDp() } },
         )
       }
     }
@@ -138,12 +155,18 @@ private fun JournalHistoryDateNavigation(
   onNextDay: () -> Unit,
   onToday: () -> Unit,
   onDateJumpRequest: () -> Unit,
+  modifier: Modifier = Modifier,
 ) {
   val selectedDateText = uiState.selectedDate.format(historyDateFormatter)
   val dateJumpDescription = stringResource(R.string.journal_history_date_jump_description, selectedDateText)
 
+  // 背景はstatus bar領域まで広げ、上端保護と地続きに見せる。中身だけをstatus barの下へ寄せる。
   Row(
-    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+    modifier = modifier
+      .fillMaxWidth()
+      .background(fixedTopRegionBackgroundColor())
+      .statusBarsPadding()
+      .padding(horizontal = 4.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
     IconButton(onClick = onPreviousDay, enabled = !uiState.isEarliestDate) {
@@ -182,6 +205,7 @@ private fun JournalHistoryDateNavigation(
 @Composable
 private fun JournalHistoryDayPager(
   uiState: JournalHistoryUiState.Content,
+  topContentPadding: Dp,
   onSelectDate: (LocalDate) -> Unit,
   onDeleteRequest: (JournalHistoryItem) -> Unit,
 ) {
@@ -212,7 +236,10 @@ private fun JournalHistoryDayPager(
   HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
     val items = uiState.itemsOn(historyDateOfPage(page, uiState.earliestDate))
     if (items.isEmpty()) {
-      Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+      Box(
+        modifier = Modifier.fillMaxSize().padding(top = topContentPadding),
+        contentAlignment = Alignment.Center,
+      ) {
         Text(
           text = stringResource(
             if (uiState.hasAnyEntry) R.string.journal_history_day_empty else R.string.journal_history_empty,
@@ -221,7 +248,11 @@ private fun JournalHistoryDayPager(
         )
       }
     } else {
-      LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+      // 履歴の先頭は固定日付ナビの下から始め、スクロールでその背後を通過させる。
+      LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(top = topContentPadding),
+      ) {
         items(items, key = { it.id }) { item ->
           JournalHistoryRow(item = item, onDeleteRequest = { onDeleteRequest(item) })
         }

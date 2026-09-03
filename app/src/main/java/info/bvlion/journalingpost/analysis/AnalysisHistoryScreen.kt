@@ -36,8 +36,9 @@ import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.AnalysisRunResult
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.ui.EventEffect
-import info.bvlion.journalingpost.ui.ScreenTopAppBar
+import info.bvlion.journalingpost.ui.TopLevelScreen
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
+import info.bvlion.journalingpost.ui.topLevelListContentPadding
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -53,8 +54,12 @@ private val analysisDayFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日"
 /**
  * 解析履歴の遷移先。#37で保存したAnalysisResultを新しい順の一覧で表示する。
  *
- * 解析先(Custom WebhookまたはHosted)が有効な場合([canRunAnalysis])だけ、上部に「解析する」導線を
- * 出し、選択可能な日([selectableDays])から1日選んで手動解析を実行できる。実行結果はSnackbarで伝える。
+ * 下部NavigationBarが現在地(解析履歴)を示すため画面名の固定タイトルは持たず、コンテンツを
+ * edge-to-edgeでstatus barの下まで流す。「解析する」導線も画面固有の操作コンテンツとして、
+ * 解析結果一覧と一緒にスクロールさせる。
+ *
+ * 解析先(Custom WebhookまたはHosted)が有効な場合([canRunAnalysis])だけ「解析する」導線を出し、
+ * 選択可能な日([selectableDays])から1日選んで手動解析を実行できる。実行結果はSnackbarで伝える。
  * 対象日の記録が0件かどうかは実行後の解析処理側でも判定する(防御的なエラーハンドリングは残す)。
  *
  * 解析に成功して新しいAnalysisResultが一覧の先頭へ追加されたら、一覧を先頭へスクロールして、
@@ -95,45 +100,54 @@ fun AnalysisHistoryScreen(
     }
   }
 
-  Column(modifier = Modifier.fillMaxSize()) {
-    ScreenTopAppBar(title = stringResource(R.string.tab_analysis_history))
-
+  TopLevelScreen {
     // 選べる日が無いときは「解析する」を出さない。Hostedでは当日と解析済みの日を除くと
     // 対象が無くなることがある(その場合は自動解析か翌日以降に委ねる)。
-    if ((canRunAnalysis && selectableDays.isNotEmpty()) || isRunning) {
-      AnalysisTrigger(
-        canRunAnalysis = canRunAnalysis,
-        isRunning = isRunning,
-        selectableDays = selectableDays,
-        onAnalyze = onAnalyze,
-      )
-    }
+    val showTrigger = (canRunAnalysis && selectableDays.isNotEmpty()) || isRunning
 
     when (uiState) {
       AnalysisHistoryUiState.Loading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         CircularProgressIndicator()
       }
 
-      AnalysisHistoryUiState.Empty -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-          text = stringResource(R.string.analysis_history_empty),
-          style = MaterialTheme.typography.bodyMedium,
-        )
-      }
-
-      is AnalysisHistoryUiState.Content -> LazyColumn(
+      else -> LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = topLevelListContentPadding(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
       ) {
-        items(uiState.items, key = { it.id }) { item ->
-          AnalysisHistoryCard(item)
+        if (showTrigger) {
+          item(key = ANALYSIS_TRIGGER_ITEM_KEY) {
+            AnalysisTrigger(
+              canRunAnalysis = canRunAnalysis,
+              isRunning = isRunning,
+              selectableDays = selectableDays,
+              onAnalyze = onAnalyze,
+            )
+          }
+        }
+
+        if (uiState is AnalysisHistoryUiState.Content) {
+          items(uiState.items, key = { it.id }) { item ->
+            AnalysisHistoryCard(item)
+          }
+        }
+
+        if (uiState == AnalysisHistoryUiState.Empty) {
+          item(key = ANALYSIS_EMPTY_ITEM_KEY) {
+            Text(
+              text = stringResource(R.string.analysis_history_empty),
+              style = MaterialTheme.typography.bodyMedium,
+            )
+          }
         }
       }
     }
   }
 }
+
+private const val ANALYSIS_TRIGGER_ITEM_KEY = "analysis-trigger"
+private const val ANALYSIS_EMPTY_ITEM_KEY = "analysis-empty"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -145,7 +159,8 @@ private fun AnalysisTrigger(
 ) {
   var showDatePicker by remember { mutableStateOf(false) }
 
-  Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+  // 横方向の余白はLazyColumnのcontentPaddingが持つため、ここでは縦方向だけ空ける。
+  Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
     when {
       isRunning -> Row(verticalAlignment = Alignment.CenterVertically) {
         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
