@@ -52,7 +52,7 @@
   <!-- %1$s 解析日時 -->
   <string name="analysis_card_analyzed_at">解析日時：%1$s</string>
   <string name="analysis_failure_webhook_unavailable">Custom Webhookの設定を確認できませんでした</string>
-  <string name="analysis_failure_integration_unavailable">解析・連携が設定されていません</string>
+  <string name="analysis_failure_integration_unavailable">解析先が設定されていません</string>
   <!-- %1$s は解析対象に選んだ日 -->
   <string name="analysis_failure_no_entries">%1$s には記録がないため解析できませんでした</string>
   <string name="analysis_failure_local_read">端末内の記録を読み込めませんでした</string>
@@ -65,24 +65,24 @@
   <!-- ==== 初回案内(#67) ==== -->
   <!-- fresh install後の初回起動時に一度だけ表示する、AI解析機能の案内。 -->
   <string name="analysis_introduction_title">記録をAIで振り返れます</string>
-  <string name="analysis_introduction_body">記録した内容を、あとからAIで振り返れます。利用するには設定でAI解析を有効にする必要があります。有効にすると、対象の記録が外部の解析サービスへ送信されます。今は送信していません。</string>
+  <string name="analysis_introduction_body">記録した内容を、あとからAIで振り返れます。利用するには設定で解析先を選ぶ必要があります。選ぶと、対象の記録が外部の解析先へ送信されます。今は送信していません。</string>
   <string name="analysis_introduction_setup">設定する</string>
   <string name="analysis_introduction_skip">今はしない</string>
 
   <!-- ==== 設定 ==== -->
-  <string name="settings_analysis_integration_heading">解析・連携</string>
-  <string name="settings_integration_save_failed">解析・連携の設定を保存できませんでした</string>
+  <string name="settings_analysis_integration_heading">AIによる振り返り</string>
+  <string name="settings_integration_save_failed">AIによる振り返りの設定を保存できませんでした</string>
   <string name="settings_integration_none">使用しない</string>
-  <!-- 同じ「AIによる振り返り」を、誰が用意した送信先で行うかで対にした名称(#67)。 -->
-  <string name="settings_integration_custom_webhook">自分で用意したAI解析</string>
-  <string name="settings_integration_custom_webhook_description">送信先のURLや形式を自分で設定します</string>
-  <string name="settings_integration_hosted">アプリが用意するAI解析</string>
-  <string name="settings_integration_hosted_description">自動解析を基本の使い方とし、対象日の記録を設定した時刻ごろに送信してAI解析します。自動で解析されなかった過去の日は手動解析で補えます</string>
+  <!-- 同じ「AIによる振り返り」を、誰が解析先を用意するかで対にした名称(#67)。 -->
+  <string name="settings_integration_custom_webhook">自分で用意する解析先</string>
+  <string name="settings_integration_custom_webhook_description">解析先のURLや形式を自分で設定します</string>
+  <string name="settings_integration_hosted">アプリが用意する解析先</string>
+  <string name="settings_integration_hosted_description">自動解析を基本の使い方とし、対象日の記録を設定した時刻ごろに送信して振り返りを作ります。自動で解析されなかった過去の日は手動解析で補えます</string>
   <string name="settings_hosted_consent_title">記録を外部へ送信します</string>
-  <string name="settings_hosted_consent_body">アプリが用意するAI解析では、自動解析を基本の使い方とします。自動解析を有効にすると、対象日の記録が設定した時刻ごろにAI解析のため外部の解析サービスへ送信されます。自動解析が行われなかった日や失敗した過去の日は、手動解析でその対象期間の記録をそのつど送信して補えます。どちらの場合も記録の原本と解析結果は端末に保存され、サーバーには恒久保存されません。</string>
+  <string name="settings_hosted_consent_body">アプリが用意する解析先では、自動解析を基本の使い方とします。自動解析を有効にすると、対象日の記録が設定した時刻ごろにAIによる振り返りのため外部の解析先へ送信されます。自動解析が行われなかった日や失敗した過去の日は、手動解析でその対象期間の記録をそのつど送信して補えます。どちらの場合も記録の原本と解析結果は端末に保存され、サーバーには恒久保存されません。</string>
   <string name="settings_hosted_consent_confirm">同意して有効にする</string>
   <!-- 初回案内(#67)から遷移したときだけ、この見出しの下に一度だけ表示する短い補助表示。 -->
-  <string name="settings_analysis_integration_highlight">AI解析はこちら</string>
+  <string name="settings_analysis_integration_highlight">ここで選べます</string>
   <!-- 自動解析(#59)。解析先が有効なときだけ表示する。 -->
   <string name="settings_auto_analysis_heading">自動解析</string>
   <string name="settings_auto_analysis_item">自動で解析する</string>
