@@ -30,6 +30,7 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
   }
   initializer {
     OnboardingViewModel(
+      welcomeRepository = container.welcomeRepository,
       firstRecordRepository = container.firstRecordRepository,
       analysisIntroductionRepository = container.analysisIntroductionRepository,
     )

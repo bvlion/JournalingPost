@@ -41,7 +41,9 @@ import info.bvlion.journalingpost.mood.createInitialMoodCatalog
 import info.bvlion.journalingpost.onboarding.AnalysisIntroductionRepository
 import info.bvlion.journalingpost.onboarding.DataStoreAnalysisIntroductionRepository
 import info.bvlion.journalingpost.onboarding.DataStoreFirstRecordRepository
+import info.bvlion.journalingpost.onboarding.DataStoreWelcomeRepository
 import info.bvlion.journalingpost.onboarding.FirstRecordRepository
+import info.bvlion.journalingpost.onboarding.WelcomeRepository
 import info.bvlion.journalingpost.security.AndroidKeystoreCipher
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import info.bvlion.journalingpost.settings.AutoAnalysisSettingsRepository
@@ -120,6 +122,10 @@ internal class AppContainer(context: Context) {
 
   val firstRecordRepository: FirstRecordRepository by lazy {
     DataStoreFirstRecordRepository(createPreferenceDataStore(FIRST_RECORD_FILE_NAME))
+  }
+
+  val welcomeRepository: WelcomeRepository by lazy {
+    DataStoreWelcomeRepository(createPreferenceDataStore(WELCOME_FILE_NAME))
   }
 
   val journalEntryReader: JournalEntryReader get() = journalEntryRepository
@@ -275,6 +281,9 @@ internal class AppContainer(context: Context) {
 
     /** fresh install後、アプリ内で最初の記録が完了したか(#67)。秘密値ではないためbackup対象で構わない。 */
     const val FIRST_RECORD_FILE_NAME = "first_record_state"
+
+    /** 記録を促すウェルカムダイアログ(#67)を見たかどうか。秘密値ではないためbackup対象で構わない。 */
+    const val WELCOME_FILE_NAME = "welcome_state"
 
     /** 自動解析の設定(有効/無効・時刻・対象日)。秘密値ではないためbackup対象で構わない。 */
     const val AUTO_ANALYSIS_SETTINGS_FILE_NAME = "auto_analysis_settings"

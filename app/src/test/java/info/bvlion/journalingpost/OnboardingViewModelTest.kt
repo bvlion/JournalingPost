@@ -2,6 +2,7 @@ package info.bvlion.journalingpost
 
 import info.bvlion.journalingpost.onboarding.AnalysisIntroductionRepository
 import info.bvlion.journalingpost.onboarding.FirstRecordRepository
+import info.bvlion.journalingpost.onboarding.WelcomeRepository
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,32 +42,56 @@ class OnboardingViewModelTest {
   }
 
   @Test
-  fun `最初の記録が未完了ならウェルカム表示を出しAI振り返り案内は出さない`() = runTest(dispatcher) {
-    val viewModel = createViewModel(firstRecordCompleted = false, introductionSeen = false)
+  fun `ウェルカム未読ならウェルカムダイアログのみ出す`() = runTest(dispatcher) {
+    val viewModel = createViewModel(welcomeSeen = false, firstRecordCompleted = false, introductionSeen = false)
     collectUiState(viewModel)
     advanceUntilIdle()
 
-    assertTrue(viewModel.uiState.value.showWelcomeHint)
+    assertTrue(viewModel.uiState.value.showWelcomeDialog)
+    assertEquals(false, viewModel.uiState.value.highlightMoodSelection)
     assertEquals(false, viewModel.uiState.value.showAnalysisIntroduction)
   }
 
   @Test
-  fun `最初の記録完了後で案内未読ならAI振り返り案内を出す`() = runTest(dispatcher) {
-    val viewModel = createViewModel(firstRecordCompleted = true, introductionSeen = false)
+  fun `ウェルカム既読で記録未完了なら気分選択の視覚誘導のみ出す`() = runTest(dispatcher) {
+    val viewModel = createViewModel(welcomeSeen = true, firstRecordCompleted = false, introductionSeen = false)
     collectUiState(viewModel)
     advanceUntilIdle()
 
-    assertEquals(false, viewModel.uiState.value.showWelcomeHint)
+    assertEquals(false, viewModel.uiState.value.showWelcomeDialog)
+    assertTrue(viewModel.uiState.value.highlightMoodSelection)
+    assertEquals(false, viewModel.uiState.value.showAnalysisIntroduction)
+  }
+
+  @Test
+  fun `最初の記録完了後で案内未読ならAI振り返り案内のみ出す`() = runTest(dispatcher) {
+    val viewModel = createViewModel(welcomeSeen = true, firstRecordCompleted = true, introductionSeen = false)
+    collectUiState(viewModel)
+    advanceUntilIdle()
+
+    assertEquals(false, viewModel.uiState.value.showWelcomeDialog)
+    assertEquals(false, viewModel.uiState.value.highlightMoodSelection)
     assertTrue(viewModel.uiState.value.showAnalysisIntroduction)
   }
 
   @Test
   fun `AI振り返り案内が既読なら記録完了後も出さない`() = runTest(dispatcher) {
-    val viewModel = createViewModel(firstRecordCompleted = true, introductionSeen = true)
+    val viewModel = createViewModel(welcomeSeen = true, firstRecordCompleted = true, introductionSeen = true)
     collectUiState(viewModel)
     advanceUntilIdle()
 
     assertEquals(false, viewModel.uiState.value.showAnalysisIntroduction)
+  }
+
+  @Test
+  fun `ウェルカムダイアログを閉じると既読にする`() = runTest(dispatcher) {
+    val welcomeRepository = FakeWelcomeRepository(initial = false)
+    val viewModel = createViewModel(welcomeRepository = welcomeRepository)
+
+    viewModel.onWelcomeDialogDismissed()
+    advanceUntilIdle()
+
+    assertTrue(welcomeRepository.current)
   }
 
   @Test
@@ -84,6 +109,7 @@ class OnboardingViewModelTest {
   fun `設定するを選ぶと既読にして設定画面への遷移イベントを送る`() = runTest(dispatcher) {
     val analysisIntroductionRepository = FakeAnalysisIntroductionRepository(initial = false)
     val viewModel = createViewModel(
+      welcomeSeen = true,
       firstRecordCompleted = true,
       analysisIntroductionRepository = analysisIntroductionRepository,
     )
@@ -100,6 +126,7 @@ class OnboardingViewModelTest {
   fun `今はしないを選ぶと既読にするだけで遷移イベントは送らない`() = runTest(dispatcher) {
     val analysisIntroductionRepository = FakeAnalysisIntroductionRepository(initial = false)
     val viewModel = createViewModel(
+      welcomeSeen = true,
       firstRecordCompleted = true,
       analysisIntroductionRepository = analysisIntroductionRepository,
     )
@@ -116,6 +143,7 @@ class OnboardingViewModelTest {
   fun `既読の保存に失敗しても遷移イベントは送る`() = runTest(dispatcher) {
     val analysisIntroductionRepository = FakeAnalysisIntroductionRepository(initial = false, failNextMarks = 1)
     val viewModel = createViewModel(
+      welcomeSeen = true,
       firstRecordCompleted = true,
       analysisIntroductionRepository = analysisIntroductionRepository,
     )
@@ -129,12 +157,15 @@ class OnboardingViewModelTest {
   }
 
   private fun createViewModel(
+    welcomeSeen: Boolean = true,
     firstRecordCompleted: Boolean = false,
     introductionSeen: Boolean = false,
+    welcomeRepository: WelcomeRepository = FakeWelcomeRepository(initial = welcomeSeen),
     firstRecordRepository: FirstRecordRepository = FakeFirstRecordRepository(initial = firstRecordCompleted),
     analysisIntroductionRepository: AnalysisIntroductionRepository =
       FakeAnalysisIntroductionRepository(initial = introductionSeen),
   ) = OnboardingViewModel(
+    welcomeRepository = welcomeRepository,
     firstRecordRepository = firstRecordRepository,
     analysisIntroductionRepository = analysisIntroductionRepository,
   )
@@ -147,6 +178,23 @@ class OnboardingViewModelTest {
     val events = mutableListOf<OnboardingEvent>()
     collectorScope.launch { viewModel.events.collect { events += it } }
     return events
+  }
+
+  private class FakeWelcomeRepository(
+    initial: Boolean,
+    private var failNextMarks: Int = 0,
+  ) : WelcomeRepository {
+    private val state = MutableStateFlow(initial)
+    override val isWelcomeDialogSeen: Flow<Boolean> = state
+    val current: Boolean get() = state.value
+
+    override suspend fun markWelcomeDialogSeen() {
+      if (failNextMarks > 0) {
+        failNextMarks--
+        throw IOException("welcome dialog write failed")
+      }
+      state.value = true
+    }
   }
 
   private class FakeFirstRecordRepository(

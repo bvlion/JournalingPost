@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -24,6 +23,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.R
+import info.bvlion.journalingpost.ui.highlightedSection
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 
 /**
@@ -31,13 +31,14 @@ import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
  * Widgetと同じ記録ダイアログを開く。選択したMoodの保持やViewModel連携は呼び出し元が持つ。
  *
  * @param isNoteOnlyEntryVisible 設定で有効にしている場合だけ、Mood一覧の末尾へ「メモだけ記録」を出す。
- * @param showWelcomeMessage fresh install後、最初の記録が完了するまでの間だけtrue(#67)。
+ * @param highlightMoodSelection ウェルカムダイアログを閉じてから最初の記録が完了するまでの間だけtrue(#67)。
+ * 気分を選ぶ場所そのものを枠線・背景色で一時的に強調する。
  */
 @Composable
 fun MoodRecordScreen(
   moods: List<Mood>,
   isNoteOnlyEntryVisible: Boolean,
-  showWelcomeMessage: Boolean,
+  highlightMoodSelection: Boolean,
   onMoodClick: (Mood) -> Unit,
   onNoteOnlyClick: () -> Unit,
   modifier: Modifier = Modifier,
@@ -47,16 +48,6 @@ fun MoodRecordScreen(
     contentPadding = PaddingValues(16.dp),
     verticalArrangement = Arrangement.spacedBy(4.dp),
   ) {
-    if (showWelcomeMessage) {
-      item {
-        Text(
-          text = stringResource(R.string.record_welcome_message),
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.padding(bottom = 8.dp),
-        )
-      }
-    }
     item {
       Text(
         text = stringResource(R.string.record_screen_heading),
@@ -64,8 +55,15 @@ fun MoodRecordScreen(
         modifier = Modifier.padding(bottom = 8.dp),
       )
     }
-    items(moods, key = { it.id }) { mood ->
-      MoodRow(mood = mood, onClick = { onMoodClick(mood) })
+    // 強調の枠線・背景を一覧全体へ1つの領域として描くため、LazyColumnのitemsではなく
+    // 1つのitem内でColumnにまとめる。件数は最大10件(MoodValidator.MAX_MOOD_COUNT)のため
+    // 個々の行を遅延生成する恩恵は薄い。
+    item(key = MOOD_LIST_ITEM_KEY) {
+      Column(modifier = Modifier.highlightedSection(highlightMoodSelection)) {
+        moods.forEach { mood ->
+          MoodRow(mood = mood, onClick = { onMoodClick(mood) })
+        }
+      }
     }
     if (isNoteOnlyEntryVisible) {
       item(key = NOTE_ONLY_ITEM_KEY) {
@@ -117,6 +115,7 @@ private fun NoteOnlyRow(onClick: () -> Unit) {
   }
 }
 
+private const val MOOD_LIST_ITEM_KEY = "mood-list"
 private const val NOTE_ONLY_ITEM_KEY = "note-only-entry"
 
 @Preview(showBackground = true)
@@ -129,7 +128,7 @@ fun MoodRecordScreenPreview() {
         Mood(id = "2", emoji = "", label = "集中"),
       ),
       isNoteOnlyEntryVisible = true,
-      showWelcomeMessage = true,
+      highlightMoodSelection = true,
       onMoodClick = {},
       onNoteOnlyClick = {},
     )

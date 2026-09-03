@@ -36,6 +36,7 @@ import info.bvlion.journalingpost.AutoAnalysisSettingsUiState
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.SettingsUiState
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
+import info.bvlion.journalingpost.ui.highlightedSection
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -50,7 +51,10 @@ fun SettingsScreen(
   uiState: SettingsUiState,
   /** 「自動解析」セクションの状態。読み込み確定前はnullで、その間はセクションを出さない。 */
   autoAnalysisUiState: AutoAnalysisSettingsUiState?,
-  /** 初回案内(#67)から「設定する」で遷移した直後だけtrue。解析・連携セクションの場所を一度だけ示す。 */
+  /**
+   * 初回案内(#67)から「設定する」で遷移した直後だけtrue。「AIによる振り返り」セクションそのものを
+   * 枠線・背景色で一時的に強調し、場所が一目で分かるようにする。
+   */
   highlightAnalysisIntegration: Boolean,
   onAnalysisIntegrationChange: (AnalysisIntegration) -> Unit,
   onNoteOnlyEntryChange: (Boolean) -> Unit,
@@ -99,19 +103,15 @@ fun SettingsScreen(
         ),
       )
 
-      Column(modifier = Modifier.padding(16.dp)) {
+      Column(
+        modifier = Modifier
+          .highlightedSection(highlightAnalysisIntegration)
+          .padding(16.dp),
+      ) {
         Text(
           text = stringResource(R.string.settings_analysis_integration_heading),
           style = MaterialTheme.typography.titleSmall,
         )
-        if (highlightAnalysisIntegration) {
-          Text(
-            text = stringResource(R.string.settings_analysis_integration_highlight),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(top = 4.dp),
-          )
-        }
 
         Column(modifier = Modifier.padding(top = 8.dp).selectableGroup()) {
           AnalysisIntegrationOption(
@@ -330,9 +330,10 @@ private fun AutoAnalysisTargetDayOption(title: String, selected: Boolean, onClic
 }
 
 /**
- * Hostedを初めて有効化するときだけ確認する外部送信の同意ダイアログ(#67)。一度同意すれば、
- * 以後は同じ確認を繰り返さない。対象期間の気分やメモが外部の解析先へ送信されること、
- * 原本と解析結果は端末に残ることを伝える。
+ * 「アプリが用意する解析先」を初めて有効化するときだけ確認するダイアログ(#67)。一度確認すれば、
+ * 以後は同じ確認を繰り返さない。利用すると気分やメモがアプリ外のその解析先で解析されることを
+ * 伝える。自動解析のON/OFF・時刻・対象日等は別の設定(自動解析セクション)の話として、ここでは
+ * 説明しない。
  */
 @Composable
 fun HostedConsentDialog(

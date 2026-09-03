@@ -47,6 +47,7 @@ import info.bvlion.journalingpost.mood.MoodRecordScreen
 import info.bvlion.journalingpost.mood.MoodSettingsScreen
 import info.bvlion.journalingpost.mood.MoodSnapshot
 import info.bvlion.journalingpost.onboarding.AnalysisIntroductionDialog
+import info.bvlion.journalingpost.onboarding.WelcomeDialog
 import info.bvlion.journalingpost.settings.HostedConsentDialog
 import info.bvlion.journalingpost.settings.SettingsScreen
 import info.bvlion.journalingpost.settings.WebhookSettingsScreen
@@ -54,6 +55,7 @@ import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
 import java.util.Locale
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -262,7 +264,7 @@ class MainActivity : ComponentActivity() {
                     MoodRecordScreen(
                       moods = requireNotNull(moods),
                       isNoteOnlyEntryVisible = isNoteOnlyEntryEnabled == true,
-                      showWelcomeMessage = onboardingUiState.showWelcomeHint,
+                      highlightMoodSelection = onboardingUiState.highlightMoodSelection,
                       onMoodClick = { mood ->
                         viewModel.resetState()
                         selectedMoodId = mood.id
@@ -406,7 +408,13 @@ class MainActivity : ComponentActivity() {
                 MainViewModel.UiState.SUCCESS -> {
                   closeRecordOverlay()
                   showMessage(successMessage)
-                  onboardingViewModel.onRecordSucceeded()
+                  // closeRecordOverlay()のresetState()でuiStateがINITへ変わり、この
+                  // LaunchedEffect自体がキャンセルされるため、遅延分は独立したscopeで行う。
+                  // 「記録しました」のSnackbarを見せてから、AI振り返り案内(#67)を出す。
+                  scope.launch {
+                    delay(ONBOARDING_RECORD_SUCCESS_DELAY_MILLIS)
+                    onboardingViewModel.onRecordSucceeded()
+                  }
                 }
 
                 MainViewModel.UiState.FAILURE -> {
@@ -435,7 +443,9 @@ class MainActivity : ComponentActivity() {
               ),
           )
 
-          if (onboardingUiState.showAnalysisIntroduction) {
+          if (onboardingUiState.showWelcomeDialog) {
+            WelcomeDialog(onDismiss = onboardingViewModel::onWelcomeDialogDismissed)
+          } else if (onboardingUiState.showAnalysisIntroduction) {
             AnalysisIntroductionDialog(
               onSetup = onboardingViewModel::onAnalysisIntroductionSetupSelected,
               onDismiss = onboardingViewModel::onAnalysisIntroductionDismissed,
@@ -446,6 +456,9 @@ class MainActivity : ComponentActivity() {
     }
   }
 }
+
+/** 「記録しました」のSnackbarを利用者が認識できるだけの猶予を置いてから、AI振り返り案内(#67)を出す。 */
+private const val ONBOARDING_RECORD_SUCCESS_DELAY_MILLIS = 400L
 
 enum class MainDestination(
   @param:StringRes val labelRes: Int,

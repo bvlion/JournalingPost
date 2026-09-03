@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import info.bvlion.journalingpost.onboarding.AnalysisIntroductionRepository
 import info.bvlion.journalingpost.onboarding.FirstRecordRepository
+import info.bvlion.journalingpost.onboarding.WelcomeRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -17,19 +18,23 @@ import kotlinx.coroutines.launch
 /**
  * fresh install後の初回体験(#67)の状態。
  *
- * まず最初の記録が終わるまでは記録画面にウェルカム表示を出し、AI振り返りの案内は出さない。
- * 最初の記録が成功した後に、AI振り返りの案内を一度だけ出す。
+ * 1. ウェルカムダイアログを一度だけ出し、記録を促す。
+ * 2. 閉じた後、最初の記録が終わるまでは気分を選ぶ場所への視覚誘導を出す(AI振り返りの案内は出さない)。
+ * 3. 最初の記録が成功した後に、AI振り返りの案内を一度だけ出す。
  */
 class OnboardingViewModel(
+  private val welcomeRepository: WelcomeRepository,
   private val firstRecordRepository: FirstRecordRepository,
   private val analysisIntroductionRepository: AnalysisIntroductionRepository,
 ) : ViewModel() {
   val uiState: StateFlow<OnboardingUiState> = combine(
+    welcomeRepository.isWelcomeDialogSeen,
     firstRecordRepository.isFirstRecordCompleted,
     analysisIntroductionRepository.isIntroductionSeen,
-  ) { firstRecordCompleted, introductionSeen ->
+  ) { welcomeSeen, firstRecordCompleted, introductionSeen ->
     OnboardingUiState(
-      showWelcomeHint = !firstRecordCompleted,
+      showWelcomeDialog = !welcomeSeen,
+      highlightMoodSelection = welcomeSeen && !firstRecordCompleted,
       showAnalysisIntroduction = firstRecordCompleted && !introductionSeen,
     )
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OnboardingUiState())
@@ -37,9 +42,22 @@ class OnboardingViewModel(
   private val _events = Channel<OnboardingEvent>(Channel.BUFFERED)
   val events: Flow<OnboardingEvent> = _events.receiveAsFlow()
 
+  /** ウェルカムダイアログを閉じた。以後は出さず、気分を選ぶ場所への視覚誘導へ切り替える。 */
+  fun onWelcomeDialogDismissed() {
+    viewModelScope.launch {
+      try {
+        welcomeRepository.markWelcomeDialogSeen()
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        // 既読状態は表示制御のみに使う。保存に失敗しても今回の案内自体は進める。
+      }
+    }
+  }
+
   /**
-   * 記録が成功するたびに呼ぶ。まだ最初の記録が完了していなければ、ウェルカム表示を終わらせて
-   * AI振り返りの案内へ進める。既に完了済みの記録では何も変わらない(繰り返し呼んでよい)。
+   * 記録が成功するたびに呼ぶ。まだ最初の記録が完了していなければ、気分を選ぶ場所への視覚誘導を
+   * 終わらせてAI振り返りの案内へ進める。既に完了済みの記録では何も変わらない(繰り返し呼んでよい)。
    */
   fun onRecordSucceeded() {
     viewModelScope.launch {
@@ -79,11 +97,12 @@ class OnboardingViewModel(
 }
 
 /**
- * [showWelcomeHint] [showAnalysisIntroduction]とも読み込み確定前はfalse。読み込み中を
- * 「表示待ち」扱いにはせず、fresh installの利用開始を妨げない。
+ * 3つのフラグとも読み込み確定前はfalse。読み込み中を「表示待ち」扱いにはせず、
+ * fresh installの利用開始を妨げない。
  */
 data class OnboardingUiState(
-  val showWelcomeHint: Boolean = false,
+  val showWelcomeDialog: Boolean = false,
+  val highlightMoodSelection: Boolean = false,
   val showAnalysisIntroduction: Boolean = false,
 )
 
