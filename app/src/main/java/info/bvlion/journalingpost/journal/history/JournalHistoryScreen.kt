@@ -244,7 +244,7 @@ private fun JournalHistoryDayPager(
           text = stringResource(
             if (uiState.hasAnyEntry) R.string.journal_history_day_empty else R.string.journal_history_empty,
           ),
-          style = MaterialTheme.typography.bodyMedium,
+          style = MaterialTheme.typography.bodyLarge,
         )
       }
     } else {
@@ -374,7 +374,7 @@ private fun JournalHistoryRow(
       Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
           text = item.time.format(historyTimeFormatter),
-          style = MaterialTheme.typography.bodyMedium,
+          style = MaterialTheme.typography.bodyLarge,
         )
         val moodText = listOfNotNull(item.moodEmoji, item.moodLabel)
           .filter { it.isNotBlank() }
@@ -382,7 +382,7 @@ private fun JournalHistoryRow(
         if (moodText.isNotEmpty()) {
           Text(
             text = moodText,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(start = 8.dp),
           )
         }
@@ -390,7 +390,7 @@ private fun JournalHistoryRow(
       if (item.note != null) {
         Text(
           text = item.note,
-          style = MaterialTheme.typography.bodyMedium,
+          style = MaterialTheme.typography.bodyLarge,
           modifier = Modifier.padding(top = 2.dp),
         )
       }

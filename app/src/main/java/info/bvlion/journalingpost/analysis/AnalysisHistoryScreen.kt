@@ -112,7 +112,31 @@ fun AnalysisHistoryScreen(
         CircularProgressIndicator()
       }
 
-      else -> LazyColumn(
+      AnalysisHistoryUiState.Empty -> Column(
+        modifier = Modifier.fillMaxSize().padding(topLevelListContentPadding()),
+      ) {
+        // 解析先が有効なら結果が無くても「解析する」導線は残し、空状態メッセージは記録履歴と
+        // 揃えて残りの領域の中央へ置く。
+        if (showTrigger) {
+          AnalysisTrigger(
+            canRunAnalysis = canRunAnalysis,
+            isRunning = isRunning,
+            selectableDays = selectableDays,
+            onAnalyze = onAnalyze,
+          )
+        }
+        Box(
+          modifier = Modifier.weight(1f).fillMaxWidth(),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = stringResource(R.string.analysis_history_empty),
+            style = MaterialTheme.typography.bodyLarge,
+          )
+        }
+      }
+
+      is AnalysisHistoryUiState.Content -> LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = topLevelListContentPadding(),
@@ -129,19 +153,8 @@ fun AnalysisHistoryScreen(
           }
         }
 
-        if (uiState is AnalysisHistoryUiState.Content) {
-          items(uiState.items, key = { it.id }) { item ->
-            AnalysisHistoryCard(item)
-          }
-        }
-
-        if (uiState == AnalysisHistoryUiState.Empty) {
-          item(key = ANALYSIS_EMPTY_ITEM_KEY) {
-            Text(
-              text = stringResource(R.string.analysis_history_empty),
-              style = MaterialTheme.typography.bodyMedium,
-            )
-          }
+        items(uiState.items, key = { it.id }) { item ->
+          AnalysisHistoryCard(item)
         }
       }
     }
@@ -149,7 +162,6 @@ fun AnalysisHistoryScreen(
 }
 
 private const val ANALYSIS_TRIGGER_ITEM_KEY = "analysis-trigger"
-private const val ANALYSIS_EMPTY_ITEM_KEY = "analysis-empty"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -254,13 +266,13 @@ private fun AnalysisHistoryCard(item: AnalysisHistoryItem) {
     )
     Text(
       text = stringResource(R.string.analysis_card_analyzed_at, item.analyzedAt.format(analysisDateTimeFormatter)),
-      style = MaterialTheme.typography.bodySmall,
+      style = MaterialTheme.typography.bodyMedium,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
       modifier = Modifier.padding(top = 2.dp),
     )
     Text(
       text = item.body,
-      style = MaterialTheme.typography.bodyMedium,
+      style = MaterialTheme.typography.bodyLarge,
       modifier = Modifier.padding(top = 8.dp),
     )
   }

@@ -32,7 +32,7 @@
   <string name="record_success">記録しました</string>
 
   <!-- ==== 記録履歴 ==== -->
-  <string name="journal_history_empty">まだ記録がありません</string>
+  <string name="journal_history_empty">記録はありません</string>
   <string name="journal_history_day_empty">この日の記録はありません</string>
   <string name="journal_history_previous_day">前の日</string>
   <string name="journal_history_next_day">次の日</string>
@@ -47,7 +47,7 @@
   <string name="journal_history_delete_row_description">%1$sの記録を削除</string>
 
   <!-- ==== 解析履歴 ==== -->
-  <string name="analysis_history_empty">まだ解析結果がありません</string>
+  <string name="analysis_history_empty">解析結果はありません</string>
   <string name="analysis_run_button">解析する</string>
   <string name="analysis_running">解析中…</string>
   <string name="analysis_completed">解析が完了しました</string>
