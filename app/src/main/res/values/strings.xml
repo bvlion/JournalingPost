@@ -84,12 +84,12 @@
   <!-- 解析先そのものの違いのみを説明する。自動解析のON/OFF・時刻・対象日の説明はsettings_auto_analysis_*側の責務。 -->
   <string name="settings_integration_hosted_description">アプリがあらかじめ用意した解析先を使います</string>
   <!--
-    この解析先を利用することへの確認に集中させる(#67)。自動解析のON/OFF・時刻・対象日・手動解析との
-    役割分担は別の設定(自動解析セクション)の話のためここでは説明しない。「外部送信」という語は使わず、
-    警告調にもしない。
+    この解析先を利用することへの確認に集中させ、必要最小限の文面にする(#67)。自動解析のON/OFF・
+    時刻・対象日・手動解析との役割分担、保存場所への言及は別の設定や既存の理解に委ね、ここでは
+    説明しない。「外部送信」「アプリ外の」という語は使わず、警告調にもしない。
   -->
   <string name="settings_hosted_consent_title">アプリが用意する解析先を利用します</string>
-  <string name="settings_hosted_consent_body">アプリが用意する解析先を利用すると、気分やメモがアプリ外のその解析先で解析されます。記録の原本と解析結果は、これまでどおり端末にも保存されます。</string>
+  <string name="settings_hosted_consent_body">気分やメモは、このアプリとは別の解析先で解析され、AIによる振り返りが作られます。</string>
   <string name="settings_hosted_consent_confirm">有効にする</string>
   <!-- 自動解析(#59)。解析先が有効なときだけ表示する。 -->
   <string name="settings_auto_analysis_heading">自動解析</string>
