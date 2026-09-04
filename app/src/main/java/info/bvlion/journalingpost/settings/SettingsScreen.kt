@@ -62,6 +62,11 @@ fun SettingsScreen(
   onAutoAnalysisScheduleChange: (LocalTime, AutoAnalysisTargetDay) -> Unit,
   onMoodSettingsOpen: () -> Unit,
   onWebhookSettingsOpen: () -> Unit,
+  onWriteReviewOpen: () -> Unit,
+  onSendFeedbackOpen: () -> Unit,
+  onPrivacyPolicyOpen: () -> Unit,
+  /** インストール済みアプリのversionName。「バージョン」項目にそのまま表示する。 */
+  appVersionName: String,
   /** debugビルドでのみ非null。動作確認用fixtureの投入導線を出すかどうかを兼ねる。 */
   onSeedDebugFixtures: (() -> Unit)? = null,
 ) {
@@ -161,6 +166,13 @@ fun SettingsScreen(
         )
       }
 
+      AboutSection(
+        appVersionName = appVersionName,
+        onWriteReviewOpen = onWriteReviewOpen,
+        onSendFeedbackOpen = onSendFeedbackOpen,
+        onPrivacyPolicyOpen = onPrivacyPolicyOpen,
+      )
+
       if (onSeedDebugFixtures != null) {
         Column(modifier = Modifier.padding(16.dp)) {
           Text(
@@ -190,6 +202,47 @@ private fun AnalysisIntegrationOption(
     supportingContent = description?.let { { Text(it) } },
     leadingContent = { RadioButton(selected = selected, onClick = null) },
     modifier = Modifier.selectable(selected = selected, onClick = onClick, role = Role.RadioButton),
+  )
+}
+
+/**
+ * ストアレビュー・フィードバック・プライバシーポリシーの各外部導線と、現在のバージョン表示(Issue #73)。
+ * 「バージョン」はリンクにせず、versionNameを示すだけに留める。
+ */
+@Composable
+private fun AboutSection(
+  appVersionName: String,
+  onWriteReviewOpen: () -> Unit,
+  onSendFeedbackOpen: () -> Unit,
+  onPrivacyPolicyOpen: () -> Unit,
+) {
+  Column(modifier = Modifier.padding(top = 8.dp)) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+      Text(
+        text = stringResource(R.string.settings_about_heading),
+        style = MaterialTheme.typography.titleSmall,
+      )
+    }
+
+    ExternalLinkItem(stringResource(R.string.settings_about_review_item), onWriteReviewOpen)
+    ExternalLinkItem(stringResource(R.string.settings_about_feedback_item), onSendFeedbackOpen)
+    ExternalLinkItem(stringResource(R.string.settings_about_privacy_policy_item), onPrivacyPolicyOpen)
+
+    ListItem(
+      headlineContent = { Text(stringResource(R.string.settings_about_version_item)) },
+      trailingContent = { Text(appVersionName) },
+    )
+  }
+}
+
+@Composable
+private fun ExternalLinkItem(title: String, onClick: () -> Unit) {
+  ListItem(
+    headlineContent = { Text(title) },
+    trailingContent = {
+      Icon(painter = painterResource(R.drawable.ic_open_in_new), contentDescription = null)
+    },
+    modifier = Modifier.clickable(onClick = onClick),
   )
 }
 
@@ -376,6 +429,10 @@ fun SettingsScreenPreview() {
       onAutoAnalysisScheduleChange = { _, _ -> },
       onMoodSettingsOpen = {},
       onWebhookSettingsOpen = {},
+      onWriteReviewOpen = {},
+      onSendFeedbackOpen = {},
+      onPrivacyPolicyOpen = {},
+      appVersionName = "1.0.0",
     )
   }
 }

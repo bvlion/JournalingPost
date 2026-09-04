@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
@@ -55,6 +56,9 @@ import info.bvlion.journalingpost.onboarding.WelcomeDialog
 import info.bvlion.journalingpost.settings.HostedConsentDialog
 import info.bvlion.journalingpost.settings.SettingsScreen
 import info.bvlion.journalingpost.settings.WebhookSettingsScreen
+import info.bvlion.journalingpost.settings.openFeedbackForm
+import info.bvlion.journalingpost.settings.openPrivacyPolicy
+import info.bvlion.journalingpost.settings.openStoreListingForReview
 import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
@@ -112,6 +116,7 @@ class MainActivity : ComponentActivity() {
 
         val snackbarHostState = remember { SnackbarHostState() }
         val scope = rememberCoroutineScope()
+        val context = LocalContext.current
         val density = LocalDensity.current
         // 下部ナビはScaffoldの外にあるSnackbarHostへpaddingを渡せないため、実測した高さ(システムの
         // navigation bar inset込み)ぶんSnackbarを持ち上げる。Material3のNavigationBar高さ定数は
@@ -379,6 +384,10 @@ class MainActivity : ComponentActivity() {
                       onAutoAnalysisScheduleChange = autoAnalysisSettingsViewModel::setSchedule,
                       onMoodSettingsOpen = openMoodSettings,
                       onWebhookSettingsOpen = { openWebhookSettings(false) },
+                      onWriteReviewOpen = { openStoreListingForReview(context) },
+                      onSendFeedbackOpen = { openFeedbackForm(context) },
+                      onPrivacyPolicyOpen = { openPrivacyPolicy(context) },
+                      appVersionName = BuildConfig.VERSION_NAME,
                       onSeedDebugFixtures = if (BuildConfig.DEBUG) settingsViewModel::seedDebugFixtures else null,
                     )
 
