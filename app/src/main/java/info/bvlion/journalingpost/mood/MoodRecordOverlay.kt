@@ -10,10 +10,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -78,7 +81,7 @@ fun MoodRecordOverlay(
       },
   ) {
     Box(
-      modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+      modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding(),
       contentAlignment = Alignment.Center,
     ) {
       MoodRecordCard(
@@ -117,7 +120,7 @@ private fun MoodRecordCard(
     contentColor = AlertDialogDefaults.titleContentColor,
     tonalElevation = AlertDialogDefaults.TonalElevation,
   ) {
-    Column(modifier = Modifier.padding(24.dp)) {
+    Column(modifier = Modifier.verticalScroll(rememberScrollState()).padding(24.dp)) {
       if (mood == null) {
         Text(
           text = stringResource(R.string.record_note_only_heading),
