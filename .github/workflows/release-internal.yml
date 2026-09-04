@@ -1,0 +1,80 @@
+name: Release Internal
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-internal-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release-internal:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # RELEASE_JKS は Base64 encode 済み。decode 結果はファイルへ書き出し、logへ出さない。
+      - name: Decode release keystore
+        env:
+          RELEASE_JKS: ${{ secrets.RELEASE_JKS }}
+        run: echo "$RELEASE_JKS" | base64 -d > release.jks
+
+      # GOOGLE_PLAY_SERVICE_JSON も Base64 encode 済み。Google Play への配布認証に使う。
+      - name: Decode Google Play service account
+        env:
+          GOOGLE_PLAY_SERVICE_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_JSON }}
+        run: echo "$GOOGLE_PLAY_SERVICE_JSON" | base64 -d > google-play-service.json
+
+      # production 相当の release/minify 済み AAB を生成し、release.jks で署名する。
+      # HOSTED_ANALYSIS_BASE_URL を production Hosted Base URL として build へ反映する。
+      # 未設定・不正値の場合は verifyHostedAnalysisBaseUrl が build を失敗させる。
+      - name: Build signed release bundle
+        env:
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          HOSTED_ANALYSIS_BASE_URL: ${{ secrets.HOSTED_ANALYSIS_BASE_URL }}
+        run: ./gradlew :app:bundleRelease "-PhostedAnalysisBaseUrl=$HOSTED_ANALYSIS_BASE_URL"
+
+      # internal track へ配布。versionCode は app/build.gradle.kts で管理し、release ごとに
+      # 手動で更新する運用。status: completed で内部テスターへ即時反映する。
+      - name: Upload to Google Play internal track
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJson: google-play-service.json
+          packageName: info.bvlion.journalingpost
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          track: internal
+          status: completed
+
+      - name: Remove decoded secrets
+        if: always()
+        run: rm -f release.jks google-play-service.json
+
+      # build / 署名 / upload のいずれかが失敗しても job.status で失敗を通知する。
+      - name: Notify Slack
+        uses: 8398a7/action-slack@v3
+        if: always()
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+          username: GHA_INTERNAL_RELEASE
+          icon_emoji: ":sunglasses:"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

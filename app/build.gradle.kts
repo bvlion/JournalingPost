@@ -21,6 +21,11 @@ val hostedAnalysisBaseUrl: String = run {
     .getProperty("hostedAnalysisBaseUrl")?.trim().orEmpty()
 }
 
+// release署名用 keystore。内部テスト配布ワークフローが RELEASE_JKS secret を Base64 decode して
+// リポジトリ直下へ配置し、alias / password は環境変数で渡す。keystore が無い環境(ローカルでの
+// release build 確認や main push 時の CI)では署名せずに build する。
+val releaseKeystoreFile = rootProject.file("release.jks")
+
 android {
   namespace = "info.bvlion.journalingpost"
   compileSdk = 36
@@ -41,6 +46,17 @@ android {
     )
   }
 
+  val releaseSigningConfig = if (releaseKeystoreFile.exists()) {
+    signingConfigs.create("release") {
+      storeFile = releaseKeystoreFile
+      storePassword = System.getenv("KEYSTORE_PASSWORD")
+      keyAlias = System.getenv("KEYSTORE_ALIAS")
+      keyPassword = System.getenv("KEYSTORE_PASSWORD")
+    }
+  } else {
+    null
+  }
+
   buildTypes {
     release {
       isMinifyEnabled = true
@@ -48,6 +64,7 @@ android {
         getDefaultProguardFile("proguard-android-optimize.txt"),
         "proguard-rules.pro"
       )
+      signingConfig = releaseSigningConfig
     }
   }
   compileOptions {
