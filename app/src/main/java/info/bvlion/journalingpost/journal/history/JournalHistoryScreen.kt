@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.fixedTopRegionBackgroundColor
+import info.bvlion.journalingpost.ui.theme.HistoryReadingTextStyle
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import java.time.LocalDate
 import java.time.LocalTime
@@ -106,16 +107,20 @@ fun JournalHistoryScreen(
           onSelectDate = onSelectDate,
           onDeleteRequest = { pendingDeleteId = it.id },
         )
-        JournalHistoryDateNavigation(
-          uiState = uiState,
-          onPreviousDay = onPreviousDay,
-          onNextDay = onNextDay,
-          onToday = onToday,
-          onDateJumpRequest = { showDateJump = true },
-          modifier = Modifier
-            .align(Alignment.TopCenter)
-            .onGloballyPositioned { dateNavigationHeight = with(density) { it.size.height.toDp() } },
-        )
+        // 記録が1件も無い全体空状態では移動できる日が今日だけで操作対象も無いため、日付ナビは出さず
+        // 中央の案内だけにする。表示中の日だけ記録が無い場合(他の日に記録あり)はナビを残す。
+        if (uiState.hasAnyEntry) {
+          JournalHistoryDateNavigation(
+            uiState = uiState,
+            onPreviousDay = onPreviousDay,
+            onNextDay = onNextDay,
+            onToday = onToday,
+            onDateJumpRequest = { showDateJump = true },
+            modifier = Modifier
+              .align(Alignment.TopCenter)
+              .onGloballyPositioned { dateNavigationHeight = with(density) { it.size.height.toDp() } },
+          )
+        }
       }
     }
   }
@@ -244,7 +249,7 @@ private fun JournalHistoryDayPager(
           text = stringResource(
             if (uiState.hasAnyEntry) R.string.journal_history_day_empty else R.string.journal_history_empty,
           ),
-          style = MaterialTheme.typography.bodyLarge,
+          style = HistoryReadingTextStyle,
         )
       }
     } else {
@@ -374,7 +379,7 @@ private fun JournalHistoryRow(
       Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
           text = item.time.format(historyTimeFormatter),
-          style = MaterialTheme.typography.bodyLarge,
+          style = HistoryReadingTextStyle,
         )
         val moodText = listOfNotNull(item.moodEmoji, item.moodLabel)
           .filter { it.isNotBlank() }
@@ -382,7 +387,7 @@ private fun JournalHistoryRow(
         if (moodText.isNotEmpty()) {
           Text(
             text = moodText,
-            style = MaterialTheme.typography.bodyLarge,
+            style = HistoryReadingTextStyle,
             modifier = Modifier.padding(start = 8.dp),
           )
         }
@@ -390,7 +395,7 @@ private fun JournalHistoryRow(
       if (item.note != null) {
         Text(
           text = item.note,
-          style = MaterialTheme.typography.bodyLarge,
+          style = HistoryReadingTextStyle,
           modifier = Modifier.padding(top = 2.dp),
         )
       }

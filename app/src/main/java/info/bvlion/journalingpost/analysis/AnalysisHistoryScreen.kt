@@ -37,6 +37,7 @@ import info.bvlion.journalingpost.AnalysisRunResult
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.TopLevelScreen
+import info.bvlion.journalingpost.ui.theme.HistoryReadingTextStyle
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.ui.topLevelListContentPadding
 import java.time.LocalDate
@@ -131,7 +132,7 @@ fun AnalysisHistoryScreen(
         ) {
           Text(
             text = stringResource(R.string.analysis_history_empty),
-            style = MaterialTheme.typography.bodyLarge,
+            style = HistoryReadingTextStyle,
           )
         }
       }
@@ -272,7 +273,7 @@ private fun AnalysisHistoryCard(item: AnalysisHistoryItem) {
     )
     Text(
       text = item.body,
-      style = MaterialTheme.typography.bodyLarge,
+      style = HistoryReadingTextStyle,
       modifier = Modifier.padding(top = 8.dp),
     )
   }
