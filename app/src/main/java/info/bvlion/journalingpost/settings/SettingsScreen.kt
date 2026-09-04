@@ -324,7 +324,10 @@ private fun AboutSection(
     )
 
     Row(
-      modifier = Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 24.dp),
+      modifier = Modifier
+        .fillMaxWidth()
+        .heightIn(min = 56.dp)
+        .padding(horizontal = 24.dp, vertical = 7.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
       Icon(
