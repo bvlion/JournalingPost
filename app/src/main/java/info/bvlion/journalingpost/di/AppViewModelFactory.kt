@@ -10,6 +10,7 @@ import info.bvlion.journalingpost.AutoAnalysisSettingsViewModel
 import info.bvlion.journalingpost.JournalHistoryViewModel
 import info.bvlion.journalingpost.JournalingPostApplication
 import info.bvlion.journalingpost.MainViewModel
+import info.bvlion.journalingpost.MoodNoteInputViewModel
 import info.bvlion.journalingpost.MoodSettingsViewModel
 import info.bvlion.journalingpost.MoodViewModel
 import info.bvlion.journalingpost.NoteOnlyEntryViewModel
@@ -24,6 +25,9 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
   }
   initializer {
     MoodViewModel(repository = container.moodRepository)
+  }
+  initializer {
+    MoodNoteInputViewModel(repository = container.moodNoteInputRepository)
   }
   initializer {
     NoteOnlyEntryViewModel(repository = container.noteOnlyEntryRepository)
@@ -63,6 +67,7 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
       analysisIntegrationRepository = container.analysisIntegrationRepository,
       webhookSettingsRepository = container.webhookSettingsRepository,
       noteOnlyEntryRepository = container.noteOnlyEntryRepository,
+      moodNoteInputRepository = container.moodNoteInputRepository,
       hostedConsentRepository = container.hostedConsentRepository,
       refreshWidgets = container::refreshMoodWidgets,
       debugFixtureSeeder = container.debugFixtureSeeder,

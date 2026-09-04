@@ -73,6 +73,7 @@ class MainActivity : ComponentActivity() {
   private val settingsViewModel: SettingsViewModel by viewModels { appViewModelFactory }
   private val autoAnalysisSettingsViewModel: AutoAnalysisSettingsViewModel by viewModels { appViewModelFactory }
   private val moodViewModel: MoodViewModel by viewModels { appViewModelFactory }
+  private val moodNoteInputViewModel: MoodNoteInputViewModel by viewModels { appViewModelFactory }
   private val noteOnlyEntryViewModel: NoteOnlyEntryViewModel by viewModels { appViewModelFactory }
   private val moodSettingsViewModel: MoodSettingsViewModel by viewModels { appViewModelFactory }
   private val webhookSettingsViewModel: WebhookSettingsViewModel by viewModels { appViewModelFactory }
@@ -95,6 +96,7 @@ class MainActivity : ComponentActivity() {
         val uiState by viewModel.uiState.collectAsStateWithLifecycle()
         val moods by moodViewModel.moods.collectAsStateWithLifecycle()
         val isNoteOnlyEntryEnabled by noteOnlyEntryViewModel.isEnabled.collectAsStateWithLifecycle()
+        val isMoodNoteInputInitiallyOpen by moodNoteInputViewModel.isInitiallyOpen.collectAsStateWithLifecycle()
         val onboardingUiState by onboardingViewModel.uiState.collectAsStateWithLifecycle()
 
         var destination by rememberSaveable { mutableStateOf(MainDestination.RECORD) }
@@ -277,8 +279,12 @@ class MainActivity : ComponentActivity() {
                 )
               } else {
                 when (destination) {
-                  // Mood一覧と「メモだけ記録」の表示設定が揃うまでは、記録の選択肢を欠けたまま出さない。
-                  MainDestination.RECORD -> if (moods == null || isNoteOnlyEntryEnabled == null) {
+                  // Mood一覧と記録設定が揃うまでは、設定と異なる状態で操作を受け付けない。
+                  MainDestination.RECORD -> if (
+                    moods == null ||
+                    isNoteOnlyEntryEnabled == null ||
+                    isMoodNoteInputInitiallyOpen == null
+                  ) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                       CircularProgressIndicator()
                     }
@@ -339,6 +345,8 @@ class MainActivity : ComponentActivity() {
                       stringResource(R.string.settings_auto_analysis_save_failed)
                     val noteOnlySaveFailedMessage =
                       stringResource(R.string.settings_note_only_save_failed)
+                    val moodNoteInputSaveFailedMessage =
+                      stringResource(R.string.settings_mood_note_input_save_failed)
                     val debugFixturesSeededTemplate =
                       stringResource(R.string.settings_debug_fixtures_seeded)
                     val debugFixturesAlreadySeededMessage =
@@ -357,6 +365,7 @@ class MainActivity : ComponentActivity() {
                       when (event) {
                         SettingsEvent.IntegrationSaveFailed -> showMessage(integrationSaveFailedMessage)
                         SettingsEvent.NoteOnlyEntrySaveFailed -> showMessage(noteOnlySaveFailedMessage)
+                        SettingsEvent.MoodNoteInputSaveFailed -> showMessage(moodNoteInputSaveFailedMessage)
                         SettingsEvent.WebhookSetupRequested -> openWebhookSettings(true)
                         SettingsEvent.HostedConsentRequested -> showHostedConsent = true
                         is SettingsEvent.DebugFixturesSeeded -> showMessage(
@@ -380,6 +389,7 @@ class MainActivity : ComponentActivity() {
                       highlightAnalysisIntegration = highlightAnalysisIntegration,
                       onAnalysisIntegrationChange = settingsViewModel::setAnalysisIntegration,
                       onNoteOnlyEntryChange = settingsViewModel::setNoteOnlyEntryEnabled,
+                      onMoodNoteInputInitiallyOpenChange = settingsViewModel::setMoodNoteInputInitiallyOpen,
                       onAutoAnalysisEnabledChange = autoAnalysisSettingsViewModel::setEnabled,
                       onAutoAnalysisScheduleChange = autoAnalysisSettingsViewModel::setSchedule,
                       onMoodSettingsOpen = openMoodSettings,
@@ -415,6 +425,7 @@ class MainActivity : ComponentActivity() {
             val recordingMood = if (isNoteOnlyRecording) null else selectedMood
             MoodRecordOverlay(
               mood = recordingMood,
+              isNoteInitiallyVisible = recordingMood != null && isMoodNoteInputInitiallyOpen == true,
               isInteractionLocked = recordInProgress,
               // アプリ内では失敗もSnackbarで伝えるため、ダイアログ内のinline表示は使わない
               // (dialogは開いたままで、入力内容を保持して再試行できる)。

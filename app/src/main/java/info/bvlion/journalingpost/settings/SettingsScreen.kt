@@ -69,6 +69,7 @@ fun SettingsScreen(
   highlightAnalysisIntegration: Boolean,
   onAnalysisIntegrationChange: (AnalysisIntegration) -> Unit,
   onNoteOnlyEntryChange: (Boolean) -> Unit,
+  onMoodNoteInputInitiallyOpenChange: (Boolean) -> Unit,
   onAutoAnalysisEnabledChange: (Boolean) -> Unit,
   onAutoAnalysisScheduleChange: (LocalTime, AutoAnalysisTargetDay) -> Unit,
   onMoodSettingsOpen: () -> Unit,
@@ -137,6 +138,36 @@ fun SettingsScreen(
           value = noteOnlyEntryEnabled == true,
           enabled = noteOnlyEntryEnabled != null,
           onValueChange = onNoteOnlyEntryChange,
+          role = Role.Switch,
+        ),
+      )
+
+      val isMoodNoteInputInitiallyOpen = uiState.isMoodNoteInputInitiallyOpen
+      ListItem(
+        headlineContent = {
+          Text(
+            text = stringResource(R.string.settings_mood_note_input_item),
+            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp),
+          )
+        },
+        supportingContent = {
+          Text(
+            text = stringResource(R.string.settings_mood_note_input_item_description),
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        },
+        trailingContent = {
+          Switch(
+            checked = isMoodNoteInputInitiallyOpen == true,
+            onCheckedChange = null,
+            enabled = isMoodNoteInputInitiallyOpen != null,
+          )
+        },
+        modifier = Modifier.toggleable(
+          value = isMoodNoteInputInitiallyOpen == true,
+          enabled = isMoodNoteInputInitiallyOpen != null,
+          onValueChange = onMoodNoteInputInitiallyOpenChange,
           role = Role.Switch,
         ),
       )
@@ -577,6 +608,7 @@ fun SettingsScreenPreview() {
         webhookConfigured = true,
         webhookDestinationLabel = "https://hooks.example.com",
         noteOnlyEntryEnabled = true,
+        isMoodNoteInputInitiallyOpen = true,
       ),
       autoAnalysisUiState = AutoAnalysisSettingsUiState(
         enabled = true,
@@ -586,6 +618,7 @@ fun SettingsScreenPreview() {
       highlightAnalysisIntegration = false,
       onAnalysisIntegrationChange = {},
       onNoteOnlyEntryChange = {},
+      onMoodNoteInputInitiallyOpenChange = {},
       onAutoAnalysisEnabledChange = {},
       onAutoAnalysisScheduleChange = { _, _ -> },
       onMoodSettingsOpen = {},

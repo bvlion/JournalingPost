@@ -108,6 +108,9 @@
   <string name="settings_note_only_item">「メモだけ記録」を表示</string>
   <string name="settings_note_only_item_description">記録画面とWidgetに、気分を選ばずメモだけを記録する導線を追加</string>
   <string name="settings_note_only_save_failed">「メモだけ記録」の設定を保存できませんでした</string>
+  <string name="settings_mood_note_input_item">気分を選んだらメモを開く</string>
+  <string name="settings_mood_note_input_item_description">気分を選んだ直後から任意のメモを入力</string>
+  <string name="settings_mood_note_input_save_failed">メモ入力の設定を保存できませんでした</string>
   <string name="settings_webhook_item">Webhook設定</string>
   <string name="settings_webhook_destination_unknown">設定済み</string>
 

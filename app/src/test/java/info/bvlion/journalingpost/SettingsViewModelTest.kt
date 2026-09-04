@@ -6,6 +6,7 @@ import info.bvlion.journalingpost.journal.JournalEntry
 import info.bvlion.journalingpost.mood.Mood
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
+import info.bvlion.journalingpost.settings.MoodNoteInputRepository
 import info.bvlion.journalingpost.settings.NoteOnlyEntryRepository
 import java.time.Instant
 import java.time.ZoneOffset
@@ -364,12 +365,14 @@ class SettingsViewModelTest {
     webhookRepository: WebhookSettingsRepository,
     noteOnlyEntryRepository: NoteOnlyEntryRepository = FakeNoteOnlyEntryRepository(),
     hostedConsentRepository: HostedConsentRepository = FakeHostedConsentRepository(),
+    moodNoteInputRepository: MoodNoteInputRepository = FakeMoodNoteInputRepository(),
     refreshWidgets: suspend () -> Unit = {},
     debugFixtureSeeder: DebugFixtureSeeder? = null,
   ) = SettingsViewModel(
     analysisIntegrationRepository = integrationRepository,
     webhookSettingsRepository = webhookRepository,
     noteOnlyEntryRepository = noteOnlyEntryRepository,
+    moodNoteInputRepository = moodNoteInputRepository,
     hostedConsentRepository = hostedConsentRepository,
     refreshWidgets = refreshWidgets,
     debugFixtureSeeder = debugFixtureSeeder,
@@ -500,6 +503,42 @@ class SettingsViewModelTest {
     assertTrue(events.isEmpty())
   }
 
+  @Test
+  fun `Mood記録のメモ入力を開く設定を保存して表示へ反映する`() = runTest(dispatcher) {
+    val moodNoteInputRepository = FakeMoodNoteInputRepository()
+    val viewModel = createViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+      moodNoteInputRepository = moodNoteInputRepository,
+    )
+    collectUiState(viewModel)
+    val events = collectEvents(viewModel)
+
+    viewModel.setMoodNoteInputInitiallyOpen(true)
+    advanceUntilIdle()
+
+    assertEquals(true, moodNoteInputRepository.current)
+    assertEquals(true, viewModel.uiState.value.isMoodNoteInputInitiallyOpen)
+    assertTrue(events.isEmpty())
+  }
+
+  @Test
+  fun `Mood記録のメモ入力設定の保存に失敗するとMoodNoteInputSaveFailedを通知する`() = runTest(dispatcher) {
+    val moodNoteInputRepository = FakeMoodNoteInputRepository(failNextSets = 1)
+    val viewModel = createViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+      moodNoteInputRepository = moodNoteInputRepository,
+    )
+    val events = collectEvents(viewModel)
+
+    viewModel.setMoodNoteInputInitiallyOpen(true)
+    advanceUntilIdle()
+
+    assertEquals(false, moodNoteInputRepository.current)
+    assertEquals(listOf(SettingsEvent.MoodNoteInputSaveFailed), events)
+  }
+
   private fun collectUiState(viewModel: SettingsViewModel) {
     collectorScope.launch { viewModel.uiState.collect {} }
   }
@@ -563,6 +602,23 @@ class SettingsViewModelTest {
         throw IOException("note only entry write failed")
       }
       state.value = enabled
+    }
+  }
+
+  private class FakeMoodNoteInputRepository(
+    initial: Boolean = false,
+    private var failNextSets: Int = 0,
+  ) : MoodNoteInputRepository {
+    private val state = MutableStateFlow(initial)
+    override val isMoodNoteInputInitiallyOpen: Flow<Boolean> = state
+    val current: Boolean get() = state.value
+
+    override suspend fun setMoodNoteInputInitiallyOpen(isOpen: Boolean) {
+      if (failNextSets > 0) {
+        failNextSets--
+        throw IOException("mood note input write failed")
+      }
+      state.value = isOpen
     }
   }
 

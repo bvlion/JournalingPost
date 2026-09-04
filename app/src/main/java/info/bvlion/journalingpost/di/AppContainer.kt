@@ -49,7 +49,9 @@ import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import info.bvlion.journalingpost.settings.AutoAnalysisSettingsRepository
 import info.bvlion.journalingpost.settings.DataStoreAnalysisIntegrationRepository
 import info.bvlion.journalingpost.settings.DataStoreAutoAnalysisSettingsRepository
+import info.bvlion.journalingpost.settings.DataStoreMoodNoteInputRepository
 import info.bvlion.journalingpost.settings.DataStoreNoteOnlyEntryRepository
+import info.bvlion.journalingpost.settings.MoodNoteInputRepository
 import info.bvlion.journalingpost.settings.NoteOnlyEntryRepository
 import info.bvlion.journalingpost.settings.WebhookAwareAnalysisIntegrationRepository
 import info.bvlion.journalingpost.webhook.AndroidKeystoreWebhookSettingsCipher
@@ -114,6 +116,10 @@ internal class AppContainer(context: Context) {
 
   val noteOnlyEntryRepository: NoteOnlyEntryRepository by lazy {
     DataStoreNoteOnlyEntryRepository(createPreferenceDataStore(NOTE_ONLY_ENTRY_FILE_NAME))
+  }
+
+  val moodNoteInputRepository: MoodNoteInputRepository by lazy {
+    DataStoreMoodNoteInputRepository(createPreferenceDataStore(MOOD_NOTE_INPUT_FILE_NAME))
   }
 
   val analysisIntroductionRepository: AnalysisIntroductionRepository by lazy {
@@ -273,6 +279,8 @@ internal class AppContainer(context: Context) {
     const val MOOD_SETTINGS_FILE_NAME = "mood_settings"
 
     const val NOTE_ONLY_ENTRY_FILE_NAME = "note_only_entry_settings"
+
+    const val MOOD_NOTE_INPUT_FILE_NAME = "mood_note_input_settings"
 
     /** AI振り返りの初回案内(#67)を見たかどうか。秘密値ではないためbackup対象で構わない。 */
     const val ANALYSIS_INTRODUCTION_FILE_NAME = "analysis_introduction_state"
