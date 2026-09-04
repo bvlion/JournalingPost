@@ -1,10 +1,15 @@
 package info.bvlion.journalingpost
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Box
@@ -53,6 +58,7 @@ import info.bvlion.journalingpost.mood.MoodSettingsScreen
 import info.bvlion.journalingpost.mood.MoodSnapshot
 import info.bvlion.journalingpost.onboarding.AnalysisIntroductionDialog
 import info.bvlion.journalingpost.onboarding.WelcomeDialog
+import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.HostedConsentDialog
 import info.bvlion.journalingpost.settings.SettingsScreen
 import info.bvlion.journalingpost.settings.WebhookSettingsScreen
@@ -64,6 +70,7 @@ import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -98,6 +105,35 @@ class MainActivity : ComponentActivity() {
         val isNoteOnlyEntryEnabled by noteOnlyEntryViewModel.isEnabled.collectAsStateWithLifecycle()
         val isMoodNoteInputInitiallyOpen by moodNoteInputViewModel.isInitiallyOpen.collectAsStateWithLifecycle()
         val onboardingUiState by onboardingViewModel.uiState.collectAsStateWithLifecycle()
+
+        var pendingLocalNetworkPermissionAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+        var hasRequestedLocalNetworkPermission by rememberSaveable { mutableStateOf(false) }
+        val localNetworkPermissionLauncher = rememberLauncherForActivityResult(
+          ActivityResultContracts.RequestPermission(),
+        ) {
+          // 拒否時も公開先のWebhookは利用できるため、要求前の操作自体は
+          // 既存どおり続行する。
+          pendingLocalNetworkPermissionAction?.invoke()
+          pendingLocalNetworkPermissionAction = null
+        }
+        LaunchedEffect(Unit) {
+          if (
+            Build.VERSION.SDK_INT >= 37 &&
+            checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) != PackageManager.PERMISSION_GRANTED
+          ) {
+            val container = (application as JournalingPostApplication).container
+            val isAutoAnalysisEnabled = container.autoAnalysisSettingsRepository.autoAnalysisSettings.first().enabled
+            if (
+              isAutoAnalysisEnabled &&
+              container.analysisIntegrationRepository.analysisIntegration.first() ==
+              AnalysisIntegration.CUSTOM_WEBHOOK &&
+              !hasRequestedLocalNetworkPermission
+            ) {
+              hasRequestedLocalNetworkPermission = true
+              localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
+            }
+          }
+        }
 
         var destination by rememberSaveable { mutableStateOf(MainDestination.RECORD) }
         var showWebhookSettings by rememberSaveable { mutableStateOf(false) }
@@ -321,6 +357,7 @@ class MainActivity : ComponentActivity() {
                   MainDestination.ANALYSIS_HISTORY -> {
                     val analysisHistoryUiState by analysisHistoryViewModel.uiState.collectAsStateWithLifecycle()
                     val canRunAnalysis by analysisHistoryViewModel.canRunAnalysis.collectAsStateWithLifecycle()
+                    val isCustomWebhook by analysisHistoryViewModel.isCustomWebhook.collectAsStateWithLifecycle()
                     val isAnalysisRunning by analysisHistoryViewModel.isAnalysisRunning.collectAsStateWithLifecycle()
                     val selectableDays by analysisHistoryViewModel.selectableDays.collectAsStateWithLifecycle()
                     AnalysisHistoryScreen(
@@ -330,7 +367,22 @@ class MainActivity : ComponentActivity() {
                       selectableDays = selectableDays,
                       runResults = analysisHistoryViewModel.runResults,
                       onShowMessage = showMessage,
-                      onAnalyze = analysisHistoryViewModel::analyze,
+                      onAnalyze = { day ->
+                        if (
+                          Build.VERSION.SDK_INT >= 37 &&
+                          isCustomWebhook &&
+                          !hasRequestedLocalNetworkPermission &&
+                          checkSelfPermission(
+                            Manifest.permission.ACCESS_LOCAL_NETWORK,
+                          ) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                          pendingLocalNetworkPermissionAction = { analysisHistoryViewModel.analyze(day) }
+                          hasRequestedLocalNetworkPermission = true
+                          localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
+                        } else {
+                          analysisHistoryViewModel.analyze(day)
+                        }
+                      },
                     )
                   }
 
@@ -383,6 +435,21 @@ class MainActivity : ComponentActivity() {
                       }
                     }
 
+                    LaunchedEffect(settingsUiState.selectedIntegration, autoAnalysisUiState?.enabled) {
+                      if (
+                        Build.VERSION.SDK_INT >= 37 &&
+                        settingsUiState.selectedIntegration == AnalysisIntegration.CUSTOM_WEBHOOK &&
+                        autoAnalysisUiState?.enabled == true &&
+                        !hasRequestedLocalNetworkPermission &&
+                        checkSelfPermission(
+                          Manifest.permission.ACCESS_LOCAL_NETWORK,
+                        ) != PackageManager.PERMISSION_GRANTED
+                      ) {
+                        hasRequestedLocalNetworkPermission = true
+                        localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
+                      }
+                    }
+
                     SettingsScreen(
                       uiState = settingsUiState,
                       autoAnalysisUiState = autoAnalysisUiState,
@@ -390,7 +457,23 @@ class MainActivity : ComponentActivity() {
                       onAnalysisIntegrationChange = settingsViewModel::setAnalysisIntegration,
                       onNoteOnlyEntryChange = settingsViewModel::setNoteOnlyEntryEnabled,
                       onMoodNoteInputInitiallyOpenChange = settingsViewModel::setMoodNoteInputInitiallyOpen,
-                      onAutoAnalysisEnabledChange = autoAnalysisSettingsViewModel::setEnabled,
+                      onAutoAnalysisEnabledChange = { enabled ->
+                        if (
+                          Build.VERSION.SDK_INT >= 37 &&
+                          enabled &&
+                          settingsUiState.selectedIntegration == AnalysisIntegration.CUSTOM_WEBHOOK &&
+                          !hasRequestedLocalNetworkPermission &&
+                          checkSelfPermission(
+                            Manifest.permission.ACCESS_LOCAL_NETWORK,
+                          ) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                          pendingLocalNetworkPermissionAction = { autoAnalysisSettingsViewModel.setEnabled(true) }
+                          hasRequestedLocalNetworkPermission = true
+                          localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
+                        } else {
+                          autoAnalysisSettingsViewModel.setEnabled(enabled)
+                        }
+                      },
                       onAutoAnalysisScheduleChange = autoAnalysisSettingsViewModel::setSchedule,
                       onMoodSettingsOpen = openMoodSettings,
                       onWebhookSettingsOpen = { openWebhookSettings(false) },

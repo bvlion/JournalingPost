@@ -105,7 +105,7 @@ class SettingsViewModel(
     pendingHostedSelection.value = false
     _highlightAnalysisIntegration.value = highlightAnalysisIntegration
     // 前回の表示中に発生して画面へ届かなかった結果は、次回表示へ持ち越さない。
-    while (_events.tryReceive().isSuccess) Unit
+    while (_events.tryReceive().isSuccess) {}
   }
 
   /** Webhook設定画面から戻ったら、保留していた選択表示は解除して永続化済みの値へ従う。 */
