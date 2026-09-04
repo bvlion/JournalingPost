@@ -25,7 +25,6 @@ sealed interface JournalHistoryUiState {
     /** 未来日は表示しないため、「今日を表示中か」と「翌日へ進めないか」は同じ条件になる。 */
     val isToday: Boolean get() = selectedDate == today
 
-    /** 「前の日へ進めないか」と同じ条件になる。 */
     val isEarliestDate: Boolean get() = selectedDate == earliestDate
 
     /** 記録が1件も無い利用者へ、「この日は記録なし」ではなく初回向けの案内を出すために使う。 */

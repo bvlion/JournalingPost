@@ -50,7 +50,6 @@ class AnalysisHistoryViewModel(
     }
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AnalysisHistoryUiState.Loading)
 
-  /** 解析先(Custom WebhookまたはHosted)が選ばれているときだけ、手動解析の導線を出す。 */
   val canRunAnalysis: StateFlow<Boolean> = analysisIntegrationRepository.analysisIntegration
     .map { it == AnalysisIntegration.CUSTOM_WEBHOOK || it == AnalysisIntegration.HOSTED }
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
@@ -73,7 +72,7 @@ class AnalysisHistoryViewModel(
     )
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
-  /** 解析実行中かどうか。実行中の表示と二重実行の抑止に使う継続的な状態。 */
+  /** 実行中の表示と二重実行の抑止に使う。 */
   private val _isAnalysisRunning = MutableStateFlow(false)
   val isAnalysisRunning: StateFlow<Boolean> = _isAnalysisRunning.asStateFlow()
 

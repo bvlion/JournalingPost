@@ -74,14 +74,12 @@ class AutoAnalysisSettingsViewModel(
   }
 }
 
-/** 設定画面の「自動解析」セクションの継続的な状態。 */
 data class AutoAnalysisSettingsUiState(
   val enabled: Boolean,
   val timeOfDay: LocalTime,
   val targetDay: AutoAnalysisTargetDay,
 )
 
-/** 「自動解析」セクションで1度だけ扱う操作結果。 */
 sealed interface AutoAnalysisSettingsEvent {
   data object SaveFailed : AutoAnalysisSettingsEvent
 }
