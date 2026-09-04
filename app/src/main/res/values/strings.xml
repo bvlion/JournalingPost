@@ -111,6 +111,12 @@
   <string name="settings_webhook_item">Webhook設定</string>
   <string name="settings_webhook_destination_unknown">設定済み</string>
 
+  <string name="settings_about_heading">このアプリについて</string>
+  <string name="settings_about_review_item">応援レビューを書く</string>
+  <string name="settings_about_feedback_item">フィードバックを送る</string>
+  <string name="settings_about_privacy_policy_item">プライバシーポリシー</string>
+  <string name="settings_about_version_item">バージョン</string>
+
   <!-- 開発者向け。debugビルドの設定画面でのみ表示する。 -->
   <string name="settings_debug_heading">開発者向け</string>
   <string name="settings_debug_seed_fixtures_item">動作確認用データを投入</string>
