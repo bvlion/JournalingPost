@@ -9,3 +9,11 @@
 .cxx
 /.kotlin/
 local.properties
+
+# release署名・Google Play配布用の秘密情報(CIがsecretからdecodeして生成、commit禁止)
+/release.jks
+*.keystore
+/google-play-service.json
+/.envrc
+# Android Studio の署名付きbundle出力先
+/app/release/
