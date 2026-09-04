@@ -68,6 +68,7 @@ import info.bvlion.journalingpost.settings.openStoreListingForReview
 import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
+import java.time.LocalDate
 import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -106,15 +107,21 @@ class MainActivity : ComponentActivity() {
         val isMoodNoteInputInitiallyOpen by moodNoteInputViewModel.isInitiallyOpen.collectAsStateWithLifecycle()
         val onboardingUiState by onboardingViewModel.uiState.collectAsStateWithLifecycle()
 
-        var pendingLocalNetworkPermissionAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+        // 権限ダイアログ中に画面が再生成されても、要求前の操作を結果受領後に再開できるよう値で保持する。
+        var pendingAnalysisDayEpochDay by rememberSaveable { mutableStateOf<Long?>(null) }
+        var isAutoAnalysisEnablePending by rememberSaveable { mutableStateOf(false) }
         var hasRequestedLocalNetworkPermission by rememberSaveable { mutableStateOf(false) }
         val localNetworkPermissionLauncher = rememberLauncherForActivityResult(
           ActivityResultContracts.RequestPermission(),
         ) {
           // 拒否時も公開先のWebhookは利用できるため、要求前の操作自体は
           // 既存どおり続行する。
-          pendingLocalNetworkPermissionAction?.invoke()
-          pendingLocalNetworkPermissionAction = null
+          pendingAnalysisDayEpochDay?.let { analysisHistoryViewModel.analyze(LocalDate.ofEpochDay(it)) }
+          if (isAutoAnalysisEnablePending) {
+            autoAnalysisSettingsViewModel.setEnabled(true)
+          }
+          pendingAnalysisDayEpochDay = null
+          isAutoAnalysisEnablePending = false
         }
         LaunchedEffect(Unit) {
           if (
@@ -376,7 +383,7 @@ class MainActivity : ComponentActivity() {
                             Manifest.permission.ACCESS_LOCAL_NETWORK,
                           ) != PackageManager.PERMISSION_GRANTED
                         ) {
-                          pendingLocalNetworkPermissionAction = { analysisHistoryViewModel.analyze(day) }
+                          pendingAnalysisDayEpochDay = day.toEpochDay()
                           hasRequestedLocalNetworkPermission = true
                           localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
                         } else {
@@ -467,7 +474,7 @@ class MainActivity : ComponentActivity() {
                             Manifest.permission.ACCESS_LOCAL_NETWORK,
                           ) != PackageManager.PERMISSION_GRANTED
                         ) {
-                          pendingLocalNetworkPermissionAction = { autoAnalysisSettingsViewModel.setEnabled(true) }
+                          isAutoAnalysisEnablePending = true
                           hasRequestedLocalNetworkPermission = true
                           localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
                         } else {
