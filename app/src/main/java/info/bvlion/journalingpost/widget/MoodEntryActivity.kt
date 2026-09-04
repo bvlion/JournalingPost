@@ -27,6 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import info.bvlion.journalingpost.MainViewModel
+import info.bvlion.journalingpost.MoodNoteInputViewModel
 import info.bvlion.journalingpost.MoodViewModel
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.di.appViewModelFactory
@@ -41,6 +42,7 @@ import kotlinx.coroutines.launch
 class MoodEntryActivity : ComponentActivity() {
   private val viewModel: MainViewModel by viewModels { appViewModelFactory }
   private val moodViewModel: MoodViewModel by viewModels { appViewModelFactory }
+  private val moodNoteInputViewModel: MoodNoteInputViewModel by viewModels { appViewModelFactory }
   private var moodId by mutableStateOf<String?>(null)
 
   // 「メモだけ記録」はMoodを持たないため、moodIdの有無とは別に保持する。
@@ -64,6 +66,7 @@ class MoodEntryActivity : ComponentActivity() {
     setContent {
       JournalingPostTheme {
         val moods by moodViewModel.moods.collectAsStateWithLifecycle()
+        val isMoodNoteInputInitiallyOpen by moodNoteInputViewModel.isInitiallyOpen.collectAsStateWithLifecycle()
         val currentMoodId = moodId
         val isNoteOnlyEntry = isNoteOnly
         val currentMood = moods?.firstOrNull { it.id == currentMoodId }
@@ -73,7 +76,7 @@ class MoodEntryActivity : ComponentActivity() {
           if (!isNoteOnlyEntry && moods != null && currentMood == null) finish()
         }
 
-        if (isNoteOnlyEntry || currentMood != null) {
+        if (isNoteOnlyEntry || (currentMood != null && isMoodNoteInputInitiallyOpen != null)) {
           val recordingMood = if (isNoteOnlyEntry) null else currentMood
           val currentSessionId = sessionId
           val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -81,6 +84,7 @@ class MoodEntryActivity : ComponentActivity() {
           key(currentSessionId) {
             MoodEntryScreen(
               mood = recordingMood,
+              isNoteInitiallyVisible = recordingMood != null && isMoodNoteInputInitiallyOpen == true,
               uiState = uiState,
               onRecord = { note ->
                 viewModel.record(
@@ -159,6 +163,7 @@ private const val CLOSE_FADE_DURATION_MS = 250
 @Composable
 fun MoodEntryScreen(
   mood: Mood?,
+  isNoteInitiallyVisible: Boolean,
   uiState: MainViewModel.UiState,
   onRecord: (String) -> Unit,
   onClose: () -> Unit,
@@ -213,6 +218,7 @@ fun MoodEntryScreen(
 
   MoodRecordOverlay(
     mood = mood,
+    isNoteInitiallyVisible = isNoteInitiallyVisible,
     isInteractionLocked = isInteractionLocked,
     hasFailure = hasFailure,
     onRecord = { note ->
@@ -230,6 +236,7 @@ fun MoodEntryScreenPreview() {
   JournalingPostTheme {
     MoodEntryScreen(
       mood = Mood(id = "1", emoji = "😄", label = "嬉しい"),
+      isNoteInitiallyVisible = false,
       uiState = MainViewModel.UiState.INIT,
       onRecord = {},
       onClose = {},
@@ -243,6 +250,7 @@ fun NoteOnlyEntryScreenPreview() {
   JournalingPostTheme {
     MoodEntryScreen(
       mood = null,
+      isNoteInitiallyVisible = false,
       uiState = MainViewModel.UiState.INIT,
       onRecord = {},
       onClose = {},

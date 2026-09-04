@@ -7,6 +7,7 @@ import info.bvlion.journalingpost.debug.DebugFixtureSeeder
 import info.bvlion.journalingpost.hosted.HostedConsentRepository
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
+import info.bvlion.journalingpost.settings.MoodNoteInputRepository
 import info.bvlion.journalingpost.settings.NoteOnlyEntryRepository
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
 import info.bvlion.journalingpost.webhook.WebhookSettingsState
@@ -32,6 +33,7 @@ class SettingsViewModel(
   private val analysisIntegrationRepository: AnalysisIntegrationRepository,
   private val webhookSettingsRepository: WebhookSettingsRepository,
   private val noteOnlyEntryRepository: NoteOnlyEntryRepository,
+  private val moodNoteInputRepository: MoodNoteInputRepository,
   private val hostedConsentRepository: HostedConsentRepository,
   private val refreshWidgets: suspend () -> Unit,
   /** debugビルドでのみ非null。動作確認用fixtureの投入導線を出すかどうかの判定にも使う。 */
@@ -55,8 +57,13 @@ class SettingsViewModel(
     webhookSettingsRepository.settings,
     pendingCustomWebhookSelection,
     pendingHostedSelection,
-    noteOnlyEntryRepository.isNoteOnlyEntryEnabled,
-  ) { integration, webhookSettings, pendingCustomWebhook, pendingHosted, noteOnlyEntryEnabled ->
+    combine(
+      noteOnlyEntryRepository.isNoteOnlyEntryEnabled,
+      moodNoteInputRepository.isMoodNoteInputInitiallyOpen,
+    ) { noteOnlyEntryEnabled, isMoodNoteInputInitiallyOpen ->
+      noteOnlyEntryEnabled to isMoodNoteInputInitiallyOpen
+    },
+  ) { integration, webhookSettings, pendingCustomWebhook, pendingHosted, recordingSettings ->
     SettingsUiState(
       selectedIntegration = when {
         pendingCustomWebhook -> AnalysisIntegration.CUSTOM_WEBHOOK
@@ -70,7 +77,8 @@ class SettingsViewModel(
       } else {
         null
       },
-      noteOnlyEntryEnabled = noteOnlyEntryEnabled,
+      noteOnlyEntryEnabled = recordingSettings.first,
+      isMoodNoteInputInitiallyOpen = recordingSettings.second,
     )
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -203,6 +211,18 @@ class SettingsViewModel(
     }
   }
 
+  fun setMoodNoteInputInitiallyOpen(isOpen: Boolean) {
+    viewModelScope.launch {
+      try {
+        moodNoteInputRepository.setMoodNoteInputInitiallyOpen(isOpen)
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        _events.send(SettingsEvent.MoodNoteInputSaveFailed)
+      }
+    }
+  }
+
   /** debugビルドの設定画面からのみ呼ばれる。releaseでは[debugFixtureSeeder]がnullで何もしない。 */
   fun seedDebugFixtures() {
     val seeder = debugFixtureSeeder ?: return
@@ -245,12 +265,16 @@ data class SettingsUiState(
   val webhookDestinationLabel: String? = null,
   /** 「メモだけ記録」を表示するか。読み込み確定前はnull。 */
   val noteOnlyEntryEnabled: Boolean? = null,
+  /** Mood記録の開始時からメモ入力を開くか。読み込み確定前はnull。 */
+  val isMoodNoteInputInitiallyOpen: Boolean? = null,
 )
 
 sealed interface SettingsEvent {
   data object IntegrationSaveFailed : SettingsEvent
 
   data object NoteOnlyEntrySaveFailed : SettingsEvent
+
+  data object MoodNoteInputSaveFailed : SettingsEvent
 
   /** Custom Webhookを選んだが保存済み設定が無く、Webhook設定画面へ進める必要がある。 */
   data object WebhookSetupRequested : SettingsEvent
