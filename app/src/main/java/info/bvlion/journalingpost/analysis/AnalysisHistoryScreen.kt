@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.AnalysisRunResult
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.ui.EventEffect
+import info.bvlion.journalingpost.ui.HistoryEmptyMessage
 import info.bvlion.journalingpost.ui.TopLevelScreen
 import info.bvlion.journalingpost.ui.theme.HistoryReadingTextStyle
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
@@ -113,27 +114,24 @@ fun AnalysisHistoryScreen(
         CircularProgressIndicator()
       }
 
-      AnalysisHistoryUiState.Empty -> Column(
-        modifier = Modifier.fillMaxSize().padding(topLevelListContentPadding()),
-      ) {
-        // 解析先が有効なら結果が無くても「解析する」導線は残し、空状態メッセージは記録履歴と
-        // 揃えて残りの領域の中央へ置く。
+      AnalysisHistoryUiState.Empty -> {
+        // 案内は記録履歴の全体空状態と縦位置を揃えるため、画面領域全体の中央へ置く。
+        HistoryEmptyMessage(stringResource(R.string.analysis_history_empty))
+        // 解析先が有効なら結果が無くても「解析する」導線は残す。案内の縦位置が導線の有無で
+        // 変わらないよう、導線は中央の案内とは重ねて上端へ置く。
         if (showTrigger) {
-          AnalysisTrigger(
-            canRunAnalysis = canRunAnalysis,
-            isRunning = isRunning,
-            selectableDays = selectableDays,
-            onAnalyze = onAnalyze,
-          )
-        }
-        Box(
-          modifier = Modifier.weight(1f).fillMaxWidth(),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text = stringResource(R.string.analysis_history_empty),
-            style = HistoryReadingTextStyle,
-          )
+          Box(
+            modifier = Modifier
+              .align(Alignment.TopStart)
+              .padding(topLevelListContentPadding()),
+          ) {
+            AnalysisTrigger(
+              canRunAnalysis = canRunAnalysis,
+              isRunning = isRunning,
+              selectableDays = selectableDays,
+              onAnalyze = onAnalyze,
+            )
+          }
         }
       }
 
