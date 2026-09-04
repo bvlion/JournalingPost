@@ -1,14 +1,22 @@
 package info.bvlion.journalingpost.settings
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -25,12 +33,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import info.bvlion.journalingpost.AutoAnalysisSettingsUiState
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.SettingsUiState
@@ -65,7 +76,6 @@ fun SettingsScreen(
   onWriteReviewOpen: () -> Unit,
   onSendFeedbackOpen: () -> Unit,
   onPrivacyPolicyOpen: () -> Unit,
-  /** インストール済みアプリのversionName。「バージョン」項目にそのまま表示する。 */
   appVersionName: String,
   /** debugビルドでのみ非null。動作確認用fixtureの投入導線を出すかどうかを兼ねる。 */
   onSeedDebugFixtures: (() -> Unit)? = null,
@@ -77,11 +87,23 @@ fun SettingsScreen(
       modifier = Modifier
         .fillMaxSize()
         .verticalScroll(rememberScrollState())
-        .padding(top = statusBarSpacing()),
+        .padding(top = statusBarSpacing())
+        .padding(top = 16.dp, bottom = 24.dp),
     ) {
       ListItem(
-        headlineContent = { Text(stringResource(R.string.settings_mood_item)) },
-        supportingContent = { Text(stringResource(R.string.settings_mood_item_description)) },
+        headlineContent = {
+          Text(
+            text = stringResource(R.string.settings_mood_item),
+            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp),
+          )
+        },
+        supportingContent = {
+          Text(
+            text = stringResource(R.string.settings_mood_item_description),
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        },
         trailingContent = {
           Icon(painter = painterResource(R.drawable.ic_chevron_right), contentDescription = null)
         },
@@ -91,8 +113,19 @@ fun SettingsScreen(
       // 読み込み確定前は現在値を断定できないため、操作を受け付けない。
       val noteOnlyEntryEnabled = uiState.noteOnlyEntryEnabled
       ListItem(
-        headlineContent = { Text(stringResource(R.string.settings_note_only_item)) },
-        supportingContent = { Text(stringResource(R.string.settings_note_only_item_description)) },
+        headlineContent = {
+          Text(
+            text = stringResource(R.string.settings_note_only_item),
+            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp),
+          )
+        },
+        supportingContent = {
+          Text(
+            text = stringResource(R.string.settings_note_only_item_description),
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        },
         trailingContent = {
           Switch(
             checked = noteOnlyEntryEnabled == true,
@@ -111,14 +144,22 @@ fun SettingsScreen(
       Column(
         modifier = Modifier
           .highlightedSection(highlightAnalysisIntegration)
-          .padding(16.dp),
+          .padding(top = 28.dp),
       ) {
         Text(
           text = stringResource(R.string.settings_analysis_integration_heading),
-          style = MaterialTheme.typography.titleSmall,
+          style = MaterialTheme.typography.titleMedium.copy(
+            fontSize = 18.sp,
+            lineHeight = 24.sp,
+            fontWeight = FontWeight.Medium,
+          ),
+          modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
         )
 
-        Column(modifier = Modifier.padding(top = 8.dp).selectableGroup()) {
+        Column(
+          modifier = Modifier.selectableGroup(),
+          verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
           AnalysisIntegrationOption(
             title = stringResource(R.string.settings_integration_none),
             selected = uiState.selectedIntegration == AnalysisIntegration.NONE,
@@ -142,9 +183,19 @@ fun SettingsScreen(
       // Custom Webhookが実際に有効(保存済み設定が存在する)な場合のみ、その設定項目を出す。
       if (uiState.webhookConfigured) {
         ListItem(
-          headlineContent = { Text(stringResource(R.string.settings_webhook_item)) },
+          headlineContent = {
+            Text(
+              text = stringResource(R.string.settings_webhook_item),
+              style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp),
+            )
+          },
           supportingContent = {
-            Text(uiState.webhookDestinationLabel ?: stringResource(R.string.settings_webhook_destination_unknown))
+            Text(
+              text = uiState.webhookDestinationLabel
+                ?: stringResource(R.string.settings_webhook_destination_unknown),
+              style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
           },
           trailingContent = {
             Icon(painter = painterResource(R.drawable.ic_chevron_right), contentDescription = null)
@@ -174,15 +225,29 @@ fun SettingsScreen(
       )
 
       if (onSeedDebugFixtures != null) {
-        Column(modifier = Modifier.padding(16.dp)) {
-          Text(
-            text = stringResource(R.string.settings_debug_heading),
-            style = MaterialTheme.typography.titleSmall,
-          )
-        }
+        Text(
+          text = stringResource(R.string.settings_debug_heading),
+          style = MaterialTheme.typography.titleMedium.copy(
+            fontSize = 18.sp,
+            lineHeight = 24.sp,
+            fontWeight = FontWeight.Medium,
+          ),
+          modifier = Modifier.padding(start = 24.dp, top = 28.dp, end = 24.dp, bottom = 8.dp),
+        )
         ListItem(
-          headlineContent = { Text(stringResource(R.string.settings_debug_seed_fixtures_item)) },
-          supportingContent = { Text(stringResource(R.string.settings_debug_seed_fixtures_description)) },
+          headlineContent = {
+            Text(
+              text = stringResource(R.string.settings_debug_seed_fixtures_item),
+              style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp),
+            )
+          },
+          supportingContent = {
+            Text(
+              text = stringResource(R.string.settings_debug_seed_fixtures_description),
+              style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          },
           modifier = Modifier.clickable(onClick = onSeedDebugFixtures),
         )
       }
@@ -197,18 +262,33 @@ private fun AnalysisIntegrationOption(
   onClick: () -> Unit,
   description: String? = null,
 ) {
-  ListItem(
-    headlineContent = { Text(title) },
-    supportingContent = description?.let { { Text(it) } },
-    leadingContent = { RadioButton(selected = selected, onClick = null) },
-    modifier = Modifier.selectable(selected = selected, onClick = onClick, role = Role.RadioButton),
-  )
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .heightIn(min = 48.dp)
+      .selectable(selected = selected, onClick = onClick, role = Role.RadioButton)
+      .padding(horizontal = 24.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    RadioButton(selected = selected, onClick = null)
+    Spacer(modifier = Modifier.width(12.dp))
+    Column(modifier = Modifier.weight(1f).padding(vertical = 4.dp)) {
+      Text(
+        text = title,
+        style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp),
+      )
+      if (description != null) {
+        Text(
+          text = description,
+          style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.padding(top = 2.dp),
+        )
+      }
+    }
+  }
 }
 
-/**
- * ストアレビュー・フィードバック・プライバシーポリシーの各外部導線と、現在のバージョン表示(Issue #73)。
- * 「バージョン」はリンクにせず、versionNameを示すだけに留める。
- */
 @Composable
 private fun AboutSection(
   appVersionName: String,
@@ -216,34 +296,88 @@ private fun AboutSection(
   onSendFeedbackOpen: () -> Unit,
   onPrivacyPolicyOpen: () -> Unit,
 ) {
-  Column(modifier = Modifier.padding(top = 8.dp)) {
-    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-      Text(
-        text = stringResource(R.string.settings_about_heading),
-        style = MaterialTheme.typography.titleSmall,
-      )
-    }
-
-    ExternalLinkItem(stringResource(R.string.settings_about_review_item), onWriteReviewOpen)
-    ExternalLinkItem(stringResource(R.string.settings_about_feedback_item), onSendFeedbackOpen)
-    ExternalLinkItem(stringResource(R.string.settings_about_privacy_policy_item), onPrivacyPolicyOpen)
-
-    ListItem(
-      headlineContent = { Text(stringResource(R.string.settings_about_version_item)) },
-      trailingContent = { Text(appVersionName) },
+  Column {
+    Text(
+      text = stringResource(R.string.settings_about_heading),
+      style = MaterialTheme.typography.titleMedium.copy(
+        fontSize = 18.sp,
+        lineHeight = 24.sp,
+        fontWeight = FontWeight.Medium,
+      ),
+      modifier = Modifier.padding(start = 24.dp, top = 28.dp, end = 24.dp, bottom = 8.dp),
     )
+
+    ExternalLinkItem(
+      title = stringResource(R.string.settings_about_review_item),
+      iconResourceId = R.drawable.ic_settings_review,
+      onClick = onWriteReviewOpen,
+    )
+    ExternalLinkItem(
+      title = stringResource(R.string.settings_about_feedback_item),
+      iconResourceId = R.drawable.ic_settings_feedback,
+      onClick = onSendFeedbackOpen,
+    )
+    ExternalLinkItem(
+      title = stringResource(R.string.settings_about_privacy_policy_item),
+      iconResourceId = R.drawable.ic_settings_privacy,
+      onClick = onPrivacyPolicyOpen,
+    )
+
+    Row(
+      modifier = Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 24.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Icon(
+        painter = painterResource(R.drawable.ic_settings_version),
+        contentDescription = null,
+        modifier = Modifier.size(24.dp),
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      Spacer(modifier = Modifier.width(20.dp))
+      Column {
+        Text(
+          text = stringResource(R.string.settings_about_version_item),
+          style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp),
+        )
+        Text(
+          text = appVersionName,
+          style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+    }
   }
 }
 
 @Composable
-private fun ExternalLinkItem(title: String, onClick: () -> Unit) {
-  ListItem(
-    headlineContent = { Text(title) },
-    trailingContent = {
-      Icon(painter = painterResource(R.drawable.ic_open_in_new), contentDescription = null)
-    },
-    modifier = Modifier.clickable(onClick = onClick),
-  )
+private fun ExternalLinkItem(title: String, iconResourceId: Int, onClick: () -> Unit) {
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .height(56.dp)
+      .clickable(onClick = onClick, role = Role.Button)
+      .padding(horizontal = 24.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Icon(
+      painter = painterResource(iconResourceId),
+      contentDescription = null,
+      modifier = Modifier.size(24.dp),
+      tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(modifier = Modifier.width(20.dp))
+    Text(
+      text = title,
+      style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp),
+      modifier = Modifier.weight(1f),
+    )
+    Icon(
+      painter = painterResource(R.drawable.ic_chevron_right),
+      contentDescription = null,
+      modifier = Modifier.size(20.dp),
+      tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+  }
 }
 
 private val autoAnalysisTimeFormatter = DateTimeFormatter.ofPattern("H:mm")
@@ -268,17 +402,28 @@ private fun AutoAnalysisSection(
 ) {
   var showScheduleDialog by remember { mutableStateOf(false) }
 
-  Column(modifier = Modifier.padding(top = 8.dp)) {
+  Column(modifier = Modifier.padding(top = 12.dp)) {
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
       Text(
         text = stringResource(R.string.settings_auto_analysis_heading),
-        style = MaterialTheme.typography.titleSmall,
+        style = MaterialTheme.typography.titleMedium,
       )
     }
 
     ListItem(
-      headlineContent = { Text(stringResource(R.string.settings_auto_analysis_item)) },
-      supportingContent = { Text(stringResource(R.string.settings_auto_analysis_item_description)) },
+      headlineContent = {
+        Text(
+          text = stringResource(R.string.settings_auto_analysis_item),
+          style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp),
+        )
+      },
+      supportingContent = {
+        Text(
+          text = stringResource(R.string.settings_auto_analysis_item_description),
+          style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      },
       trailingContent = {
         Switch(checked = uiState.enabled, onCheckedChange = null)
       },
@@ -291,15 +436,28 @@ private fun AutoAnalysisSection(
 
     if (uiState.enabled) {
       ListItem(
-        headlineContent = { Text(stringResource(R.string.settings_auto_analysis_schedule_item)) },
-        supportingContent = { Text(stringResource(R.string.settings_auto_analysis_time_note)) },
+        headlineContent = {
+          Text(
+            text = stringResource(R.string.settings_auto_analysis_schedule_item),
+            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp),
+          )
+        },
+        supportingContent = {
+          Text(
+            text = stringResource(R.string.settings_auto_analysis_time_note),
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        },
         trailingContent = {
           Text(
-            stringResource(
+            text = stringResource(
               R.string.settings_auto_analysis_schedule_summary,
               uiState.timeOfDay.format(autoAnalysisTimeFormatter),
               autoAnalysisTargetDayLabel(uiState.targetDay),
             ),
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
         },
         modifier = Modifier.clickable { showScheduleDialog = true },

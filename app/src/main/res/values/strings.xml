@@ -111,7 +111,6 @@
   <string name="settings_webhook_item">Webhook設定</string>
   <string name="settings_webhook_destination_unknown">設定済み</string>
 
-  <!-- このアプリについて。外部導線(ストアレビュー・フィードバック・プライバシーポリシー)と現在のバージョン表示。 -->
   <string name="settings_about_heading">このアプリについて</string>
   <string name="settings_about_review_item">応援レビューを書く</string>
   <string name="settings_about_feedback_item">フィードバックを送る</string>
