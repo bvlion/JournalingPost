@@ -235,8 +235,7 @@ class SettingsViewModel(
 }
 
 /**
- * Settings画面の継続的な状態。読み込み確定前の値を「使用しない」と誤表示しないため、
- * [selectedIntegration]の初期値はnullにする。
+ * 読み込み確定前の値を「使用しない」と誤表示しないため、[selectedIntegration]の初期値はnullにする。
  */
 data class SettingsUiState(
   val selectedIntegration: AnalysisIntegration? = null,
@@ -248,7 +247,6 @@ data class SettingsUiState(
   val noteOnlyEntryEnabled: Boolean? = null,
 )
 
-/** Settings画面で1度だけ扱う操作結果。 */
 sealed interface SettingsEvent {
   data object IntegrationSaveFailed : SettingsEvent
 
@@ -260,12 +258,9 @@ sealed interface SettingsEvent {
   /** Hostedを選んだので、JournalEntryが外部送信されることへの同意を確認する。 */
   data object HostedConsentRequested : SettingsEvent
 
-  /** debugビルドの動作確認用fixtureを投入した。 */
   data class DebugFixturesSeeded(val entryCount: Int, val analysisResultCount: Int) : SettingsEvent
 
-  /** debugビルドの動作確認用fixtureは投入済みで、何も追加しなかった。 */
   data object DebugFixturesAlreadySeeded : SettingsEvent
 
-  /** debugビルドの動作確認用fixtureの投入に失敗した。 */
   data object DebugFixturesSeedFailed : SettingsEvent
 }

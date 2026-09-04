@@ -211,7 +211,6 @@ class WebhookSettingsViewModel(
   }
 }
 
-/** Webhook設定画面の継続的な状態。 */
 data class WebhookSettingsUiState(
   val loadState: WebhookSettingsLoadState = WebhookSettingsLoadState.LOADING,
   val form: WebhookFormState = WebhookFormState(),
@@ -224,7 +223,7 @@ enum class WebhookSettingsLoadState {
   READY,
 }
 
-/** Webhook設定の保存操作の結果。SUCCEEDEDはCustom Webhookの有効化まで成功した場合のみ。 */
+/** SUCCEEDEDは、設定の保存に加えてCustom Webhookの有効化まで成功した場合のみ。 */
 enum class WebhookSaveResult {
   SUCCEEDED,
   FAILED,

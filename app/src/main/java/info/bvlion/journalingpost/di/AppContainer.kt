@@ -208,7 +208,6 @@ internal class AppContainer(context: Context) {
     DataStoreAutoAnalysisAttemptStore(createPreferenceDataStore(AUTO_ANALYSIS_STATE_FILE_NAME))
   }
 
-  /** 自動解析1回分の実行本体。[AutoAnalysisWorker]から使う。 */
   val autoAnalyzer: AutoAnalyzer by lazy {
     AutoAnalyzer(
       autoAnalysisSettingsRepository = autoAnalysisSettingsRepository,
@@ -220,7 +219,6 @@ internal class AppContainer(context: Context) {
     )
   }
 
-  /** 自動解析の実行タイミングをAndroid側で管理するscheduler。 */
   val autoAnalysisScheduler: AutoAnalysisScheduler by lazy {
     AutoAnalysisScheduler(
       context = context,
