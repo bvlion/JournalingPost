@@ -36,7 +36,9 @@ import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.AnalysisRunResult
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.ui.EventEffect
+import info.bvlion.journalingpost.ui.HistoryEmptyMessage
 import info.bvlion.journalingpost.ui.TopLevelScreen
+import info.bvlion.journalingpost.ui.theme.HistoryReadingTextStyle
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.ui.topLevelListContentPadding
 import java.time.LocalDate
@@ -112,7 +114,28 @@ fun AnalysisHistoryScreen(
         CircularProgressIndicator()
       }
 
-      else -> LazyColumn(
+      AnalysisHistoryUiState.Empty -> {
+        // 案内は記録履歴の全体空状態と縦位置を揃えるため、画面領域全体の中央へ置く。
+        HistoryEmptyMessage(stringResource(R.string.analysis_history_empty))
+        // 解析先が有効なら結果が無くても「解析する」導線は残す。案内の縦位置が導線の有無で
+        // 変わらないよう、導線は中央の案内とは重ねて上端へ置く。
+        if (showTrigger) {
+          Box(
+            modifier = Modifier
+              .align(Alignment.TopStart)
+              .padding(topLevelListContentPadding()),
+          ) {
+            AnalysisTrigger(
+              canRunAnalysis = canRunAnalysis,
+              isRunning = isRunning,
+              selectableDays = selectableDays,
+              onAnalyze = onAnalyze,
+            )
+          }
+        }
+      }
+
+      is AnalysisHistoryUiState.Content -> LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = topLevelListContentPadding(),
@@ -129,19 +152,8 @@ fun AnalysisHistoryScreen(
           }
         }
 
-        if (uiState is AnalysisHistoryUiState.Content) {
-          items(uiState.items, key = { it.id }) { item ->
-            AnalysisHistoryCard(item)
-          }
-        }
-
-        if (uiState == AnalysisHistoryUiState.Empty) {
-          item(key = ANALYSIS_EMPTY_ITEM_KEY) {
-            Text(
-              text = stringResource(R.string.analysis_history_empty),
-              style = MaterialTheme.typography.bodyMedium,
-            )
-          }
+        items(uiState.items, key = { it.id }) { item ->
+          AnalysisHistoryCard(item)
         }
       }
     }
@@ -149,7 +161,6 @@ fun AnalysisHistoryScreen(
 }
 
 private const val ANALYSIS_TRIGGER_ITEM_KEY = "analysis-trigger"
-private const val ANALYSIS_EMPTY_ITEM_KEY = "analysis-empty"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -254,13 +265,13 @@ private fun AnalysisHistoryCard(item: AnalysisHistoryItem) {
     )
     Text(
       text = stringResource(R.string.analysis_card_analyzed_at, item.analyzedAt.format(analysisDateTimeFormatter)),
-      style = MaterialTheme.typography.bodySmall,
+      style = MaterialTheme.typography.bodyMedium,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
       modifier = Modifier.padding(top = 2.dp),
     )
     Text(
       text = item.body,
-      style = MaterialTheme.typography.bodyMedium,
+      style = HistoryReadingTextStyle,
       modifier = Modifier.padding(top = 8.dp),
     )
   }

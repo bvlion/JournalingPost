@@ -48,7 +48,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.ui.EventEffect
+import info.bvlion.journalingpost.ui.HistoryEmptyMessage
 import info.bvlion.journalingpost.ui.fixedTopRegionBackgroundColor
+import info.bvlion.journalingpost.ui.theme.HistoryReadingTextStyle
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import java.time.LocalDate
 import java.time.LocalTime
@@ -95,27 +97,34 @@ fun JournalHistoryScreen(
       }
 
       is JournalHistoryUiState.Content -> {
-        // 日付ナビゲーションはstatus bar直下へ固定し、履歴コンテンツはその背後を通過させる。
-        // 初期表示でコンテンツ先頭がナビの裏へ隠れないよう、実測したナビ高さぶんだけ上を空ける。
-        var dateNavigationHeight by remember { mutableStateOf(0.dp) }
-        val density = LocalDensity.current
+        if (!uiState.hasAnyEntry) {
+          // 記録が1件も無いときは日付を送る意味が無いためPagerも日付ナビも出さない。ナビを出したり
+          // 消したりで案内の位置が動くこと、解析履歴の全体空状態と縦位置がずれることを避けるため、
+          // 案内は画面領域全体の中央に置く共通コンポーネントへ寄せる。
+          HistoryEmptyMessage(stringResource(R.string.journal_history_empty))
+        } else {
+          // 日付ナビゲーションはstatus bar直下へ固定し、履歴コンテンツはその背後を通過させる。
+          // 初期表示でコンテンツ先頭がナビの裏へ隠れないよう、実測したナビ高さぶんだけ上を空ける。
+          var dateNavigationHeight by remember { mutableStateOf(0.dp) }
+          val density = LocalDensity.current
 
-        JournalHistoryDayPager(
-          uiState = uiState,
-          topContentPadding = dateNavigationHeight,
-          onSelectDate = onSelectDate,
-          onDeleteRequest = { pendingDeleteId = it.id },
-        )
-        JournalHistoryDateNavigation(
-          uiState = uiState,
-          onPreviousDay = onPreviousDay,
-          onNextDay = onNextDay,
-          onToday = onToday,
-          onDateJumpRequest = { showDateJump = true },
-          modifier = Modifier
-            .align(Alignment.TopCenter)
-            .onGloballyPositioned { dateNavigationHeight = with(density) { it.size.height.toDp() } },
-        )
+          JournalHistoryDayPager(
+            uiState = uiState,
+            topContentPadding = dateNavigationHeight,
+            onSelectDate = onSelectDate,
+            onDeleteRequest = { pendingDeleteId = it.id },
+          )
+          JournalHistoryDateNavigation(
+            uiState = uiState,
+            onPreviousDay = onPreviousDay,
+            onNextDay = onNextDay,
+            onToday = onToday,
+            onDateJumpRequest = { showDateJump = true },
+            modifier = Modifier
+              .align(Alignment.TopCenter)
+              .onGloballyPositioned { dateNavigationHeight = with(density) { it.size.height.toDp() } },
+          )
+        }
       }
     }
   }
@@ -236,15 +245,15 @@ private fun JournalHistoryDayPager(
   HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
     val items = uiState.itemsOn(historyDateOfPage(page, uiState.earliestDate))
     if (items.isEmpty()) {
+      // このPagerは記録が1件以上ある場合だけ表示されるため、ここは常に「表示中の日だけ記録なし」。
+      // 固定日付ナビの裏へ隠れないよう上を空け、その残り領域の中央へ案内を置く。
       Box(
         modifier = Modifier.fillMaxSize().padding(top = topContentPadding),
         contentAlignment = Alignment.Center,
       ) {
         Text(
-          text = stringResource(
-            if (uiState.hasAnyEntry) R.string.journal_history_day_empty else R.string.journal_history_empty,
-          ),
-          style = MaterialTheme.typography.bodyMedium,
+          text = stringResource(R.string.journal_history_day_empty),
+          style = MaterialTheme.typography.bodyLarge,
         )
       }
     } else {
@@ -374,7 +383,7 @@ private fun JournalHistoryRow(
       Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
           text = item.time.format(historyTimeFormatter),
-          style = MaterialTheme.typography.bodyMedium,
+          style = HistoryReadingTextStyle,
         )
         val moodText = listOfNotNull(item.moodEmoji, item.moodLabel)
           .filter { it.isNotBlank() }
@@ -382,7 +391,7 @@ private fun JournalHistoryRow(
         if (moodText.isNotEmpty()) {
           Text(
             text = moodText,
-            style = MaterialTheme.typography.bodyMedium,
+            style = HistoryReadingTextStyle,
             modifier = Modifier.padding(start = 8.dp),
           )
         }
@@ -390,7 +399,7 @@ private fun JournalHistoryRow(
       if (item.note != null) {
         Text(
           text = item.note,
-          style = MaterialTheme.typography.bodyMedium,
+          style = HistoryReadingTextStyle,
           modifier = Modifier.padding(top = 2.dp),
         )
       }
