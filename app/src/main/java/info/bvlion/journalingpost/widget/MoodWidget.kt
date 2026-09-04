@@ -1,15 +1,18 @@
 package info.bvlion.journalingpost.widget
 
+import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.util.SizeF
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.os.BundleCompat
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
@@ -22,6 +25,7 @@ import androidx.glance.action.actionParametersOf
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.LocalAppWidgetOptions
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.components.Scaffold
 import androidx.glance.appwidget.provideContent
@@ -129,14 +133,45 @@ private fun CompactMoodRow(moods: List<Mood>, isNoteOnlyEntryVisible: Boolean) {
   val context = LocalContext.current
   val displayMetrics = context.resources.displayMetrics
   val bitmapMoodCount = moods.count { it.emoji.isNotBlank() }.coerceAtLeast(1)
-  val emojiBitmapSizePx = remember(displayMetrics.widthPixels, displayMetrics.heightPixels, bitmapMoodCount) {
+  val appWidgetOptions = LocalAppWidgetOptions.current
+  val compactSizeCount = remember(appWidgetOptions) {
+    val exactSizes = BundleCompat.getParcelableArrayList(
+      appWidgetOptions,
+      AppWidgetManager.OPTION_APPWIDGET_SIZES,
+      SizeF::class.java,
+    )
+    val sizes = if (exactSizes.isNullOrEmpty()) {
+      val minHeight = appWidgetOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
+      val maxHeight = appWidgetOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT)
+      val minWidth = appWidgetOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
+      val maxWidth = appWidgetOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH)
+      if (minHeight > 0 && maxHeight > 0 && minWidth > 0 && maxWidth > 0) {
+        listOf(
+          SizeF(minWidth.toFloat(), maxHeight.toFloat()),
+          SizeF(maxWidth.toFloat(), minHeight.toFloat()),
+        )
+      } else {
+        emptyList()
+      }
+    } else {
+      exactSizes
+    }
+    sizes.distinct().count { it.height < LABELED_MIN_HEIGHT_DP }.coerceAtLeast(1)
+  }
+  val emojiBitmapSizePx = remember(
+    displayMetrics.widthPixels,
+    displayMetrics.heightPixels,
+    bitmapMoodCount,
+    compactSizeCount,
+  ) {
     // Android 17ではRemoteViews内のBitmapとIconの合計が画面1.5枚分を超えるとprocessがcrashする。
-    // 通常は従来の128pxを保ち、全Mood分のBitmapが上限を超える小さい画面だけ縮小する。
+    // SizeMode.Exactが同じRemoteViewsへまとめる全compact sizeで上限を共有する。
+    // 通常は従来の128pxを保ち、全Bitmapが上限を超える小さい画面だけ縮小する。
     sqrt(
       REMOTE_VIEWS_BITMAP_MEMORY_SCREEN_MULTIPLIER *
         displayMetrics.widthPixels.coerceAtLeast(1) *
         displayMetrics.heightPixels.coerceAtLeast(1) /
-        bitmapMoodCount,
+        (bitmapMoodCount * compactSizeCount),
     ).toInt().coerceIn(1, DEFAULT_EMOJI_BITMAP_SIZE_PX)
   }
   Row(modifier = GlanceModifier.fillMaxSize().padding(2.dp)) {
