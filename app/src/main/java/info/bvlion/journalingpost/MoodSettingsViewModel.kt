@@ -32,7 +32,7 @@ class MoodSettingsViewModel(
     if (openedScreenSessionId == screenSessionId) return
 
     openedScreenSessionId = screenSessionId
-    while (_events.tryReceive().isSuccess) Unit
+    while (_events.tryReceive().isSuccess) {}
     _uiState.value = MoodSettingsUiState()
     viewModelScope.launch {
       if (openedScreenSessionId != screenSessionId) return@launch

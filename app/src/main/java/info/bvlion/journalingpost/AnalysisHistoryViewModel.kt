@@ -54,6 +54,10 @@ class AnalysisHistoryViewModel(
     .map { it == AnalysisIntegration.CUSTOM_WEBHOOK || it == AnalysisIntegration.HOSTED }
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+  val isCustomWebhook: StateFlow<Boolean> = analysisIntegrationRepository.analysisIntegration
+    .map { it == AnalysisIntegration.CUSTOM_WEBHOOK }
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
   /**
    * 手動解析の日付選択で選べる日([currentZoneId]でのカレンダー日)。Custom Webhookは記録のある日すべて、
    * Hostedは当日と解析済みの日を除いた前日以前の記録日だけ。境界は選択日と同じく端末timezoneで解決する。

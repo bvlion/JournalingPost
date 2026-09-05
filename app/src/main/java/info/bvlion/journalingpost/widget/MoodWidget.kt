@@ -1,15 +1,18 @@
 package info.bvlion.journalingpost.widget
 
+import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.util.SizeF
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.os.BundleCompat
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
@@ -22,6 +25,7 @@ import androidx.glance.action.actionParametersOf
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.LocalAppWidgetOptions
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.components.Scaffold
 import androidx.glance.appwidget.provideContent
@@ -41,6 +45,7 @@ import androidx.glance.text.TextStyle
 import info.bvlion.journalingpost.JournalingPostApplication
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.mood.Mood
+import kotlin.math.sqrt
 import kotlinx.coroutines.flow.first
 
 /**
@@ -126,6 +131,49 @@ private fun MoodWidgetContent(moods: List<Mood>, isNoteOnlyEntryVisible: Boolean
 @Composable
 private fun CompactMoodRow(moods: List<Mood>, isNoteOnlyEntryVisible: Boolean) {
   val context = LocalContext.current
+  val displayMetrics = context.resources.displayMetrics
+  val bitmapMoodCount = moods.count { it.emoji.isNotBlank() }.coerceAtLeast(1)
+  val appWidgetOptions = LocalAppWidgetOptions.current
+  val compactSizeCount = remember(appWidgetOptions) {
+    val exactSizes = BundleCompat.getParcelableArrayList(
+      appWidgetOptions,
+      AppWidgetManager.OPTION_APPWIDGET_SIZES,
+      SizeF::class.java,
+    )
+    val sizes = if (exactSizes.isNullOrEmpty()) {
+      val minHeight = appWidgetOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
+      val maxHeight = appWidgetOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT)
+      val minWidth = appWidgetOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
+      val maxWidth = appWidgetOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH)
+      if (minHeight > 0 && maxHeight > 0 && minWidth > 0 && maxWidth > 0) {
+        listOf(
+          SizeF(minWidth.toFloat(), maxHeight.toFloat()),
+          SizeF(maxWidth.toFloat(), minHeight.toFloat()),
+        )
+      } else {
+        emptyList()
+      }
+    } else {
+      exactSizes
+    }
+    sizes.distinct().count { it.height < LABELED_MIN_HEIGHT_DP }.coerceAtLeast(1)
+  }
+  val emojiBitmapSizePx = remember(
+    displayMetrics.widthPixels,
+    displayMetrics.heightPixels,
+    bitmapMoodCount,
+    compactSizeCount,
+  ) {
+    // Android 17ではRemoteViews内のBitmapとIconの合計が画面1.5枚分を超えるとprocessがcrashする。
+    // SizeMode.Exactが同じRemoteViewsへまとめる全compact sizeで上限を共有する。
+    // 通常は従来の128pxを保ち、全Bitmapが上限を超える小さい画面だけ縮小する。
+    sqrt(
+      REMOTE_VIEWS_BITMAP_MEMORY_SCREEN_MULTIPLIER *
+        displayMetrics.widthPixels.coerceAtLeast(1) *
+        displayMetrics.heightPixels.coerceAtLeast(1) /
+        (bitmapMoodCount * compactSizeCount),
+    ).toInt().coerceIn(1, DEFAULT_EMOJI_BITMAP_SIZE_PX)
+  }
   Row(modifier = GlanceModifier.fillMaxSize().padding(2.dp)) {
     moods.forEach { mood ->
       Box(
@@ -139,7 +187,9 @@ private fun CompactMoodRow(moods: List<Mood>, isNoteOnlyEntryVisible: Boolean) {
         contentAlignment = Alignment.Center,
       ) {
         if (mood.emoji.isNotBlank()) {
-          val emojiBitmap = remember(mood.emoji) { renderEmojiBitmap(mood.emoji) }
+          val emojiBitmap = remember(mood.emoji, emojiBitmapSizePx) {
+            renderEmojiBitmap(mood.emoji, emojiBitmapSizePx)
+          }
           Image(
             provider = ImageProvider(emojiBitmap),
             contentDescription = null,
@@ -183,20 +233,22 @@ private fun CompactMoodRow(moods: List<Mood>, isNoteOnlyEntryVisible: Boolean) {
  * (ユーザーが将来任意のemojiを選べるようになっても通る経路)から都度生成する。
  * 十分縮小しても荒れないよう実際の表示サイズより高い解像度で描画しておく。
  */
-private fun renderEmojiBitmap(emoji: String): Bitmap {
-  val bitmap = Bitmap.createBitmap(EMOJI_BITMAP_SIZE_PX, EMOJI_BITMAP_SIZE_PX, Bitmap.Config.ARGB_8888)
+private fun renderEmojiBitmap(emoji: String, bitmapSizePx: Int): Bitmap {
+  val bitmap = Bitmap.createBitmap(bitmapSizePx, bitmapSizePx, Bitmap.Config.ARGB_8888)
   val canvas = Canvas(bitmap)
   val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-    textSize = EMOJI_BITMAP_SIZE_PX * 0.75f
+    textSize = bitmapSizePx * 0.75f
     textAlign = Paint.Align.CENTER
   }
-  val centerX = EMOJI_BITMAP_SIZE_PX / 2f
-  val centerY = EMOJI_BITMAP_SIZE_PX / 2f - (paint.ascent() + paint.descent()) / 2f
+  val centerX = bitmapSizePx / 2f
+  val centerY = bitmapSizePx / 2f - (paint.ascent() + paint.descent()) / 2f
   canvas.drawText(emoji, centerX, centerY, paint)
   return bitmap
 }
 
-private const val EMOJI_BITMAP_SIZE_PX = 128
+private const val DEFAULT_EMOJI_BITMAP_SIZE_PX = 128
+
+private const val REMOTE_VIEWS_BITMAP_MEMORY_SCREEN_MULTIPLIER = 1.5
 
 @Composable
 private fun ExpandedMoodList(moods: List<Mood>, isNoteOnlyEntryVisible: Boolean) {

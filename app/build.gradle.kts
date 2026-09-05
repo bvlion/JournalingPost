@@ -3,7 +3,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
   alias(libs.plugins.android.application)
-  alias(libs.plugins.kotlin.android)
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.kotlin.kotlinserialization)
   alias(libs.plugins.ksp)
@@ -28,12 +27,12 @@ val releaseKeystoreFile = rootProject.file("release.jks")
 
 android {
   namespace = "info.bvlion.journalingpost"
-  compileSdk = 36
+  compileSdk = 37
 
   defaultConfig {
     applicationId = "info.bvlion.journalingpost"
     minSdk = 31
-    targetSdk = 36
+    targetSdk = 37
     versionCode = 3
     versionName = "1.0.0"
 
