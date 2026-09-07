@@ -40,7 +40,10 @@ internal class AutoAnalysisScheduler(
    */
   suspend fun syncFromSettings() = applySettings(ExistingWorkPolicy.KEEP)
 
-  /** 設定変更時・Workerの実行後に呼ぶ。次回時刻を計算し直して予約を置き換える。無効なら解除する。 */
+  /**
+   * 設定変更時・Workerの実行後に呼ぶ。次回時刻を計算し直して日次予約を置き換える。
+   * 設定が有効な間は、開始済みのHosted retry予約には触れない。無効なら両方を解除する。
+   */
   suspend fun reschedule() = applySettings(ExistingWorkPolicy.REPLACE)
 
   /** [retryNumber]回目のHosted retryを2分後へ予約する。 */
@@ -54,13 +57,14 @@ internal class AutoAnalysisScheduler(
         ),
       )
       .build()
-    workManager.enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.REPLACE, request)
+    workManager.enqueueUniqueWork(HOSTED_RETRY_WORK_NAME, ExistingWorkPolicy.REPLACE, request)
   }
 
   private suspend fun applySettings(policy: ExistingWorkPolicy) {
     val settings = autoAnalysisSettingsRepository.autoAnalysisSettings.first()
     if (!settings.enabled) {
       workManager.cancelUniqueWork(WORK_NAME)
+      workManager.cancelUniqueWork(HOSTED_RETRY_WORK_NAME)
       return
     }
     val request = OneTimeWorkRequestBuilder<AutoAnalysisWorker>()
@@ -75,6 +79,7 @@ internal class AutoAnalysisScheduler(
 
   companion object {
     const val WORK_NAME = "auto_analysis"
+    const val HOSTED_RETRY_WORK_NAME = "hosted_auto_analysis_retry"
     const val INPUT_HOSTED_RETRY_NUMBER = "hosted_retry_number"
     const val HOSTED_RETRY_LIMIT = 15
     val HOSTED_RETRY_INTERVAL: Duration = Duration.ofMinutes(2)
