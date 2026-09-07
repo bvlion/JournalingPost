@@ -185,6 +185,32 @@ internal class AppContainer(context: Context) {
     )
   }
 
+  private val hostedPeriodAnalyzer: HostedPeriodAnalyzer by lazy {
+    HostedPeriodAnalyzer(
+      httpClient = hostedHttpClient,
+      registrar = HostedInstallationRegistrar(
+        httpClient = hostedHttpClient,
+        credentialsRepository = hostedCredentialsRepository,
+        baseUrl = hostedBaseUrl,
+        packageName = context.packageName,
+        requestIntegrityToken = { requestHash ->
+          val provider = standardIntegrityManager.prepareIntegrityToken(
+            PrepareIntegrityTokenRequest.builder()
+              .setCloudProjectNumber(BuildConfig.PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER)
+              .build(),
+          ).await()
+          provider.request(
+            StandardIntegrityTokenRequest.builder().setRequestHash(requestHash).build(),
+          ).await().token()
+        },
+      ),
+      credentialsRepository = hostedCredentialsRepository,
+      idempotencyKeyStore = hostedIdempotencyKeyStore,
+      analysisIntegrationRepository = analysisIntegrationRepository,
+      baseUrl = hostedBaseUrl,
+    )
+  }
+
   val periodAnalyzer: PeriodAnalyzer by lazy {
     IntegrationRoutingPeriodAnalyzer(
       analysisIntegrationRepository = analysisIntegrationRepository,
@@ -193,34 +219,16 @@ internal class AppContainer(context: Context) {
         analysisIntegrationRepository = analysisIntegrationRepository,
         webhookSettingsRepository = webhookSettingsRepository,
       ),
-      hostedAnalyzer = HostedPeriodAnalyzer(
-        httpClient = hostedHttpClient,
-        registrar = HostedInstallationRegistrar(
-          httpClient = hostedHttpClient,
-          credentialsRepository = hostedCredentialsRepository,
-          baseUrl = hostedBaseUrl,
-          packageName = context.packageName,
-          requestIntegrityToken = { requestHash ->
-            val provider = standardIntegrityManager.prepareIntegrityToken(
-              PrepareIntegrityTokenRequest.builder()
-                .setCloudProjectNumber(BuildConfig.PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER)
-                .build(),
-            ).await()
-            provider.request(
-              StandardIntegrityTokenRequest.builder().setRequestHash(requestHash).build(),
-            ).await().token()
-          },
-        ),
-        credentialsRepository = hostedCredentialsRepository,
-        idempotencyKeyStore = hostedIdempotencyKeyStore,
-        analysisIntegrationRepository = analysisIntegrationRepository,
-        baseUrl = hostedBaseUrl,
-      ),
+      hostedAnalyzer = hostedPeriodAnalyzer,
     )
   }
 
   private val periodAnalysisRunner: PeriodAnalysisRunner by lazy {
     PeriodAnalysisRunner(periodAnalyzer = periodAnalyzer, analysisResultWriter = analysisResultRepository)
+  }
+
+  private val hostedPeriodAnalysisRunner: PeriodAnalysisRunner by lazy {
+    PeriodAnalysisRunner(periodAnalyzer = hostedPeriodAnalyzer, analysisResultWriter = analysisResultRepository)
   }
 
   val autoAnalysisSettingsRepository: AutoAnalysisSettingsRepository by lazy {
@@ -239,6 +247,7 @@ internal class AppContainer(context: Context) {
       analysisResultReader = analysisResultRepository,
       autoAnalysisAttemptStore = autoAnalysisAttemptStore,
       periodAnalysisRunner = periodAnalysisRunner,
+      hostedPeriodAnalysisRunner = hostedPeriodAnalysisRunner,
     )
   }
 
@@ -311,7 +320,7 @@ internal class AppContainer(context: Context) {
     /** 自動解析の設定(有効/無効・時刻・対象日)。秘密値ではないためbackup対象で構わない。 */
     const val AUTO_ANALYSIS_SETTINGS_FILE_NAME = "auto_analysis_settings"
 
-    /** 自動解析の実行状態(Hostedを最後に試行した実行日)。秘密値ではないためbackup対象で構わない。 */
+    /** 自動解析の実行状態(Hostedの試行日とretry中の同一payload)。 */
     const val AUTO_ANALYSIS_STATE_FILE_NAME = "auto_analysis_state"
 
     /** Hosted API keyの暗号化保存先。backupから除外する(dataExtractionRulesと合わせる)。 */

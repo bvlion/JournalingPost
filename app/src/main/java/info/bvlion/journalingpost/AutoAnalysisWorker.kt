@@ -3,6 +3,7 @@ package info.bvlion.journalingpost
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import info.bvlion.journalingpost.analysis.AutoAnalysisOutcome
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -12,8 +13,8 @@ import kotlinx.coroutines.CancellationException
  * 依存はDIコンテナ([AppContainer])から取り出す。WorkManagerの既定WorkerFactoryが
  * `(Context, WorkerParameters)` で生成するため、コンストラクタは変えない。
  *
- * Hostedの短時間retryは[info.bvlion.journalingpost.analysis.AutoAnalyzer]内で同じ対象期間のまま行う。
- * Worker自体のretryはせず、実行の成否にかかわらず最後に次回実行を予約し直して日次のchainを継続する。
+ * Hostedのretryは2分ごとの別Workとして予約し、通常Workerの10分実行上限を超えて待機しない。
+ * retryが不要または上限へ達したら、次回の日次実行を予約し直してchainを継続する。
  */
 class AutoAnalysisWorker(
   appContext: Context,
@@ -21,17 +22,28 @@ class AutoAnalysisWorker(
 ) : CoroutineWorker(appContext, params) {
   override suspend fun doWork(): Result {
     val container = (applicationContext as JournalingPostApplication).container
+    val retryNumber = inputData.getInt(AutoAnalysisScheduler.INPUT_HOSTED_RETRY_NUMBER, 0)
+    // プロセス終了等で同じWorkが再実行された場合も、初回送信前に保存したpayloadでretryする。
+    val isHostedRetry = retryNumber > 0 || runAttemptCount > 0
 
-    try {
-      container.autoAnalyzer.runOnce()
+    val outcome = try {
+      container.autoAnalyzer.runOnce(
+        isHostedRetry = isHostedRetry,
+        hasRetryRemaining = retryNumber < AutoAnalysisScheduler.HOSTED_RETRY_LIMIT,
+      )
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
       // AutoAnalyzer内で失敗は結果値へ畳んでいるが、想定外の例外でもchainを止めないよう握りつぶす。
+      null
     }
 
     try {
-      container.autoAnalysisScheduler.reschedule()
+      if (outcome == AutoAnalysisOutcome.RETRYABLE_FAILURE) {
+        container.autoAnalysisScheduler.scheduleHostedRetry(retryNumber + 1)
+      } else {
+        container.autoAnalysisScheduler.reschedule()
+      }
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {

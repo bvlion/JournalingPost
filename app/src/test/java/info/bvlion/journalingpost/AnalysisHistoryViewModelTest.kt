@@ -550,6 +550,7 @@ class AnalysisHistoryViewModelTest {
       periodStart: Instant,
       periodEnd: Instant,
       entries: List<JournalEntry>,
+      analysisDate: LocalDate?,
     ): PeriodAnalysisOutcome = outcome()
 
     override suspend fun onAnalysisResultPersisted(periodStart: Instant, periodEnd: Instant) {
@@ -573,6 +574,7 @@ class AnalysisHistoryViewModelTest {
       periodStart: Instant,
       periodEnd: Instant,
       entries: List<JournalEntry>,
+      analysisDate: LocalDate?,
     ): PeriodAnalysisOutcome {
       callCount++
       lastPeriodStart = periodStart

@@ -8,7 +8,6 @@ import info.bvlion.journalingpost.settings.AutoAnalysisTargetDay
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 
 /**
@@ -19,13 +18,14 @@ import kotlinx.coroutines.flow.first
  * 対象日と期間境界はWorkerが実際に起動したローカル日付・端末timezoneで決める。予約時刻からの
  * 遅延がローカル日付を跨いだ場合や、timezone変更を跨いだ場合の対象日の厳密な扱いは#61で扱う。
  *
- * Hostedの回復し得る一時失敗だけは、同じ対象期間のまま15秒間隔で最大2回再試行する。Serverの
- * retry delivery buffer(30分)内に十分収まり、analysis_in_progressのRetry-Afterにも合わせた間隔である。
- * Custom WebhookとHostedのrate_limitedは再試行しない。
+ * Hostedの回復し得る一時失敗では[AutoAnalysisOutcome.RETRYABLE_FAILURE]を返す。Workerが2分後の
+ * retryを予約し、このクラスは保存した対象期間・JournalEntry snapshotを次回も使う。開始後にSettingsが
+ * 変更されても送信先をCustom Webhookへ切り替えずretryを中止する。Custom WebhookとHostedの
+ * rate_limitedはretryしない。
  *
- * Hostedの自動解析は成功・失敗にかかわらず実行日ごとに最大1回。実際にHostedへ送る直前に実行日を
- * [AutoAnalysisAttemptStore]へ記録し、同じ実行日の2回目以降は送らない。加えて、対象日が既に解析済み
- * (同じ日を対象期間とする[AnalysisResult]が存在する)なら送らず、試行済みにもしない。
+ * Hosted自動解析の新規開始は成功・失敗にかかわらず実行日ごとに最大1回。実際にHostedへ送る直前に
+ * 実行日を[AutoAnalysisAttemptStore]へ記録し、同じ実行日の別の新規解析は送らない。加えて、対象日が
+ * 既に解析済み(同じ日を対象期間とする[AnalysisResult]が存在する)なら送らず、試行済みにもしない。
  */
 internal class AutoAnalyzer(
   private val autoAnalysisSettingsRepository: AutoAnalysisSettingsRepository,
@@ -34,16 +34,29 @@ internal class AutoAnalyzer(
   private val analysisResultReader: AnalysisResultReader,
   private val autoAnalysisAttemptStore: AutoAnalysisAttemptStore,
   private val periodAnalysisRunner: PeriodAnalysisRunner,
+  private val hostedPeriodAnalysisRunner: PeriodAnalysisRunner,
   private val currentZoneId: () -> ZoneId = { ZoneId.systemDefault() },
   private val currentDate: () -> LocalDate = { LocalDate.now(currentZoneId()) },
-  private val waitBeforeRetry: suspend () -> Unit = { delay(HOSTED_RETRY_DELAY_MILLIS) },
 ) {
-  suspend fun runOnce(): AutoAnalysisOutcome {
+  suspend fun runOnce(isHostedRetry: Boolean = false, hasRetryRemaining: Boolean = true): AutoAnalysisOutcome {
     val settings = autoAnalysisSettingsRepository.autoAnalysisSettings.first()
-    if (!settings.enabled) return AutoAnalysisOutcome.SKIPPED_DISABLED
+    if (!settings.enabled) {
+      if (isHostedRetry) autoAnalysisAttemptStore.clearHostedRetrySnapshot()
+      return AutoAnalysisOutcome.SKIPPED_DISABLED
+    }
 
     val integration = analysisIntegrationRepository.analysisIntegration.first()
+    if (isHostedRetry && integration != AnalysisIntegration.HOSTED) {
+      autoAnalysisAttemptStore.clearHostedRetrySnapshot()
+      return AutoAnalysisOutcome.FAILED
+    }
     if (integration == AnalysisIntegration.NONE) return AutoAnalysisOutcome.SKIPPED_NO_INTEGRATION
+
+    val retrySnapshot = if (isHostedRetry) {
+      autoAnalysisAttemptStore.hostedRetrySnapshot() ?: return AutoAnalysisOutcome.FAILED
+    } else {
+      null
+    }
 
     val zoneId = currentZoneId()
     val executionDate = currentDate()
@@ -51,9 +64,9 @@ internal class AutoAnalyzer(
       AutoAnalysisTargetDay.TODAY -> executionDate
       AutoAnalysisTargetDay.YESTERDAY -> executionDate.minusDays(1)
     }
-    val isHosted = integration == AnalysisIntegration.HOSTED
+    val isHosted = isHostedRetry || integration == AnalysisIntegration.HOSTED
 
-    if (isHosted) {
+    if (isHosted && !isHostedRetry) {
       if (autoAnalysisAttemptStore.lastHostedAttemptDate() == executionDate) {
         return AutoAnalysisOutcome.SKIPPED_ALREADY_ATTEMPTED_TODAY
       }
@@ -62,10 +75,11 @@ internal class AutoAnalyzer(
       }
     }
 
-    val periodStart = targetDay.atStartOfDay(zoneId).toInstant()
-    val periodEnd = targetDay.plusDays(1).atStartOfDay(zoneId).toInstant()
+    val periodStart = retrySnapshot?.periodStart ?: targetDay.atStartOfDay(zoneId).toInstant()
+    val periodEnd = retrySnapshot?.periodEnd ?: targetDay.plusDays(1).atStartOfDay(zoneId).toInstant()
+    val analysisDate = retrySnapshot?.analysisDate ?: targetDay
 
-    val entries = try {
+    val entries = retrySnapshot?.entries ?: try {
       periodJournalEntryReader.entriesInPeriod(periodStart, periodEnd)
     } catch (e: CancellationException) {
       throw e
@@ -74,27 +88,45 @@ internal class AutoAnalyzer(
     }
     if (entries.isEmpty()) return AutoAnalysisOutcome.SKIPPED_NO_ENTRIES
 
-    if (isHosted) {
+    if (isHosted && !isHostedRetry) {
+      try {
+        autoAnalysisAttemptStore.storeHostedRetrySnapshot(
+          HostedAutoAnalysisRetrySnapshot(analysisDate, periodStart, periodEnd, entries),
+        )
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        return AutoAnalysisOutcome.FAILED
+      }
       // ここから実際にHostedへ送る。送信前に実行日を記録し、以降の失敗やプロセス終了があっても
       // 同じ実行日に2回目の試行を行わない。
       autoAnalysisAttemptStore.recordHostedAttempt(executionDate)
     }
 
-    var retryCount = 0
-    while (true) {
-      when (val outcome = periodAnalysisRunner.run(periodStart, periodEnd, entries)) {
-        is PeriodAnalysisRunner.Outcome.Saved -> return AutoAnalysisOutcome.ANALYZED
-        is PeriodAnalysisRunner.Outcome.Failed -> {
-          val shouldRetry = isHosted &&
-            (
-              outcome.failure == PeriodAnalysisOutcome.Failure.NETWORK ||
-                outcome.failure == PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE
-            ) && retryCount < HOSTED_RETRY_COUNT
-          if (!shouldRetry) return AutoAnalysisOutcome.FAILED
-          retryCount++
-          waitBeforeRetry()
+    val analysisRunner = if (isHosted) hostedPeriodAnalysisRunner else periodAnalysisRunner
+    return when (val outcome = analysisRunner.run(periodStart, periodEnd, entries, analysisDate)) {
+      is PeriodAnalysisRunner.Outcome.Saved -> {
+        if (isHosted) autoAnalysisAttemptStore.clearHostedRetrySnapshot()
+        AutoAnalysisOutcome.ANALYZED
+      }
+
+      is PeriodAnalysisRunner.Outcome.Failed -> {
+        val shouldRetry = isHosted &&
+          (
+            outcome.failure == PeriodAnalysisOutcome.Failure.NETWORK ||
+              outcome.failure == PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE
+          )
+        if (shouldRetry && hasRetryRemaining) {
+          AutoAnalysisOutcome.RETRYABLE_FAILURE
+        } else {
+          if (isHosted) autoAnalysisAttemptStore.clearHostedRetrySnapshot()
+          AutoAnalysisOutcome.FAILED
         }
-        PeriodAnalysisRunner.Outcome.SaveFailed -> return AutoAnalysisOutcome.FAILED
+      }
+
+      PeriodAnalysisRunner.Outcome.SaveFailed -> {
+        if (isHosted) autoAnalysisAttemptStore.clearHostedRetrySnapshot()
+        AutoAnalysisOutcome.FAILED
       }
     }
   }
@@ -102,14 +134,9 @@ internal class AutoAnalyzer(
   private suspend fun isAlreadyAnalyzed(day: LocalDate, zoneId: ZoneId): Boolean =
     analysisResultReader.observeAll().first()
       .any { it.periodStart.atZone(zoneId).toLocalDate() == day }
-
-  private companion object {
-    const val HOSTED_RETRY_COUNT = 2
-    const val HOSTED_RETRY_DELAY_MILLIS = 15_000L
-  }
 }
 
-/** 自動解析1回分の結果。短時間retryも含めた最終結果をWorkerが記録目的でだけ受け取る。 */
+/** 自動解析1回分の結果。Workerがretryまたは次回の日次実行を予約するために受け取る。 */
 internal enum class AutoAnalysisOutcome {
   ANALYZED,
   SKIPPED_DISABLED,
@@ -122,5 +149,6 @@ internal enum class AutoAnalysisOutcome {
   SKIPPED_ALREADY_ANALYZED,
 
   SKIPPED_NO_ENTRIES,
+  RETRYABLE_FAILURE,
   FAILED,
 }

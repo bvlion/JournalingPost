@@ -5,6 +5,7 @@ import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import java.time.Instant
+import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
@@ -98,6 +99,7 @@ class IntegrationRoutingPeriodAnalyzerTest {
       periodStart: Instant,
       periodEnd: Instant,
       entries: List<JournalEntry>,
+      analysisDate: LocalDate?,
     ): PeriodAnalysisOutcome {
       callCount++
       return outcome
@@ -112,6 +114,7 @@ class IntegrationRoutingPeriodAnalyzerTest {
       periodStart: Instant,
       periodEnd: Instant,
       entries: List<JournalEntry>,
+      analysisDate: LocalDate?,
     ): PeriodAnalysisOutcome = PeriodAnalysisOutcome.Failure.NETWORK
 
     override suspend fun onAnalysisResultPersisted(periodStart: Instant, periodEnd: Instant) {

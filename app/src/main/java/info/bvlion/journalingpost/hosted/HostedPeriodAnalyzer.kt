@@ -18,6 +18,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import java.security.MessageDigest
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.CancellationException
@@ -58,13 +59,15 @@ internal class HostedPeriodAnalyzer(
     periodStart: Instant,
     periodEnd: Instant,
     entries: List<JournalEntry>,
+    analysisDate: LocalDate?,
   ): PeriodAnalysisOutcome {
     if (analysisIntegrationRepository.analysisIntegration.first() != AnalysisIntegration.HOSTED) {
       return PeriodAnalysisOutcome.Failure.INTEGRATION_UNAVAILABLE
     }
     if (entries.isEmpty()) return PeriodAnalysisOutcome.Failure.NO_ENTRIES
 
-    val analysisDate = periodStart.atZone(currentZoneId()).toLocalDate().format(DateTimeFormatter.BASIC_ISO_DATE)
+    val formattedAnalysisDate = (analysisDate ?: periodStart.atZone(currentZoneId()).toLocalDate())
+      .format(DateTimeFormatter.BASIC_ISO_DATE)
     val apiKey = try {
       registrar.apiKey()
     } catch (e: CancellationException) {
@@ -80,7 +83,7 @@ internal class HostedPeriodAnalyzer(
     val period = HostedAnalysisPeriod(periodStart, periodEnd)
     val body = requestJson.encodeToString(
       HostedAnalysisRequest(
-        analysisDate = analysisDate,
+        analysisDate = formattedAnalysisDate,
         period = HostedAnalysisRequest.Period(periodStart.toString(), periodEnd.toString()),
         entries = entries.map { it.toHostedAnalysisEntry() },
       ),
@@ -200,9 +203,9 @@ internal class HostedPeriodAnalyzer(
     if (code == "analysis_in_progress") return PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE
 
     // idempotency_key_reuse(同じkeyで別内容) / analysis_result_unavailable(結果を返せない)。
-    // どちらも新しいkeyでの再解析が必要。keyを捨てて次の実行を新しい解析にする。
+    // どちらも新しいkeyでの手動再実行が必要。自動retryは同じkeyを維持する契約なので対象外にする。
     idempotencyKeyStore.clear(period)
-    return PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE
+    return PeriodAnalysisOutcome.Failure.SERVER_ERROR
   }
 
   companion object {

@@ -10,6 +10,18 @@ import org.junit.Test
 
 class AutoAnalysisSchedulerTest {
   @Test
+  fun `Hosted retryは2分間隔で最大15回`() {
+    assertEquals(Duration.ofMinutes(2), AutoAnalysisScheduler.HOSTED_RETRY_INTERVAL)
+    assertEquals(15, AutoAnalysisScheduler.HOSTED_RETRY_LIMIT)
+    assertEquals(
+      Duration.ofMinutes(30),
+      AutoAnalysisScheduler.HOSTED_RETRY_INTERVAL.multipliedBy(
+        AutoAnalysisScheduler.HOSTED_RETRY_LIMIT.toLong(),
+      ),
+    )
+  }
+
+  @Test
   fun `指定時刻が同じ日のまだ先ならその日の時刻まで待つ`() {
     val delay = nextRunDelay(
       from = Instant.parse("2026-09-01T00:00:00Z"),

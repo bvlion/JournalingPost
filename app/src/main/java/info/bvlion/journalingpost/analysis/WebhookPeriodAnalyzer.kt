@@ -15,6 +15,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -49,6 +50,7 @@ internal class WebhookPeriodAnalyzer(
     periodStart: Instant,
     periodEnd: Instant,
     entries: List<JournalEntry>,
+    analysisDate: LocalDate?,
   ): PeriodAnalysisOutcome {
     if (analysisIntegrationRepository.analysisIntegration.first() != AnalysisIntegration.CUSTOM_WEBHOOK) {
       return PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE

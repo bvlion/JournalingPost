@@ -6,6 +6,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.workDataOf
 import info.bvlion.journalingpost.settings.AutoAnalysisSettingsRepository
 import java.time.Duration
 import java.time.Instant
@@ -42,6 +43,20 @@ internal class AutoAnalysisScheduler(
   /** 設定変更時・Workerの実行後に呼ぶ。次回時刻を計算し直して予約を置き換える。無効なら解除する。 */
   suspend fun reschedule() = applySettings(ExistingWorkPolicy.REPLACE)
 
+  /** [retryNumber]回目のHosted retryを2分後へ予約する。 */
+  fun scheduleHostedRetry(retryNumber: Int) {
+    val request = OneTimeWorkRequestBuilder<AutoAnalysisWorker>()
+      .setInitialDelay(HOSTED_RETRY_INTERVAL.toMillis(), TimeUnit.MILLISECONDS)
+      .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+      .setInputData(
+        workDataOf(
+          INPUT_HOSTED_RETRY_NUMBER to retryNumber,
+        ),
+      )
+      .build()
+    workManager.enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.REPLACE, request)
+  }
+
   private suspend fun applySettings(policy: ExistingWorkPolicy) {
     val settings = autoAnalysisSettingsRepository.autoAnalysisSettings.first()
     if (!settings.enabled) {
@@ -60,6 +75,9 @@ internal class AutoAnalysisScheduler(
 
   companion object {
     const val WORK_NAME = "auto_analysis"
+    const val INPUT_HOSTED_RETRY_NUMBER = "hosted_retry_number"
+    const val HOSTED_RETRY_LIMIT = 15
+    val HOSTED_RETRY_INTERVAL: Duration = Duration.ofMinutes(2)
   }
 }
 

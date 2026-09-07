@@ -20,6 +20,8 @@ import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import java.io.IOException
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
@@ -123,6 +125,7 @@ class HostedPeriodAnalyzerTest {
     val analyzer = analyzer(
       credentials = FakeHostedCredentialsRepository(stored = "jpk_stored"),
       keyStore = keyStore,
+      currentZoneId = { ZoneId.of("America/Los_Angeles") },
     ) { request ->
       authorization = request.headers[HttpHeaders.Authorization]
       idempotencyKey = request.headers["Idempotency-Key"]
@@ -137,6 +140,7 @@ class HostedPeriodAnalyzerTest {
         entry("2026-08-30T01:00:00Z", moodEmoji = "🙂", moodLabel = "嬉しい"),
         entry("2026-08-30T09:00:00Z", note = "メモだけ"),
       ),
+      analysisDate = LocalDate.of(2026, 8, 30),
     )
 
     assertEquals("Bearer jpk_stored", authorization)
@@ -215,7 +219,7 @@ class HostedPeriodAnalyzerTest {
   }
 
   @Test
-  fun `409 analysis_in_progressはkeyを残し、それ以外の409はkeyを捨てる`() = runTest {
+  fun `409 analysis_in_progressだけ一時失敗としてkeyを残す`() = runTest {
     val inProgress = FakeIdempotencyKeyStore()
     assertEquals(
       PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE,
@@ -226,9 +230,12 @@ class HostedPeriodAnalyzerTest {
     assertFalse(inProgress.wasCleared(period))
 
     val reuse = FakeIdempotencyKeyStore()
-    analyzer(credentials = FakeHostedCredentialsRepository(stored = "k"), keyStore = reuse) {
+    assertEquals(
+      PeriodAnalysisOutcome.Failure.SERVER_ERROR,
+      analyzer(credentials = FakeHostedCredentialsRepository(stored = "k"), keyStore = reuse) {
       respondJson("""{"error":{"code":"idempotency_key_reuse"}}""", HttpStatusCode.Conflict)
-    }.analyze(periodStart, periodEnd, oneEntry)
+      }.analyze(periodStart, periodEnd, oneEntry),
+    )
     assertTrue(reuse.wasCleared(period))
   }
 
@@ -395,6 +402,7 @@ class HostedPeriodAnalyzerTest {
     integrationRepository: FakeIntegrationRepository = FakeIntegrationRepository(integration),
     credentials: FakeHostedCredentialsRepository = FakeHostedCredentialsRepository(stored = "jpk_stored"),
     keyStore: FakeIdempotencyKeyStore = FakeIdempotencyKeyStore(),
+    currentZoneId: () -> ZoneId = { java.time.ZoneOffset.UTC },
     handler: suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData,
   ): HostedPeriodAnalyzer {
     val client = HttpClient(MockEngine { request -> handler(request) }) {
@@ -414,7 +422,7 @@ class HostedPeriodAnalyzerTest {
       idempotencyKeyStore = keyStore,
       analysisIntegrationRepository = integrationRepository,
       baseUrl = baseUrl,
-      currentZoneId = { java.time.ZoneOffset.UTC },
+      currentZoneId = currentZoneId,
     )
   }
 }
