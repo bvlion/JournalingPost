@@ -2,6 +2,7 @@ package info.bvlion.journalingpost.analysis
 
 import info.bvlion.journalingpost.journal.JournalEntry
 import java.time.Instant
+import java.time.LocalDate
 
 /**
  * 手動期間解析のうち、外部通信を伴う一連の処理。Custom Webhook設定の取得→Body templateの展開→
@@ -9,7 +10,20 @@ import java.time.Instant
  * 解析結果の[AnalysisResult]保存は呼び出し側の責務とする。どの失敗でもJournalEntryへは触れない。
  */
 fun interface PeriodAnalyzer {
-  suspend fun analyze(periodStart: Instant, periodEnd: Instant, entries: List<JournalEntry>): PeriodAnalysisOutcome
+  /** 手動解析など、Hosted専用の対象日を固定しない呼び出し。 */
+  suspend fun analyze(
+    periodStart: Instant,
+    periodEnd: Instant,
+    entries: List<JournalEntry>,
+  ): PeriodAnalysisOutcome = analyze(periodStart, periodEnd, entries, null)
+
+  /** [analysisDate]はHosted自動retryで初回と同じrequest payloadを維持する場合だけ指定する。 */
+  suspend fun analyze(
+    periodStart: Instant,
+    periodEnd: Instant,
+    entries: List<JournalEntry>,
+    analysisDate: LocalDate?,
+  ): PeriodAnalysisOutcome
 }
 
 /**
@@ -47,8 +61,11 @@ sealed interface PeriodAnalysisOutcome {
     /** 解析先がHTTPエラー(2xx以外)を返した。処理前の拒否と分かる恒久的な失敗。 */
     SERVER_ERROR,
 
+    /** Hostedで同じ対象日の解析が成功済み。手動再実行は失敗とし、自動再試行もしない。 */
+    RATE_LIMITED,
+
     /**
-     * 解析先が一時的に応答できない(timeout・503・504・429・処理中など)。同じ意図で
+     * 解析先が一時的に応答できない(timeout・503・504・処理中など)。同じ意図で
      * しばらくしてから再実行でき、その際は同じIdempotency-Keyを使う。
      */
     TEMPORARILY_UNAVAILABLE,

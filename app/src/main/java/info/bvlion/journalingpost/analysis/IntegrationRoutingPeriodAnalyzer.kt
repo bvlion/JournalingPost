@@ -4,6 +4,7 @@ import info.bvlion.journalingpost.journal.JournalEntry
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import java.time.Instant
+import java.time.LocalDate
 import kotlinx.coroutines.flow.first
 
 /**
@@ -29,6 +30,7 @@ internal class IntegrationRoutingPeriodAnalyzer(
     periodStart: Instant,
     periodEnd: Instant,
     entries: List<JournalEntry>,
+    analysisDate: LocalDate?,
   ): PeriodAnalysisOutcome {
     val delegate = when (analysisIntegrationRepository.analysisIntegration.first()) {
       AnalysisIntegration.CUSTOM_WEBHOOK -> webhookAnalyzer
@@ -36,7 +38,7 @@ internal class IntegrationRoutingPeriodAnalyzer(
       AnalysisIntegration.NONE -> null
     }
     lastDelegate = delegate
-    return delegate?.analyze(periodStart, periodEnd, entries)
+    return delegate?.analyze(periodStart, periodEnd, entries, analysisDate)
       ?: PeriodAnalysisOutcome.Failure.INTEGRATION_UNAVAILABLE
   }
 

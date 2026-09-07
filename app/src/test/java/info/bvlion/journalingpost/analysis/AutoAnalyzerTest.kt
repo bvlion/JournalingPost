@@ -197,12 +197,115 @@ class AutoAnalyzerTest {
   }
 
   @Test
-  fun `解析先の失敗は再試行せずFAILEDを返す`() = runTest {
+  fun `Hostedのnetwork失敗はretry可能として同じpayloadを保持する`() = runTest {
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.NETWORK }
+    val store = FakeAutoAnalysisAttemptStore()
     val outcome = createAnalyzer(
-      analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.NETWORK },
+      analyzer = analyzer,
+      attemptStore = store,
+    ).runOnce()
+
+    assertEquals(AutoAnalysisOutcome.RETRYABLE_FAILURE, outcome)
+    assertEquals(1, analyzer.callCount)
+    assertEquals(analyzer.requests.single().third, store.retrySnapshot?.entries)
+  }
+
+  @Test
+  fun `Hostedの一時失敗は保存した同じ対象期間と記録で再試行して成功できる`() = runTest {
+    var callCount = 0
+    var zoneId: ZoneId = ZoneId.of("Asia/Tokyo")
+    val analyzer = FakePeriodAnalyzer {
+      callCount++
+      if (callCount == 1) PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE else success()
+    }
+    val store = FakeAutoAnalysisAttemptStore()
+    val autoAnalyzer = createAnalyzer(
+      analyzer = analyzer,
+      attemptStore = store,
+      currentZoneId = { zoneId },
+    )
+
+    assertEquals(AutoAnalysisOutcome.RETRYABLE_FAILURE, autoAnalyzer.runOnce())
+    zoneId = ZoneOffset.UTC
+    assertEquals(AutoAnalysisOutcome.ANALYZED, autoAnalyzer.runOnce(isHostedRetry = true))
+    assertEquals(2, analyzer.callCount)
+    assertEquals(1, analyzer.requests.distinct().size)
+    assertEquals(List(2) { LocalDate.of(2026, 8, 30) }, analyzer.analysisDates)
+    assertEquals(null, store.retrySnapshot)
+  }
+
+  @Test
+  fun `Hostedの15回目のretry失敗は終了してsnapshotを破棄する`() = runTest {
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.NETWORK }
+    val store = FakeAutoAnalysisAttemptStore()
+    val autoAnalyzer = createAnalyzer(analyzer = analyzer, attemptStore = store)
+
+    assertEquals(AutoAnalysisOutcome.RETRYABLE_FAILURE, autoAnalyzer.runOnce())
+    assertEquals(
+      AutoAnalysisOutcome.FAILED,
+      autoAnalyzer.runOnce(isHostedRetry = true, hasRetryRemaining = false),
+    )
+    assertEquals(2, analyzer.callCount)
+    assertEquals(null, store.retrySnapshot)
+  }
+
+  @Test
+  fun `Hostedのrate_limitedは自動再試行しない`() = runTest {
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.RATE_LIMITED }
+    val store = FakeAutoAnalysisAttemptStore()
+    val outcome = createAnalyzer(analyzer = analyzer, attemptStore = store).runOnce()
+
+    assertEquals(AutoAnalysisOutcome.FAILED, outcome)
+    assertEquals(1, analyzer.callCount)
+    assertEquals(null, store.retrySnapshot)
+  }
+
+  @Test
+  fun `Custom Webhookのnetwork失敗は自動再試行しない`() = runTest {
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.NETWORK }
+    val outcome = createAnalyzer(
+      integration = AnalysisIntegration.CUSTOM_WEBHOOK,
+      analyzer = analyzer,
     ).runOnce()
 
     assertEquals(AutoAnalysisOutcome.FAILED, outcome)
+    assertEquals(1, analyzer.callCount)
+  }
+
+  @Test
+  fun `Hosted開始後にCustom Webhookへ変更してもretryをWebhookへ送らない`() = runTest {
+    val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.HOSTED)
+    var hostedCallCount = 0
+    val hostedAnalyzer = FakePeriodAnalyzer {
+      hostedCallCount++
+      PeriodAnalysisOutcome.Failure.NETWORK
+    }
+    val webhookAnalyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.NETWORK }
+    val writer = FakeAnalysisResultWriter()
+    val attemptStore = FakeAutoAnalysisAttemptStore()
+    val routingAnalyzer = IntegrationRoutingPeriodAnalyzer(
+      analysisIntegrationRepository = integrationRepository,
+      webhookAnalyzer = webhookAnalyzer,
+      hostedAnalyzer = hostedAnalyzer,
+    )
+    val analyzer = AutoAnalyzer(
+      autoAnalysisSettingsRepository = FakeAutoAnalysisSettingsRepository(enabledYesterday),
+      analysisIntegrationRepository = integrationRepository,
+      periodJournalEntryReader = FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z"))),
+      analysisResultReader = AnalysisResultReader { MutableStateFlow(emptyList()) },
+      autoAnalysisAttemptStore = attemptStore,
+      periodAnalysisRunner = PeriodAnalysisRunner(routingAnalyzer, writer),
+      hostedPeriodAnalysisRunner = PeriodAnalysisRunner(hostedAnalyzer, writer),
+      currentZoneId = { ZoneOffset.UTC },
+      currentDate = { LocalDate.of(2026, 8, 31) },
+    )
+
+    assertEquals(AutoAnalysisOutcome.RETRYABLE_FAILURE, analyzer.runOnce())
+    integrationRepository.setAnalysisIntegration(AnalysisIntegration.CUSTOM_WEBHOOK)
+    assertEquals(AutoAnalysisOutcome.FAILED, analyzer.runOnce(isHostedRetry = true))
+    assertEquals(1, hostedCallCount)
+    assertEquals(0, webhookAnalyzer.callCount)
+    assertEquals(null, attemptStore.retrySnapshot)
   }
 
   @Test
@@ -276,6 +379,7 @@ class AutoAnalyzerTest {
     analysisResultReader = AnalysisResultReader { MutableStateFlow(results) },
     autoAnalysisAttemptStore = attemptStore,
     periodAnalysisRunner = PeriodAnalysisRunner(analyzer, writer),
+    hostedPeriodAnalysisRunner = PeriodAnalysisRunner(analyzer, writer),
     currentZoneId = currentZoneId,
     currentDate = currentDate,
   )
@@ -323,11 +427,23 @@ class AutoAnalyzerTest {
   private class FakeAutoAnalysisAttemptStore(initial: LocalDate? = null) : AutoAnalysisAttemptStore {
     var lastHostedAttempt: LocalDate? = initial
       private set
+    var retrySnapshot: HostedAutoAnalysisRetrySnapshot? = null
+      private set
 
     override suspend fun lastHostedAttemptDate(): LocalDate? = lastHostedAttempt
 
     override suspend fun recordHostedAttempt(date: LocalDate) {
       lastHostedAttempt = date
+    }
+
+    override suspend fun hostedRetrySnapshot(): HostedAutoAnalysisRetrySnapshot? = retrySnapshot
+
+    override suspend fun storeHostedRetrySnapshot(snapshot: HostedAutoAnalysisRetrySnapshot) {
+      retrySnapshot = snapshot
+    }
+
+    override suspend fun clearHostedRetrySnapshot() {
+      retrySnapshot = null
     }
   }
 
@@ -347,15 +463,20 @@ class AutoAnalyzerTest {
       private set
     var lastPeriodEnd: Instant? = null
       private set
+    val requests = mutableListOf<Triple<Instant, Instant, List<JournalEntry>>>()
+    val analysisDates = mutableListOf<LocalDate?>()
 
     override suspend fun analyze(
       periodStart: Instant,
       periodEnd: Instant,
       entries: List<JournalEntry>,
+      analysisDate: LocalDate?,
     ): PeriodAnalysisOutcome {
       callCount++
       lastPeriodStart = periodStart
       lastPeriodEnd = periodEnd
+      requests += Triple(periodStart, periodEnd, entries)
+      analysisDates += analysisDate
       return outcome()
     }
   }
@@ -369,6 +490,7 @@ class AutoAnalyzerTest {
       periodStart: Instant,
       periodEnd: Instant,
       entries: List<JournalEntry>,
+      analysisDate: LocalDate?,
     ): PeriodAnalysisOutcome = outcome()
 
     override suspend fun onAnalysisResultPersisted(periodStart: Instant, periodEnd: Instant) {

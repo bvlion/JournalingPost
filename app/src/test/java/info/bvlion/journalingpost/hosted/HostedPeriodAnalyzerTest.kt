@@ -20,6 +20,8 @@ import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import java.io.IOException
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
@@ -115,7 +117,7 @@ class HostedPeriodAnalyzerTest {
   }
 
   @Test
-  fun `analyses requestにBearer認証とIdempotency-Keyとperiod_entriesを載せる`() = runTest {
+  fun `analyses requestにBearer認証とIdempotency-KeyとanalysisDate_period_entriesを載せる`() = runTest {
     var authorization: String? = null
     var idempotencyKey: String? = null
     var body: String? = null
@@ -123,6 +125,7 @@ class HostedPeriodAnalyzerTest {
     val analyzer = analyzer(
       credentials = FakeHostedCredentialsRepository(stored = "jpk_stored"),
       keyStore = keyStore,
+      currentZoneId = { ZoneId.of("America/Los_Angeles") },
     ) { request ->
       authorization = request.headers[HttpHeaders.Authorization]
       idempotencyKey = request.headers["Idempotency-Key"]
@@ -137,11 +140,13 @@ class HostedPeriodAnalyzerTest {
         entry("2026-08-30T01:00:00Z", moodEmoji = "🙂", moodLabel = "嬉しい"),
         entry("2026-08-30T09:00:00Z", note = "メモだけ"),
       ),
+      analysisDate = LocalDate.of(2026, 8, 30),
     )
 
     assertEquals("Bearer jpk_stored", authorization)
     assertEquals("idem-123", idempotencyKey)
     val json = Json.parseToJsonElement(requireNotNull(body)).jsonObject
+    assertEquals("20260830", json.getValue("analysisDate").jsonPrimitive.content)
     assertEquals("2026-08-30T00:00:00Z", json.getValue("period").jsonObject.getValue("start").jsonPrimitive.content)
     assertEquals("2026-08-31T00:00:00Z", json.getValue("period").jsonObject.getValue("end").jsonPrimitive.content)
     val entries = json.getValue("entries").jsonArray
@@ -181,8 +186,8 @@ class HostedPeriodAnalyzerTest {
   }
 
   @Test
-  fun `429と5xxはTEMPORARILY_UNAVAILABLEでkeyを残す`() = runTest {
-    listOf(HttpStatusCode.TooManyRequests, HttpStatusCode(500, "x"), HttpStatusCode.ServiceUnavailable, HttpStatusCode.GatewayTimeout).forEach { status ->
+  fun `5xxはTEMPORARILY_UNAVAILABLEでkeyを残す`() = runTest {
+    listOf(HttpStatusCode(500, "x"), HttpStatusCode.ServiceUnavailable, HttpStatusCode.GatewayTimeout).forEach { status ->
       val keyStore = FakeIdempotencyKeyStore()
       val analyzer = analyzer(
         credentials = FakeHostedCredentialsRepository(stored = "jpk_stored"),
@@ -199,7 +204,22 @@ class HostedPeriodAnalyzerTest {
   }
 
   @Test
-  fun `409 analysis_in_progressはkeyを残し、それ以外の409はkeyを捨てる`() = runTest {
+  fun `429はRATE_LIMITEDでkeyを残す`() = runTest {
+    val keyStore = FakeIdempotencyKeyStore()
+    val analyzer = analyzer(
+      credentials = FakeHostedCredentialsRepository(stored = "jpk_stored"),
+      keyStore = keyStore,
+    ) { respondJson("""{"error":{"code":"rate_limited"}}""", HttpStatusCode.TooManyRequests) }
+
+    assertEquals(
+      PeriodAnalysisOutcome.Failure.RATE_LIMITED,
+      analyzer.analyze(periodStart, periodEnd, oneEntry),
+    )
+    assertFalse(keyStore.wasCleared(period))
+  }
+
+  @Test
+  fun `409 analysis_in_progressだけ一時失敗としてkeyを残す`() = runTest {
     val inProgress = FakeIdempotencyKeyStore()
     assertEquals(
       PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE,
@@ -210,9 +230,12 @@ class HostedPeriodAnalyzerTest {
     assertFalse(inProgress.wasCleared(period))
 
     val reuse = FakeIdempotencyKeyStore()
-    analyzer(credentials = FakeHostedCredentialsRepository(stored = "k"), keyStore = reuse) {
+    assertEquals(
+      PeriodAnalysisOutcome.Failure.SERVER_ERROR,
+      analyzer(credentials = FakeHostedCredentialsRepository(stored = "k"), keyStore = reuse) {
       respondJson("""{"error":{"code":"idempotency_key_reuse"}}""", HttpStatusCode.Conflict)
-    }.analyze(periodStart, periodEnd, oneEntry)
+      }.analyze(periodStart, periodEnd, oneEntry),
+    )
     assertTrue(reuse.wasCleared(period))
   }
 
@@ -379,6 +402,7 @@ class HostedPeriodAnalyzerTest {
     integrationRepository: FakeIntegrationRepository = FakeIntegrationRepository(integration),
     credentials: FakeHostedCredentialsRepository = FakeHostedCredentialsRepository(stored = "jpk_stored"),
     keyStore: FakeIdempotencyKeyStore = FakeIdempotencyKeyStore(),
+    currentZoneId: () -> ZoneId = { java.time.ZoneOffset.UTC },
     handler: suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData,
   ): HostedPeriodAnalyzer {
     val client = HttpClient(MockEngine { request -> handler(request) }) {
@@ -386,11 +410,19 @@ class HostedPeriodAnalyzerTest {
     }
     return HostedPeriodAnalyzer(
       httpClient = client,
-      registrar = HostedInstallationRegistrar(client, credentials, baseUrl),
+      registrar = HostedInstallationRegistrar(
+        httpClient = client,
+        credentialsRepository = credentials,
+        baseUrl = baseUrl,
+        packageName = "info.bvlion.journalingpost",
+        requestIntegrityToken = { "integrity-token" },
+        registrationIdFactory = { "a".repeat(64) },
+      ),
       credentialsRepository = credentials,
       idempotencyKeyStore = keyStore,
       analysisIntegrationRepository = integrationRepository,
       baseUrl = baseUrl,
+      currentZoneId = currentZoneId,
     )
   }
 }

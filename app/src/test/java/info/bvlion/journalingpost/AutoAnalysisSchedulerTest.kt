@@ -6,9 +6,27 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class AutoAnalysisSchedulerTest {
+  @Test
+  fun `日次予約とHosted retryは別のunique workとして管理する`() {
+    assertNotEquals(AutoAnalysisScheduler.WORK_NAME, AutoAnalysisScheduler.HOSTED_RETRY_WORK_NAME)
+  }
+
+  @Test
+  fun `Hosted retryは2分間隔で最大15回`() {
+    assertEquals(Duration.ofMinutes(2), AutoAnalysisScheduler.HOSTED_RETRY_INTERVAL)
+    assertEquals(15, AutoAnalysisScheduler.HOSTED_RETRY_LIMIT)
+    assertEquals(
+      Duration.ofMinutes(30),
+      AutoAnalysisScheduler.HOSTED_RETRY_INTERVAL.multipliedBy(
+        AutoAnalysisScheduler.HOSTED_RETRY_LIMIT.toLong(),
+      ),
+    )
+  }
+
   @Test
   fun `指定時刻が同じ日のまだ先ならその日の時刻まで待つ`() {
     val delay = nextRunDelay(

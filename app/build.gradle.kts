@@ -19,6 +19,14 @@ val hostedAnalysisBaseUrl: String = run {
   Properties().apply { localProperties.inputStream().use { load(it) } }
     .getProperty("hostedAnalysisBaseUrl")?.trim().orEmpty()
 }
+val playIntegrityCloudProjectNumber: String = run {
+  (project.findProperty("playIntegrityCloudProjectNumber") as? String)?.trim()
+    ?.let { if (it.isNotEmpty()) return@run it }
+  val localProperties = rootProject.file("local.properties")
+  if (!localProperties.exists()) return@run ""
+  Properties().apply { localProperties.inputStream().use { load(it) } }
+    .getProperty("playIntegrityCloudProjectNumber")?.trim().orEmpty()
+}
 
 // release署名用 keystore。内部テスト配布ワークフローが RELEASE_JKS secret を Base64 decode して
 // リポジトリ直下へ配置し、alias / password は環境変数で渡す。keystore が無い環境(ローカルでの
@@ -42,6 +50,11 @@ android {
       "String",
       "HOSTED_ANALYSIS_BASE_URL",
       "\"${hostedAnalysisBaseUrl.ifEmpty { placeholderHostedAnalysisBaseUrl }}\"",
+    )
+    buildConfigField(
+      "long",
+      "PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER",
+      "${playIntegrityCloudProjectNumber.toLongOrNull() ?: 0L}L",
     )
   }
 
@@ -96,7 +109,20 @@ val verifyHostedAnalysisBaseUrl = tasks.register("verifyHostedAnalysisBaseUrl") 
     }
   }
 }
-tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(verifyHostedAnalysisBaseUrl) }
+val verifyPlayIntegrityCloudProjectNumber = tasks.register("verifyPlayIntegrityCloudProjectNumber") {
+  doLast {
+    if (playIntegrityCloudProjectNumber.toLongOrNull()?.let { it > 0L } != true) {
+      throw GradleException(
+        "playIntegrityCloudProjectNumber が設定されていません。release build では local.properties に " +
+          "playIntegrityCloudProjectNumber=... を設定するか、" +
+          "-PplayIntegrityCloudProjectNumber=... を渡してください。",
+      )
+    }
+  }
+}
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+  dependsOn(verifyHostedAnalysisBaseUrl, verifyPlayIntegrityCloudProjectNumber)
+}
 
 kotlin {
   compilerOptions {
@@ -123,6 +149,8 @@ dependencies {
   implementation(libs.ktor.client.cio)
   implementation(libs.ktor.client.content.negotiation)
   implementation(libs.ktor.client.serialization)
+  implementation(libs.kotlinx.coroutines.play.services)
+  implementation(libs.play.integrity)
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(libs.ktor.client.mock)

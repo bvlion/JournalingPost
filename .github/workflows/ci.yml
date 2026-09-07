@@ -110,6 +110,9 @@ jobs:
         # Hosted解析のBase URLはリポジトリへcommitしないため、repository secret
         # HOSTED_ANALYSIS_BASE_URL から渡す。認証境界として秘匿できるからではなく、公開
         # リポジトリ上での不用意な露出を減らすためで、値は最終的にAPKへ埋め込まれる。
-        # 未設定なら空文字となり、build時に verifyHostedAnalysisBaseUrl が失敗する
-        # (設定漏れの検出。意図した挙動)。
-        run: ./gradlew :app:assembleRelease "-PhostedAnalysisBaseUrl=${{ secrets.HOSTED_ANALYSIS_BASE_URL }}"
+        # Play IntegrityのCloud project numberも同様にrepository secretから渡す。
+        # いずれかが未設定ならbuild時の対応するverify taskが失敗する(設定漏れの検出)。
+        run: >-
+          ./gradlew :app:assembleRelease
+          "-PhostedAnalysisBaseUrl=${{ secrets.HOSTED_ANALYSIS_BASE_URL }}"
+          "-PplayIntegrityCloudProjectNumber=${{ secrets.PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER }}"

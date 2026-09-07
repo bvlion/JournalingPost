@@ -2,6 +2,7 @@ package info.bvlion.journalingpost.analysis
 
 import info.bvlion.journalingpost.journal.JournalEntry
 import java.time.Instant
+import java.time.LocalDate
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -17,9 +18,14 @@ internal class PeriodAnalysisRunner(
   private val periodAnalyzer: PeriodAnalyzer,
   private val analysisResultWriter: AnalysisResultWriter,
 ) {
-  suspend fun run(periodStart: Instant, periodEnd: Instant, entries: List<JournalEntry>): Outcome =
+  suspend fun run(
+    periodStart: Instant,
+    periodEnd: Instant,
+    entries: List<JournalEntry>,
+    analysisDate: LocalDate? = null,
+  ): Outcome =
     try {
-      when (val outcome = periodAnalyzer.analyze(periodStart, periodEnd, entries)) {
+      when (val outcome = periodAnalyzer.analyze(periodStart, periodEnd, entries, analysisDate)) {
         is PeriodAnalysisOutcome.Success -> {
           val savedResultId = analysisResultWriter.save(
             AnalysisResult(

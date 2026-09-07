@@ -69,6 +69,7 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
       noteOnlyEntryRepository = container.noteOnlyEntryRepository,
       moodNoteInputRepository = container.moodNoteInputRepository,
       hostedConsentRepository = container.hostedConsentRepository,
+      hostedCredentialsRepository = container.hostedCredentialsRepository,
       refreshWidgets = container::refreshMoodWidgets,
       debugFixtureSeeder = container.debugFixtureSeeder,
     )

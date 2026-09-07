@@ -18,6 +18,9 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import java.security.MessageDigest
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
@@ -46,6 +49,7 @@ internal class HostedPeriodAnalyzer(
   private val idempotencyKeyStore: HostedIdempotencyKeyStore,
   private val analysisIntegrationRepository: AnalysisIntegrationRepository,
   private val baseUrl: String,
+  private val currentZoneId: () -> ZoneId = { ZoneId.systemDefault() },
 ) : PeriodAnalyzer, AnalysisResultPersistenceListener {
   // moodのみ/noteのみのentryではnullのフィールドをJSONへ出さない(Hostedのentries[]と同じ形)。
   private val requestJson = Json { explicitNulls = false }
@@ -55,12 +59,15 @@ internal class HostedPeriodAnalyzer(
     periodStart: Instant,
     periodEnd: Instant,
     entries: List<JournalEntry>,
+    analysisDate: LocalDate?,
   ): PeriodAnalysisOutcome {
     if (analysisIntegrationRepository.analysisIntegration.first() != AnalysisIntegration.HOSTED) {
       return PeriodAnalysisOutcome.Failure.INTEGRATION_UNAVAILABLE
     }
     if (entries.isEmpty()) return PeriodAnalysisOutcome.Failure.NO_ENTRIES
 
+    val formattedAnalysisDate = (analysisDate ?: periodStart.atZone(currentZoneId()).toLocalDate())
+      .format(DateTimeFormatter.BASIC_ISO_DATE)
     val apiKey = try {
       registrar.apiKey()
     } catch (e: CancellationException) {
@@ -76,6 +83,7 @@ internal class HostedPeriodAnalyzer(
     val period = HostedAnalysisPeriod(periodStart, periodEnd)
     val body = requestJson.encodeToString(
       HostedAnalysisRequest(
+        analysisDate = formattedAnalysisDate,
         period = HostedAnalysisRequest.Period(periodStart.toString(), periodEnd.toString()),
         entries = entries.map { it.toHostedAnalysisEntry() },
       ),
@@ -121,9 +129,10 @@ internal class HostedPeriodAnalyzer(
         PeriodAnalysisOutcome.Failure.SERVER_ERROR
       }
       409 -> handleConflict(response, period)
-      // 429 rate_limited と 5xx(analysis_unavailable / analysis_timeout / internal_error)は
-      // 同じkeyで再送する契約。keyを残す。
-      429, in 500..599 -> PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE
+      // 成功済み日の利用制限。手動では失敗表示に使い、自動では再試行しない。
+      429 -> PeriodAnalysisOutcome.Failure.RATE_LIMITED
+      // 5xx(analysis_unavailable / analysis_timeout / internal_error)は同じkeyで再送する契約。
+      in 500..599 -> PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE
       // 400 / 413 / 415 / 422 / 404 等。処理前の拒否と分かる恒久的な失敗。keyを捨てる。
       in 400..499 -> {
         idempotencyKeyStore.clear(period)
@@ -194,9 +203,9 @@ internal class HostedPeriodAnalyzer(
     if (code == "analysis_in_progress") return PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE
 
     // idempotency_key_reuse(同じkeyで別内容) / analysis_result_unavailable(結果を返せない)。
-    // どちらも新しいkeyでの再解析が必要。keyを捨てて次の実行を新しい解析にする。
+    // どちらも新しいkeyでの手動再実行が必要。自動retryは同じkeyを維持する契約なので対象外にする。
     idempotencyKeyStore.clear(period)
-    return PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE
+    return PeriodAnalysisOutcome.Failure.SERVER_ERROR
   }
 
   companion object {
@@ -208,6 +217,6 @@ internal class HostedPeriodAnalyzer(
   }
 }
 
-/** payloadの変化検出用のfingerprint。暗号強度は不要で、内容が変われば値が変わればよい。 */
-private fun String.sha256Hex(): String =
+/** UTF-8文字列のSHA-256を、Hosted契約で使う小文字64桁hexにする。 */
+internal fun String.sha256Hex(): String =
   MessageDigest.getInstance("SHA-256").digest(toByteArray()).joinToString("") { "%02x".format(it) }

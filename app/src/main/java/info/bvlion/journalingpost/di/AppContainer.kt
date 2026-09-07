@@ -6,6 +6,9 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.glance.appwidget.updateAll
+import com.google.android.play.core.integrity.IntegrityManagerFactory
+import com.google.android.play.core.integrity.StandardIntegrityManager.PrepareIntegrityTokenRequest
+import com.google.android.play.core.integrity.StandardIntegrityManager.StandardIntegrityTokenRequest
 import info.bvlion.journalingpost.AutoAnalysisScheduler
 import info.bvlion.journalingpost.BuildConfig
 import info.bvlion.journalingpost.analysis.AnalysisResultReader
@@ -67,6 +70,7 @@ import io.ktor.serialization.kotlinx.json.json
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.tasks.await
 
 /**
  * process内で共有する依存関係の生成場所。JournalingPostApplicationが1つだけ保持する。
@@ -151,7 +155,7 @@ internal class AppContainer(context: Context) {
     )
   }
 
-  private val hostedCredentialsRepository: HostedCredentialsRepository by lazy {
+  val hostedCredentialsRepository: HostedCredentialsRepository by lazy {
     DataStoreHostedCredentialsRepository(
       dataStore = createPreferenceDataStore(HOSTED_CREDENTIALS_FILE_NAME),
       cipher = AndroidKeystoreCipher(HOSTED_CREDENTIALS_KEY_ALIAS),
@@ -161,6 +165,8 @@ internal class AppContainer(context: Context) {
   private val hostedIdempotencyKeyStore: HostedIdempotencyKeyStore by lazy {
     DataStoreHostedIdempotencyKeyStore(createPreferenceDataStore(HOSTED_IDEMPOTENCY_FILE_NAME))
   }
+
+  private val standardIntegrityManager by lazy { IntegrityManagerFactory.createStandard(context) }
 
   val hostedConsentRepository: HostedConsentRepository by lazy {
     DataStoreHostedConsentRepository(createPreferenceDataStore(HOSTED_CONSENT_FILE_NAME))
@@ -179,6 +185,32 @@ internal class AppContainer(context: Context) {
     )
   }
 
+  private val hostedPeriodAnalyzer: HostedPeriodAnalyzer by lazy {
+    HostedPeriodAnalyzer(
+      httpClient = hostedHttpClient,
+      registrar = HostedInstallationRegistrar(
+        httpClient = hostedHttpClient,
+        credentialsRepository = hostedCredentialsRepository,
+        baseUrl = hostedBaseUrl,
+        packageName = context.packageName,
+        requestIntegrityToken = { requestHash ->
+          val provider = standardIntegrityManager.prepareIntegrityToken(
+            PrepareIntegrityTokenRequest.builder()
+              .setCloudProjectNumber(BuildConfig.PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER)
+              .build(),
+          ).await()
+          provider.request(
+            StandardIntegrityTokenRequest.builder().setRequestHash(requestHash).build(),
+          ).await().token()
+        },
+      ),
+      credentialsRepository = hostedCredentialsRepository,
+      idempotencyKeyStore = hostedIdempotencyKeyStore,
+      analysisIntegrationRepository = analysisIntegrationRepository,
+      baseUrl = hostedBaseUrl,
+    )
+  }
+
   val periodAnalyzer: PeriodAnalyzer by lazy {
     IntegrationRoutingPeriodAnalyzer(
       analysisIntegrationRepository = analysisIntegrationRepository,
@@ -187,23 +219,16 @@ internal class AppContainer(context: Context) {
         analysisIntegrationRepository = analysisIntegrationRepository,
         webhookSettingsRepository = webhookSettingsRepository,
       ),
-      hostedAnalyzer = HostedPeriodAnalyzer(
-        httpClient = hostedHttpClient,
-        registrar = HostedInstallationRegistrar(
-          httpClient = hostedHttpClient,
-          credentialsRepository = hostedCredentialsRepository,
-          baseUrl = hostedBaseUrl,
-        ),
-        credentialsRepository = hostedCredentialsRepository,
-        idempotencyKeyStore = hostedIdempotencyKeyStore,
-        analysisIntegrationRepository = analysisIntegrationRepository,
-        baseUrl = hostedBaseUrl,
-      ),
+      hostedAnalyzer = hostedPeriodAnalyzer,
     )
   }
 
   private val periodAnalysisRunner: PeriodAnalysisRunner by lazy {
     PeriodAnalysisRunner(periodAnalyzer = periodAnalyzer, analysisResultWriter = analysisResultRepository)
+  }
+
+  private val hostedPeriodAnalysisRunner: PeriodAnalysisRunner by lazy {
+    PeriodAnalysisRunner(periodAnalyzer = hostedPeriodAnalyzer, analysisResultWriter = analysisResultRepository)
   }
 
   val autoAnalysisSettingsRepository: AutoAnalysisSettingsRepository by lazy {
@@ -222,6 +247,7 @@ internal class AppContainer(context: Context) {
       analysisResultReader = analysisResultRepository,
       autoAnalysisAttemptStore = autoAnalysisAttemptStore,
       periodAnalysisRunner = periodAnalysisRunner,
+      hostedPeriodAnalysisRunner = hostedPeriodAnalysisRunner,
     )
   }
 
@@ -294,7 +320,7 @@ internal class AppContainer(context: Context) {
     /** 自動解析の設定(有効/無効・時刻・対象日)。秘密値ではないためbackup対象で構わない。 */
     const val AUTO_ANALYSIS_SETTINGS_FILE_NAME = "auto_analysis_settings"
 
-    /** 自動解析の実行状態(Hostedを最後に試行した実行日)。秘密値ではないためbackup対象で構わない。 */
+    /** 自動解析の実行状態(Hostedの試行日とretry中の同一payload)。 */
     const val AUTO_ANALYSIS_STATE_FILE_NAME = "auto_analysis_state"
 
     /** Hosted API keyの暗号化保存先。backupから除外する(dataExtractionRulesと合わせる)。 */

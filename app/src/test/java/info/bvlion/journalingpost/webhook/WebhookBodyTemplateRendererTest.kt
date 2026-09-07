@@ -6,6 +6,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -22,6 +23,7 @@ class WebhookBodyTemplateRendererTest {
     )
 
     val json = Json.parseToJsonElement(rendered).jsonObject
+    assertNull(json["analysisDate"])
     assertEquals("2026-08-30T00:00:00Z", json.getValue("period").jsonObject.getValue("start").jsonPrimitive.content)
     assertEquals("2026-08-31T00:00:00Z", json.getValue("period").jsonObject.getValue("end").jsonPrimitive.content)
     val entries = json.getValue("entries").jsonArray

@@ -1,11 +1,16 @@
 package info.bvlion.journalingpost.hosted
 
 import io.ktor.client.HttpClient
+import io.ktor.client.request.setBody
 import io.ktor.client.request.post
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import java.security.SecureRandom
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
@@ -18,14 +23,32 @@ class HostedInstallationRegistrar(
   private val httpClient: HttpClient,
   private val credentialsRepository: HostedCredentialsRepository,
   private val baseUrl: String,
+  private val packageName: String,
+  private val requestIntegrityToken: suspend (String) -> String,
+  private val registrationIdFactory: () -> String = {
+    ByteArray(32).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
+  },
 ) {
   private val json = Json { ignoreUnknownKeys = true }
 
   suspend fun apiKey(): String {
     credentialsRepository.apiKey()?.let { return it }
 
+    val registrationId = registrationIdFactory()
+    val requestHash = "POST\n/v1/installations\n$packageName\n$registrationId".sha256Hex()
+    val integrityToken = try {
+      requestIntegrityToken(requestHash)
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      throw HostedRegistrationException(retryable = true, cause = e)
+    }
+
     val response = try {
-      httpClient.post("$baseUrl/v1/installations")
+      httpClient.post("$baseUrl/v1/installations") {
+        contentType(ContentType.Application.Json)
+        setBody(Json.encodeToString(HostedInstallationRequest(registrationId, integrityToken)))
+      }
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
