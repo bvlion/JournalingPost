@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import info.bvlion.journalingpost.debug.DebugFixtureSeedResult
 import info.bvlion.journalingpost.debug.DebugFixtureSeeder
 import info.bvlion.journalingpost.hosted.HostedConsentRepository
+import info.bvlion.journalingpost.hosted.HostedCredentialsRepository
+import info.bvlion.journalingpost.hosted.sha256Hex
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import info.bvlion.journalingpost.settings.MoodNoteInputRepository
@@ -35,6 +37,7 @@ class SettingsViewModel(
   private val noteOnlyEntryRepository: NoteOnlyEntryRepository,
   private val moodNoteInputRepository: MoodNoteInputRepository,
   private val hostedConsentRepository: HostedConsentRepository,
+  private val hostedCredentialsRepository: HostedCredentialsRepository,
   private val refreshWidgets: suspend () -> Unit,
   /** debugビルドでのみ非null。動作確認用fixtureの投入導線を出すかどうかの判定にも使う。 */
   private val debugFixtureSeeder: DebugFixtureSeeder? = null,
@@ -52,6 +55,8 @@ class SettingsViewModel(
   private val _highlightAnalysisIntegration = MutableStateFlow(false)
   val highlightAnalysisIntegration: StateFlow<Boolean> = _highlightAnalysisIntegration.asStateFlow()
 
+  private val supportId = MutableStateFlow<String?>(null)
+
   val uiState: StateFlow<SettingsUiState> = combine(
     analysisIntegrationRepository.analysisIntegration,
     webhookSettingsRepository.settings,
@@ -60,8 +65,9 @@ class SettingsViewModel(
     combine(
       noteOnlyEntryRepository.isNoteOnlyEntryEnabled,
       moodNoteInputRepository.isMoodNoteInputInitiallyOpen,
-    ) { noteOnlyEntryEnabled, isMoodNoteInputInitiallyOpen ->
-      noteOnlyEntryEnabled to isMoodNoteInputInitiallyOpen
+      supportId,
+    ) { noteOnlyEntryEnabled, isMoodNoteInputInitiallyOpen, supportId ->
+      Triple(noteOnlyEntryEnabled, isMoodNoteInputInitiallyOpen, supportId)
     },
   ) { integration, webhookSettings, pendingCustomWebhook, pendingHosted, recordingSettings ->
     SettingsUiState(
@@ -79,6 +85,7 @@ class SettingsViewModel(
       },
       noteOnlyEntryEnabled = recordingSettings.first,
       isMoodNoteInputInitiallyOpen = recordingSettings.second,
+      supportId = recordingSettings.third,
     )
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -106,6 +113,15 @@ class SettingsViewModel(
     _highlightAnalysisIntegration.value = highlightAnalysisIntegration
     // 前回の表示中に発生して画面へ届かなかった結果は、次回表示へ持ち越さない。
     while (_events.tryReceive().isSuccess) {}
+    viewModelScope.launch {
+      supportId.value = try {
+        hostedCredentialsRepository.apiKey()?.sha256Hex()
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        null
+      }
+    }
   }
 
   /** Webhook設定画面から戻ったら、保留していた選択表示は解除して永続化済みの値へ従う。 */
@@ -267,6 +283,8 @@ data class SettingsUiState(
   val noteOnlyEntryEnabled: Boolean? = null,
   /** Mood記録の開始時からメモ入力を開くか。読み込み確定前はnull。 */
   val isMoodNoteInputInitiallyOpen: Boolean? = null,
+  /** Hosted登録済みの場合の、API key SHA-256（小文字64桁hex）。 */
+  val supportId: String? = null,
 )
 
 sealed interface SettingsEvent {

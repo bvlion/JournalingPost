@@ -47,8 +47,11 @@ sealed interface PeriodAnalysisOutcome {
     /** 解析先がHTTPエラー(2xx以外)を返した。処理前の拒否と分かる恒久的な失敗。 */
     SERVER_ERROR,
 
+    /** Hostedで同じ対象日の解析が成功済み。手動再実行は失敗とし、自動再試行もしない。 */
+    RATE_LIMITED,
+
     /**
-     * 解析先が一時的に応答できない(timeout・503・504・429・処理中など)。同じ意図で
+     * 解析先が一時的に応答できない(timeout・503・504・処理中など)。同じ意図で
      * しばらくしてから再実行でき、その際は同じIdempotency-Keyを使う。
      */
     TEMPORARILY_UNAVAILABLE,

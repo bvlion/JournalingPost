@@ -197,12 +197,52 @@ class AutoAnalyzerTest {
   }
 
   @Test
-  fun `解析先の失敗は再試行せずFAILEDを返す`() = runTest {
+  fun `Hostedのnetwork失敗は15秒間隔で2回再試行してFAILEDを返す`() = runTest {
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.NETWORK }
+    var waitCount = 0
     val outcome = createAnalyzer(
-      analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.NETWORK },
+      analyzer = analyzer,
+      waitBeforeRetry = { waitCount++ },
     ).runOnce()
 
     assertEquals(AutoAnalysisOutcome.FAILED, outcome)
+    assertEquals(3, analyzer.callCount)
+    assertEquals(2, waitCount)
+  }
+
+  @Test
+  fun `Hostedの一時失敗は同じ対象期間で再試行して成功できる`() = runTest {
+    var callCount = 0
+    val analyzer = FakePeriodAnalyzer {
+      callCount++
+      if (callCount == 1) PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE else success()
+    }
+    val outcome = createAnalyzer(analyzer = analyzer, waitBeforeRetry = {}).runOnce()
+
+    assertEquals(AutoAnalysisOutcome.ANALYZED, outcome)
+    assertEquals(2, analyzer.callCount)
+  }
+
+  @Test
+  fun `Hostedのrate_limitedは自動再試行しない`() = runTest {
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.RATE_LIMITED }
+    val outcome = createAnalyzer(analyzer = analyzer, waitBeforeRetry = {}).runOnce()
+
+    assertEquals(AutoAnalysisOutcome.FAILED, outcome)
+    assertEquals(1, analyzer.callCount)
+  }
+
+  @Test
+  fun `Custom Webhookのnetwork失敗は自動再試行しない`() = runTest {
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.NETWORK }
+    val outcome = createAnalyzer(
+      integration = AnalysisIntegration.CUSTOM_WEBHOOK,
+      analyzer = analyzer,
+      waitBeforeRetry = {},
+    ).runOnce()
+
+    assertEquals(AutoAnalysisOutcome.FAILED, outcome)
+    assertEquals(1, analyzer.callCount)
   }
 
   @Test
@@ -269,6 +309,7 @@ class AutoAnalyzerTest {
     attemptStore: FakeAutoAnalysisAttemptStore = FakeAutoAnalysisAttemptStore(),
     currentZoneId: () -> ZoneId = { ZoneOffset.UTC },
     currentDate: () -> LocalDate = { LocalDate.of(2026, 8, 31) },
+    waitBeforeRetry: suspend () -> Unit = {},
   ) = AutoAnalyzer(
     autoAnalysisSettingsRepository = FakeAutoAnalysisSettingsRepository(settings),
     analysisIntegrationRepository = FakeAnalysisIntegrationRepository(integration),
@@ -278,6 +319,7 @@ class AutoAnalyzerTest {
     periodAnalysisRunner = PeriodAnalysisRunner(analyzer, writer),
     currentZoneId = currentZoneId,
     currentDate = currentDate,
+    waitBeforeRetry = waitBeforeRetry,
   )
 
   private fun entry(at: String) = JournalEntry(timestamp = Instant.parse(at), note = "メモ", source = JournalSource.APP)

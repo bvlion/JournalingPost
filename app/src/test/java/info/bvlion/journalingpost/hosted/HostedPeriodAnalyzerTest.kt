@@ -115,7 +115,7 @@ class HostedPeriodAnalyzerTest {
   }
 
   @Test
-  fun `analyses requestにBearer認証とIdempotency-Keyとperiod_entriesを載せる`() = runTest {
+  fun `analyses requestにBearer認証とIdempotency-KeyとanalysisDate_period_entriesを載せる`() = runTest {
     var authorization: String? = null
     var idempotencyKey: String? = null
     var body: String? = null
@@ -142,6 +142,7 @@ class HostedPeriodAnalyzerTest {
     assertEquals("Bearer jpk_stored", authorization)
     assertEquals("idem-123", idempotencyKey)
     val json = Json.parseToJsonElement(requireNotNull(body)).jsonObject
+    assertEquals("20260830", json.getValue("analysisDate").jsonPrimitive.content)
     assertEquals("2026-08-30T00:00:00Z", json.getValue("period").jsonObject.getValue("start").jsonPrimitive.content)
     assertEquals("2026-08-31T00:00:00Z", json.getValue("period").jsonObject.getValue("end").jsonPrimitive.content)
     val entries = json.getValue("entries").jsonArray
@@ -181,8 +182,8 @@ class HostedPeriodAnalyzerTest {
   }
 
   @Test
-  fun `429と5xxはTEMPORARILY_UNAVAILABLEでkeyを残す`() = runTest {
-    listOf(HttpStatusCode.TooManyRequests, HttpStatusCode(500, "x"), HttpStatusCode.ServiceUnavailable, HttpStatusCode.GatewayTimeout).forEach { status ->
+  fun `5xxはTEMPORARILY_UNAVAILABLEでkeyを残す`() = runTest {
+    listOf(HttpStatusCode(500, "x"), HttpStatusCode.ServiceUnavailable, HttpStatusCode.GatewayTimeout).forEach { status ->
       val keyStore = FakeIdempotencyKeyStore()
       val analyzer = analyzer(
         credentials = FakeHostedCredentialsRepository(stored = "jpk_stored"),
@@ -196,6 +197,21 @@ class HostedPeriodAnalyzerTest {
       )
       assertFalse("status=$status", keyStore.wasCleared(period))
     }
+  }
+
+  @Test
+  fun `429はRATE_LIMITEDでkeyを残す`() = runTest {
+    val keyStore = FakeIdempotencyKeyStore()
+    val analyzer = analyzer(
+      credentials = FakeHostedCredentialsRepository(stored = "jpk_stored"),
+      keyStore = keyStore,
+    ) { respondJson("""{"error":{"code":"rate_limited"}}""", HttpStatusCode.TooManyRequests) }
+
+    assertEquals(
+      PeriodAnalysisOutcome.Failure.RATE_LIMITED,
+      analyzer.analyze(periodStart, periodEnd, oneEntry),
+    )
+    assertFalse(keyStore.wasCleared(period))
   }
 
   @Test
@@ -386,11 +402,19 @@ class HostedPeriodAnalyzerTest {
     }
     return HostedPeriodAnalyzer(
       httpClient = client,
-      registrar = HostedInstallationRegistrar(client, credentials, baseUrl),
+      registrar = HostedInstallationRegistrar(
+        httpClient = client,
+        credentialsRepository = credentials,
+        baseUrl = baseUrl,
+        packageName = "info.bvlion.journalingpost",
+        requestIntegrityToken = { "integrity-token" },
+        registrationIdFactory = { "a".repeat(64) },
+      ),
       credentialsRepository = credentials,
       idempotencyKeyStore = keyStore,
       analysisIntegrationRepository = integrationRepository,
       baseUrl = baseUrl,
+      currentZoneId = { java.time.ZoneOffset.UTC },
     )
   }
 }

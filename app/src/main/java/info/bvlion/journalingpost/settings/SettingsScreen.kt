@@ -76,6 +76,7 @@ fun SettingsScreen(
   onWebhookSettingsOpen: () -> Unit,
   onWriteReviewOpen: () -> Unit,
   onSendFeedbackOpen: () -> Unit,
+  onSupportIdCopy: (String) -> Unit,
   onPrivacyPolicyOpen: () -> Unit,
   appVersionName: String,
   /** debugビルドでのみ非null。動作確認用fixtureの投入導線を出すかどうかを兼ねる。 */
@@ -252,6 +253,8 @@ fun SettingsScreen(
         appVersionName = appVersionName,
         onWriteReviewOpen = onWriteReviewOpen,
         onSendFeedbackOpen = onSendFeedbackOpen,
+        supportId = uiState.supportId,
+        onSupportIdCopy = onSupportIdCopy,
         onPrivacyPolicyOpen = onPrivacyPolicyOpen,
       )
 
@@ -325,6 +328,8 @@ private fun AboutSection(
   appVersionName: String,
   onWriteReviewOpen: () -> Unit,
   onSendFeedbackOpen: () -> Unit,
+  supportId: String?,
+  onSupportIdCopy: (String) -> Unit,
   onPrivacyPolicyOpen: () -> Unit,
 ) {
   Column {
@@ -348,6 +353,29 @@ private fun AboutSection(
       iconResourceId = R.drawable.ic_settings_feedback,
       onClick = onSendFeedbackOpen,
     )
+    if (supportId != null) {
+      ListItem(
+        headlineContent = { Text(stringResource(R.string.settings_about_support_id_item)) },
+        supportingContent = {
+          Text(
+            text = supportId,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        },
+        trailingContent = {
+          Icon(painter = painterResource(R.drawable.ic_chevron_right), contentDescription = null)
+        },
+        leadingContent = {
+          Icon(
+            painter = painterResource(R.drawable.ic_settings_feedback),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        },
+        modifier = Modifier.clickable { onSupportIdCopy(supportId) },
+      )
+    }
     ExternalLinkItem(
       title = stringResource(R.string.settings_about_privacy_policy_item),
       iconResourceId = R.drawable.ic_settings_privacy,
@@ -625,6 +653,7 @@ fun SettingsScreenPreview() {
       onWebhookSettingsOpen = {},
       onWriteReviewOpen = {},
       onSendFeedbackOpen = {},
+      onSupportIdCopy = {},
       onPrivacyPolicyOpen = {},
       appVersionName = "1.0.0",
     )

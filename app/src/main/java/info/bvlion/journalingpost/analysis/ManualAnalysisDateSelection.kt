@@ -11,7 +11,7 @@ import java.time.ZoneOffset
  * 手動解析で選べる日を決める。判定はこの1か所へ閉じ、UI側へ日付計算を持ち出さない。
  *
  * Custom Webhookは記録が1件以上ある日すべて(Issue #38で確定した扱いを維持する)。
- * Hostedは当日を対象にせず、まだ解析されていない前日以前の記録日だけにする(Issue #59)。
+ * Hostedは当日を対象にせず、昨日から6日前までの未解析の記録日だけにする(Issue #86)。
  * 自動解析・手動解析を問わず解析済み(その日を対象期間とする[AnalysisResult]が存在する)日も除外する。
  */
 internal fun manualAnalysisSelectableDays(
@@ -21,7 +21,9 @@ internal fun manualAnalysisSelectableDays(
   today: LocalDate,
 ): Set<LocalDate> = when (integration) {
   AnalysisIntegration.HOSTED ->
-    recordedDays.filterTo(mutableSetOf()) { it.isBefore(today) && it !in analyzedDays }
+    recordedDays.filterTo(mutableSetOf()) {
+      !it.isBefore(today.minusDays(6)) && it.isBefore(today) && it !in analyzedDays
+    }
 
   AnalysisIntegration.CUSTOM_WEBHOOK, AnalysisIntegration.NONE -> recordedDays
 }

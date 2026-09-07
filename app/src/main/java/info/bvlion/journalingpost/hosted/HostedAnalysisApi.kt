@@ -9,6 +9,13 @@ import java.time.format.DateTimeParseException
 import java.time.format.ResolverStyle
 import kotlinx.serialization.Serializable
 
+/** `POST /v1/installations` のrequest body。Play Integrity tokenはこの登録時だけ送る。 */
+@Serializable
+internal data class HostedInstallationRequest(
+  val registrationId: String,
+  val integrityToken: String,
+)
+
 /**
  * `POST /v1/installations` の Response 201。AndroidはapiKeyだけを保存し、Server内部の
  * installation IDは受け取っても保持しない(契約上返らない)。
@@ -30,6 +37,7 @@ internal data class HostedInstallationResponse(
  */
 @Serializable
 internal data class HostedAnalysisRequest(
+  val analysisDate: String,
   val period: Period,
   val entries: List<Entry>,
 ) {

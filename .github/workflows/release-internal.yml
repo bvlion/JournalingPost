@@ -44,13 +44,18 @@ jobs:
 
       # production 相当の release/minify 済み AAB を生成し、release.jks で署名する。
       # HOSTED_ANALYSIS_BASE_URL を production Hosted Base URL として build へ反映する。
-      # 未設定・不正値の場合は verifyHostedAnalysisBaseUrl が build を失敗させる。
+      # PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER はStandard Integrity tokenの準備に使う。
+      # いずれかが未設定・不正値の場合は対応するverify taskがbuildを失敗させる。
       - name: Build signed release bundle
         env:
           KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           HOSTED_ANALYSIS_BASE_URL: ${{ secrets.HOSTED_ANALYSIS_BASE_URL }}
-        run: ./gradlew :app:bundleRelease "-PhostedAnalysisBaseUrl=$HOSTED_ANALYSIS_BASE_URL"
+          PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER: ${{ secrets.PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER }}
+        run: >-
+          ./gradlew :app:bundleRelease
+          "-PhostedAnalysisBaseUrl=$HOSTED_ANALYSIS_BASE_URL"
+          "-PplayIntegrityCloudProjectNumber=$PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER"
 
       # internal track へ配布。versionCode は app/build.gradle.kts で管理し、release ごとに
       # 手動で更新する運用。status: completed で内部テスターへ即時反映する。

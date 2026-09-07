@@ -46,6 +46,8 @@ class ManualAnalysisDateSelectionTest {
 
   private val today = LocalDate.of(2026, 2, 12)
   private val recordedDays = setOf(
+    LocalDate.of(2026, 2, 5),
+    LocalDate.of(2026, 2, 6),
     LocalDate.of(2026, 2, 9),
     LocalDate.of(2026, 2, 10),
     LocalDate.of(2026, 2, 11),
@@ -66,9 +68,9 @@ class ManualAnalysisDateSelectionTest {
   }
 
   @Test
-  fun `Hostedは当日と解析済みの日を除いた前日以前の記録日だけ選べる`() {
+  fun `Hostedは昨日から6日前までの未解析の記録日だけ選べる`() {
     assertEquals(
-      setOf(LocalDate.of(2026, 2, 9), LocalDate.of(2026, 2, 11)),
+      setOf(LocalDate.of(2026, 2, 6), LocalDate.of(2026, 2, 9), LocalDate.of(2026, 2, 11)),
       manualAnalysisSelectableDays(
         integration = AnalysisIntegration.HOSTED,
         recordedDays = recordedDays,

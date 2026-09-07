@@ -245,6 +245,7 @@ private fun Resources.failureMessage(failed: AnalysisRunResult.Failed): String =
   PeriodAnalysisOutcome.Failure.LOCAL_READ -> getString(R.string.analysis_failure_local_read)
   PeriodAnalysisOutcome.Failure.NETWORK -> getString(R.string.analysis_failure_network)
   PeriodAnalysisOutcome.Failure.SERVER_ERROR -> getString(R.string.analysis_failure_server_error)
+  PeriodAnalysisOutcome.Failure.RATE_LIMITED -> getString(R.string.analysis_failure_rate_limited)
   PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE ->
     getString(R.string.analysis_failure_temporarily_unavailable)
 

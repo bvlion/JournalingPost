@@ -12,8 +12,8 @@ import kotlinx.coroutines.CancellationException
  * 依存はDIコンテナ([AppContainer])から取り出す。WorkManagerの既定WorkerFactoryが
  * `(Context, WorkerParameters)` で生成するため、コンストラクタは変えない。
  *
- * 一時的な失敗でも[androidx.work.ListenableWorker.Result.retry]は返さない(#59: 再試行なし、
- * 翌日の実行を待つ)。実行の成否にかかわらず、最後に次回実行を予約し直して日次のchainを継続する。
+ * Hostedの短時間retryは[info.bvlion.journalingpost.analysis.AutoAnalyzer]内で同じ対象期間のまま行う。
+ * Worker自体のretryはせず、実行の成否にかかわらず最後に次回実行を予約し直して日次のchainを継続する。
  */
 class AutoAnalysisWorker(
   appContext: Context,

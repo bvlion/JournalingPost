@@ -2,6 +2,7 @@ package info.bvlion.journalingpost
 
 import info.bvlion.journalingpost.debug.DebugFixtureSeeder
 import info.bvlion.journalingpost.hosted.HostedConsentRepository
+import info.bvlion.journalingpost.hosted.HostedCredentialsRepository
 import info.bvlion.journalingpost.journal.JournalEntry
 import info.bvlion.journalingpost.mood.Mood
 import info.bvlion.journalingpost.settings.AnalysisIntegration
@@ -365,6 +366,7 @@ class SettingsViewModelTest {
     webhookRepository: WebhookSettingsRepository,
     noteOnlyEntryRepository: NoteOnlyEntryRepository = FakeNoteOnlyEntryRepository(),
     hostedConsentRepository: HostedConsentRepository = FakeHostedConsentRepository(),
+    hostedCredentialsRepository: HostedCredentialsRepository = FakeSettingsHostedCredentialsRepository(),
     moodNoteInputRepository: MoodNoteInputRepository = FakeMoodNoteInputRepository(),
     refreshWidgets: suspend () -> Unit = {},
     debugFixtureSeeder: DebugFixtureSeeder? = null,
@@ -374,9 +376,28 @@ class SettingsViewModelTest {
     noteOnlyEntryRepository = noteOnlyEntryRepository,
     moodNoteInputRepository = moodNoteInputRepository,
     hostedConsentRepository = hostedConsentRepository,
+    hostedCredentialsRepository = hostedCredentialsRepository,
     refreshWidgets = refreshWidgets,
     debugFixtureSeeder = debugFixtureSeeder,
   )
+
+  @Test
+  fun `Settingsを開くとHosted API keyのSHA256をSupport IDへ反映する`() = runTest(dispatcher) {
+    val viewModel = createViewModel(
+      FakeAnalysisIntegrationRepository(AnalysisIntegration.NONE),
+      FakeWebhookSettingsRepository(),
+      hostedCredentialsRepository = FakeSettingsHostedCredentialsRepository("jpk_test"),
+    )
+    collectUiState(viewModel)
+
+    viewModel.onSettingsOpened()
+    advanceUntilIdle()
+
+    assertEquals(
+      "6f5fc3c3f98786e16e3d28ba8b662d64d91362867bd42271d56d09bfad476b1d",
+      viewModel.uiState.value.supportId,
+    )
+  }
 
   @Test
   fun `動作確認用fixtureを投入するとDebugFixturesSeededを通知する`() = runTest(dispatcher) {
@@ -636,6 +657,20 @@ class SettingsViewModelTest {
         throw IOException("hosted consent write failed")
       }
       state.value = true
+    }
+  }
+
+  private class FakeSettingsHostedCredentialsRepository(
+    private var stored: String? = null,
+  ) : HostedCredentialsRepository {
+    override suspend fun apiKey(): String? = stored
+
+    override suspend fun store(apiKey: String) {
+      stored = apiKey
+    }
+
+    override suspend fun clear() {
+      stored = null
     }
   }
 
