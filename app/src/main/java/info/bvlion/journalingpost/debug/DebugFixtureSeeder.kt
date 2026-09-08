@@ -108,22 +108,31 @@ class DebugFixtureSeeder(
       periodEnd = day.plusDays(1).atStartOfDay(zone).toInstant(),
       // 今日ぶんは投入時刻より未来にならないようにする。
       analyzedAt = if (analyzedCandidate.isAfter(nowInstant)) nowInstant else analyzedCandidate,
-      body = analysisBody(day),
+      body = analysisBody(day, daysAgo),
     )
   }
 
-  private fun analysisBody(day: LocalDate): String = buildString {
-    appendLine("$day の記録をもとにした動作確認用の解析結果です。")
-    appendLine()
-    appendLine("・全体的な気分の傾向をここに表示します。")
-    appendLine("・特徴的だった出来事の要約をここに表示します。")
-    append("・翌日に向けた小さな気づきをここに表示します。")
+  private fun analysisBody(day: LocalDate, daysAgo: Int): String {
+    if (daysAgo == PAST_DAYS) return STORE_SCREENSHOT_ANALYSIS_BODY
+
+    return buildString {
+      appendLine("$day の記録をもとにした動作確認用の解析結果です。")
+      appendLine()
+      appendLine("・全体的な気分の傾向をここに表示します。")
+      appendLine("・特徴的だった出来事の要約をここに表示します。")
+      append("・翌日に向けた小さな気づきをここに表示します。")
+    }
   }
 
   private enum class EntryShape { MOOD_ONLY, MOOD_AND_NOTE, NOTE_ONLY }
 
   private companion object {
     const val PAST_DAYS = 6
+
+    const val STORE_SCREENSHOT_ANALYSIS_BODY =
+      "朝はよく眠れて体が軽く、落ち着いて一日を始められています。" +
+        "午後には少し疲れが見られますが、散歩が気分転換につながっています。" +
+        "疲れを感じたときに少し外へ出ることが、気持ちを切り替えるきっかけになっていそうです。"
 
     val TODAY_TIMES: List<LocalTime> = listOf(
       LocalTime.of(7, 15),
