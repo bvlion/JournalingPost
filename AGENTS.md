@@ -6,7 +6,7 @@ JournalingPost は、Kotlin / Jetpack Compose で実装された Android の日�
 
 - `app/`: Androidアプリ本体
 
-Java 17とリポジトリ同梱のGradle Wrapperを使用します。
+Gradle / CIの実行環境にはJDK 25 LTSを使用し、Java / Kotlinのtargetは17を維持します。Gradleはリポジトリ同梱のWrapperを使用します。
 
 ## プロダクト原則
 
