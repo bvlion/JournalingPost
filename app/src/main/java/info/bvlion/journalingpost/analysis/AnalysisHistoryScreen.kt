@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -77,6 +78,7 @@ private val analysisDayFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日"
 fun AnalysisHistoryScreen(
   uiState: AnalysisHistoryUiState,
   selectedItem: AnalysisHistoryItem?,
+  listState: LazyListState = rememberLazyListState(),
   canRunAnalysis: Boolean,
   isRunning: Boolean,
   selectableDays: Set<LocalDate>,
@@ -88,7 +90,6 @@ fun AnalysisHistoryScreen(
 ) {
   val resources = LocalResources.current
   val completedMessage = stringResource(R.string.analysis_completed)
-  val listState = rememberLazyListState()
 
   // 選べる日が無いときは「解析する」を出さない。Hostedでは当日と解析済みの日を除くと対象が
   // 無くなることがある(その場合は自動解析か翌日以降に委ねる)。導線を出す場合は一覧の先頭itemが
