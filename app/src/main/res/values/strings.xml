@@ -10,8 +10,8 @@
 
   <!-- 下部ナビゲーション。トップレベル画面は現在地を下部ナビが示すため、上部へ画面名を重複表示しない。 -->
   <string name="tab_record">記録</string>
-  <string name="tab_journal_history">記録履歴</string>
-  <string name="tab_analysis_history">解析履歴</string>
+  <string name="tab_journal_history">履歴</string>
+  <string name="tab_analysis_history">ふりかえり</string>
   <string name="tab_settings">設定</string>
 
   <!-- ==== 記録 ==== -->
