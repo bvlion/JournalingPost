@@ -20,59 +20,65 @@ import org.junit.Test
 class DebugFixtureSeederTest {
   private val tokyo = ZoneId.of("Asia/Tokyo")
   private val moods = listOf(
-    Mood(id = "mood-a", emoji = "😀", label = "嬉しい"),
-    Mood(id = "mood-b", emoji = "😌", label = "穏やか"),
-    Mood(id = "mood-c", emoji = "😮‍💨", label = "疲れた"),
+    Mood(id = "excited", emoji = "🤩", label = "ワクワク"),
+    Mood(id = "happy", emoji = "😄", label = "嬉しい"),
+    Mood(id = "calm", emoji = "😌", label = "穏やか"),
+    Mood(id = "neutral", emoji = "😐", label = "普通"),
+    Mood(id = "tired", emoji = "😮‍💨", label = "疲れた"),
+    Mood(id = "uncertain", emoji = "😕", label = "もやもや"),
+    Mood(id = "anxious", emoji = "😰", label = "不安"),
+    Mood(id = "irritated", emoji = "😡", label = "イライラ"),
   )
 
   @Test
-  fun `初回投入で今日を含む過去7日分のJournalEntryを作る`() = runTest {
+  fun `初回投入で今日を含む過去14日分のJournalEntryを作る`() = runTest {
     val entries = FakeJournalEntryRepository()
     val seeder = seeder(entries = entries, now = Instant.parse("2026-09-01T04:00:00Z"))
 
-    seeder.seed()
+    val result = seeder.seed() as DebugFixtureSeedResult.Seeded
 
+    assertEquals(49, result.entryCount)
     val dates = entries.inserted.map { it.timestamp.atZone(tokyo).toLocalDate() }.toSortedSet()
-    assertEquals(7, dates.size)
+    assertEquals(14, dates.size)
     assertEquals("2026-09-01", dates.last().toString())
-    assertEquals("2026-08-26", dates.first().toString())
+    assertEquals("2026-08-19", dates.first().toString())
   }
 
   @Test
-  fun `今日のJournalEntryは縦スクロール確認に十分な件数がある`() = runTest {
+  fun `各日のJournalEntry件数は解析入力と一致する`() = runTest {
     val entries = FakeJournalEntryRepository()
     val seeder = seeder(entries = entries, now = Instant.parse("2026-09-01T04:00:00Z"))
 
     seeder.seed()
 
     val today = Instant.parse("2026-09-01T04:00:00Z").atZone(tokyo).toLocalDate()
-    val todayCount = entries.inserted.count { it.timestamp.atZone(tokyo).toLocalDate() == today }
-    assertTrue("今日の件数=$todayCount", todayCount >= 12)
-  }
-
-  @Test
-  fun `過去6日はそれぞれ複数件のJournalEntryがある`() = runTest {
-    val entries = FakeJournalEntryRepository()
-    val seeder = seeder(entries = entries, now = Instant.parse("2026-09-01T04:00:00Z"))
-
-    seeder.seed()
-
-    val today = Instant.parse("2026-09-01T04:00:00Z").atZone(tokyo).toLocalDate()
-    for (daysAgo in 1..6) {
+    val counts = (0..13).map { daysAgo ->
       val day = today.minusDays(daysAgo.toLong())
-      val count = entries.inserted.count { it.timestamp.atZone(tokyo).toLocalDate() == day }
-      assertTrue("$day の件数=$count", count >= 2)
+      entries.inserted.count { it.timestamp.atZone(tokyo).toLocalDate() == day }
     }
+    assertEquals(listOf(4, 4, 4, 4, 3, 3, 4, 4, 3, 4, 3, 3, 3, 3), counts)
   }
 
   @Test
-  fun `JournalEntryはMoodのみとMoodとnoteとnoteのみを混在させる`() = runTest {
+  fun `JournalEntryは解析入力のMoodとnoteを保持する`() = runTest {
     val entries = FakeJournalEntryRepository()
     seeder(entries = entries).seed()
 
-    assertTrue(entries.inserted.any { it.moodId != null && it.note == null })
-    assertTrue(entries.inserted.any { it.moodId != null && it.note != null })
-    assertTrue(entries.inserted.any { it.moodId == null && it.note != null })
+    assertTrue(entries.inserted.all { it.moodId != null })
+    assertTrue(entries.inserted.any { it.note == null })
+    assertTrue(entries.inserted.any { it.note != null })
+    assertEquals(
+      JournalEntry(
+        id = 1,
+        timestamp = Instant.parse("2026-08-31T23:00:00Z"),
+        moodId = "calm",
+        moodEmoji = "😌",
+        moodLabel = "穏やか",
+        note = "朝から落ち着いている。今週は先週よりペースをつかめている気がする。",
+        source = JournalSource.WIDGET,
+      ),
+      entries.inserted.first(),
+    )
   }
 
   @Test
@@ -85,17 +91,19 @@ class DebugFixtureSeederTest {
   }
 
   @Test
-  fun `AnalysisResultは今日を含む過去7日に1件ずつ作る`() = runTest {
+  fun `AnalysisResultは今日を含む過去14日に1件ずつ作る`() = runTest {
     val results = FakeAnalysisResultWriter()
     val seeder = seeder(results = results, now = Instant.parse("2026-09-01T04:00:00Z"))
 
     seeder.seed()
 
-    assertEquals(7, results.saved.size)
+    assertEquals(14, results.saved.size)
     val startDates = results.saved.map { it.periodStart.atZone(tokyo).toLocalDate() }.toSortedSet()
-    assertEquals(7, startDates.size)
+    assertEquals(14, startDates.size)
     assertEquals("2026-09-01", startDates.last().toString())
-    assertEquals("2026-08-26", startDates.first().toString())
+    assertEquals("2026-08-19", startDates.first().toString())
+    assertTrue(results.saved.first().body.startsWith("【要約】\n朝は落ち着いており"))
+    assertTrue(results.saved.last().body.startsWith("【要約】\n朝から穏やかな気分で始まり"))
     results.saved.forEach {
       assertEquals(Duration.ofDays(1), Duration.between(it.periodStart, it.periodEnd))
       assertTrue("analyzedAtが未来", !it.analyzedAt.isAfter(Instant.parse("2026-09-01T04:00:00Z")))
