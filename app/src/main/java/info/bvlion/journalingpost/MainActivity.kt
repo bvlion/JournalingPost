@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import info.bvlion.journalingpost.analysis.AnalysisHistoryScreen
+import info.bvlion.journalingpost.analysis.AnalysisHistoryUiState
 import info.bvlion.journalingpost.di.appViewModelFactory
 import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.history.JournalHistoryScreen
@@ -147,6 +148,7 @@ class MainActivity : ComponentActivity() {
         var destination by rememberSaveable { mutableStateOf(MainDestination.RECORD) }
         var showWebhookSettings by rememberSaveable { mutableStateOf(false) }
         var showMoodSettings by rememberSaveable { mutableStateOf(false) }
+        var selectedAnalysisResultId by rememberSaveable { mutableStateOf<Long?>(null) }
         var moodSettingsScreenSessionId by rememberSaveable { mutableIntStateOf(0) }
         // Settingsで保存済み設定が無いままCustom Webhookを選んで来た場合、Webhook設定画面で既存設定が
         // 見つかればその場で有効化する。利用者が自分で設定項目を開いた場合は有効化しない。
@@ -225,13 +227,14 @@ class MainActivity : ComponentActivity() {
 
         BackHandler(
           enabled = selectedMoodId != null || isNoteOnlyRecording || showWebhookSettings || showMoodSettings ||
-            destination != MainDestination.RECORD,
+            selectedAnalysisResultId != null || destination != MainDestination.RECORD,
         ) {
           when {
             selectedMoodId != null || isNoteOnlyRecording -> if (!recordInProgress) closeRecordOverlay()
             // Webhook設定はSettingsの下位画面のため、Backは1段階だけ戻す。
             showWebhookSettings -> closeWebhookSettings()
             showMoodSettings -> closeMoodSettings()
+            selectedAnalysisResultId != null -> selectedAnalysisResultId = null
             else -> destination = MainDestination.RECORD
           }
         }
@@ -240,7 +243,7 @@ class MainActivity : ComponentActivity() {
           Scaffold(
             modifier = Modifier.fillMaxSize().imePadding(),
             bottomBar = {
-              if (!showWebhookSettings && !showMoodSettings) {
+              if (!showWebhookSettings && !showMoodSettings && selectedAnalysisResultId == null) {
                 NavigationBar(
                   modifier = Modifier.onGloballyPositioned {
                     navigationBarHeight = with(density) { it.size.height.toDp() }
@@ -253,6 +256,7 @@ class MainActivity : ComponentActivity() {
                         if (item != destination) {
                           selectedMoodId = null
                           isNoteOnlyRecording = false
+                          selectedAnalysisResultId = null
                           destination = item
                         }
                       },
@@ -264,11 +268,11 @@ class MainActivity : ComponentActivity() {
               }
             },
           ) { innerPadding ->
-            // 詳細画面(Mood設定 / Webhook設定)はScaffoldのcontent paddingをそのまま使い、AppBarが
+            // 詳細画面(Mood設定 / Webhook設定 / 解析結果)はScaffoldのcontent paddingをそのまま使い、AppBarが
             // status barの下へ収まる従来構成を保つ。トップレベル画面はコンテンツをstatus barの下まで
             // 流すため上端のpaddingだけ渡さず、status bar領域の扱いは各画面側が持つ。
             val layoutDirection = LocalLayoutDirection.current
-            val contentPadding = if (showMoodSettings || showWebhookSettings) {
+            val contentPadding = if (showMoodSettings || showWebhookSettings || selectedAnalysisResultId != null) {
               innerPadding
             } else {
               PaddingValues(
@@ -369,8 +373,12 @@ class MainActivity : ComponentActivity() {
                     val isCustomWebhook by analysisHistoryViewModel.isCustomWebhook.collectAsStateWithLifecycle()
                     val isAnalysisRunning by analysisHistoryViewModel.isAnalysisRunning.collectAsStateWithLifecycle()
                     val selectableDays by analysisHistoryViewModel.selectableDays.collectAsStateWithLifecycle()
+                    val selectedAnalysisItem = (analysisHistoryUiState as? AnalysisHistoryUiState.Content)
+                      ?.items
+                      ?.firstOrNull { it.id == selectedAnalysisResultId }
                     AnalysisHistoryScreen(
                       uiState = analysisHistoryUiState,
+                      selectedItem = selectedAnalysisItem,
                       canRunAnalysis = canRunAnalysis,
                       isRunning = isAnalysisRunning,
                       selectableDays = selectableDays,
@@ -392,6 +400,8 @@ class MainActivity : ComponentActivity() {
                           analysisHistoryViewModel.analyze(day)
                         }
                       },
+                      onResultClick = { selectedAnalysisResultId = it.id },
+                      onBack = { selectedAnalysisResultId = null },
                     )
                   }
 
@@ -565,14 +575,16 @@ class MainActivity : ComponentActivity() {
           }
 
           // Snackbarは記録ダイアログより手前へ描く。通常時は下部ナビの上へ、
-          // ダイアログ表示中や下位設定画面ではナビが無い/隠れているので底へ寄せる。
+          // ダイアログ表示中や下位画面ではナビが無い/隠れているので底へ寄せる。
           SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
               .align(Alignment.BottomCenter)
               .imePadding()
               .then(
-                if (showWebhookSettings || showMoodSettings || isRecordOverlayVisible) {
+                if (
+                  showWebhookSettings || showMoodSettings || selectedAnalysisResultId != null || isRecordOverlayVisible
+                ) {
                   Modifier.navigationBarsPadding()
                 } else {
                   Modifier.padding(bottom = navigationBarHeight)

@@ -52,6 +52,31 @@ class AnalysisHistoryMapperTest {
   }
 
   @Test
+  fun `対象期間が同じ結果もidと本文を保った独立した項目になる`() {
+    val periodStart = Instant.parse("2026-08-01T00:00:00Z")
+    val periodEnd = Instant.parse("2026-08-02T00:00:00Z")
+    val items = listOf(
+      result(
+        id = 1,
+        analyzedAt = Instant.parse("2026-08-02T07:00:00Z"),
+        periodStart = periodStart,
+        periodEnd = periodEnd,
+        body = "最初の結果",
+      ),
+      result(
+        id = 2,
+        analyzedAt = Instant.parse("2026-08-02T08:00:00Z"),
+        periodStart = periodStart,
+        periodEnd = periodEnd,
+        body = "次の結果",
+      ),
+    ).toAnalysisHistoryItems(utc)
+
+    assertEquals(listOf(2L, 1L), items.map { it.id })
+    assertEquals(listOf("次の結果", "最初の結果"), items.map { it.body })
+  }
+
+  @Test
   fun `対象期間と解析日時は指定したタイムゾーンのローカル日時へ変換される`() {
     val items = listOf(
       result(

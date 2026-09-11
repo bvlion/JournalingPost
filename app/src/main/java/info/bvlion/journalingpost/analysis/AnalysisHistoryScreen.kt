@@ -1,6 +1,7 @@
 package info.bvlion.journalingpost.analysis
 
 import android.content.res.Resources
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -31,12 +34,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.AnalysisRunResult
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.HistoryEmptyMessage
+import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.TopLevelScreen
 import info.bvlion.journalingpost.ui.theme.HistoryReadingTextStyle
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
@@ -70,12 +76,15 @@ private val analysisDayFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日"
 @Composable
 fun AnalysisHistoryScreen(
   uiState: AnalysisHistoryUiState,
+  selectedItem: AnalysisHistoryItem?,
   canRunAnalysis: Boolean,
   isRunning: Boolean,
   selectableDays: Set<LocalDate>,
   runResults: Flow<AnalysisRunResult>,
   onShowMessage: (String) -> Unit,
   onAnalyze: (LocalDate) -> Unit,
+  onResultClick: (AnalysisHistoryItem) -> Unit,
+  onBack: () -> Unit,
 ) {
   val resources = LocalResources.current
   val completedMessage = stringResource(R.string.analysis_completed)
@@ -100,12 +109,48 @@ fun AnalysisHistoryScreen(
       is AnalysisRunResult.Failed -> onShowMessage(resources.failureMessage(result))
     }
   }
-  LaunchedEffect(scrollToResultId, firstItemId, showTrigger) {
-    if (scrollToResultId != null && firstItemId == scrollToResultId) {
+  LaunchedEffect(scrollToResultId, firstItemId, showTrigger, selectedItem) {
+    if (selectedItem == null && scrollToResultId != null && firstItemId == scrollToResultId) {
       // 生成結果は一覧の先頭。「解析する」導線を出しているときはその1つ下。
       listState.animateScrollToItem(if (showTrigger) 1 else 0)
       scrollToResultId = null
     }
+  }
+
+  if (selectedItem != null) {
+    Column(modifier = Modifier.fillMaxSize()) {
+      ScreenTopAppBar(title = stringResource(R.string.tab_analysis_history), onBack = onBack)
+      Column(
+        modifier = Modifier
+          .weight(1f)
+          .verticalScroll(rememberScrollState())
+          .padding(16.dp),
+      ) {
+        Text(
+          text = stringResource(
+            R.string.analysis_card_period,
+            selectedItem.periodStart.format(analysisDateTimeFormatter),
+            selectedItem.periodEnd.format(analysisDateTimeFormatter),
+          ),
+          style = MaterialTheme.typography.titleSmall,
+        )
+        Text(
+          text = stringResource(
+            R.string.analysis_card_analyzed_at,
+            selectedItem.analyzedAt.format(analysisDateTimeFormatter),
+          ),
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.padding(top = 2.dp),
+        )
+        Text(
+          text = selectedItem.body,
+          style = HistoryReadingTextStyle,
+          modifier = Modifier.padding(top = 16.dp),
+        )
+      }
+    }
+    return
   }
 
   TopLevelScreen {
@@ -153,7 +198,7 @@ fun AnalysisHistoryScreen(
         }
 
         items(uiState.items, key = { it.id }) { item ->
-          AnalysisHistoryCard(item)
+          AnalysisHistoryCard(item = item, onClick = { onResultClick(item) })
         }
       }
     }
@@ -254,8 +299,15 @@ private fun Resources.failureMessage(failed: AnalysisRunResult.Failed): String =
 }
 
 @Composable
-private fun AnalysisHistoryCard(item: AnalysisHistoryItem) {
-  Column(modifier = Modifier.fillMaxWidth()) {
+private fun AnalysisHistoryCard(
+  item: AnalysisHistoryItem,
+  onClick: () -> Unit,
+) {
+  Column(
+    modifier = Modifier
+      .fillMaxWidth()
+      .clickable(onClick = onClick, role = Role.Button),
+  ) {
     Text(
       text = stringResource(
         R.string.analysis_card_period,
@@ -265,15 +317,11 @@ private fun AnalysisHistoryCard(item: AnalysisHistoryItem) {
       style = MaterialTheme.typography.titleSmall,
     )
     Text(
-      text = stringResource(R.string.analysis_card_analyzed_at, item.analyzedAt.format(analysisDateTimeFormatter)),
-      style = MaterialTheme.typography.bodyMedium,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      modifier = Modifier.padding(top = 2.dp),
-    )
-    Text(
       text = item.body,
       style = HistoryReadingTextStyle,
       modifier = Modifier.padding(top = 8.dp),
+      maxLines = 3,
+      overflow = TextOverflow.Ellipsis,
     )
   }
 }
@@ -294,12 +342,15 @@ fun AnalysisHistoryScreenPreview() {
           ),
         ),
       ),
+      selectedItem = null,
       canRunAnalysis = true,
       isRunning = false,
       selectableDays = setOf(LocalDate.of(2026, 8, 23), LocalDate.of(2026, 8, 24)),
       runResults = emptyFlow(),
       onShowMessage = {},
       onAnalyze = {},
+      onResultClick = {},
+      onBack = {},
     )
   }
 }
