@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -154,6 +155,11 @@ class MainActivity : ComponentActivity() {
         var destination by rememberSaveable { mutableStateOf(MainDestination.RECORD) }
         var subscreenDestination by rememberSaveable { mutableStateOf<SubscreenDestination?>(null) }
         var selectedAnalysisResultId by rememberSaveable { mutableStateOf<Long?>(null) }
+        // 詳細表示中に一覧側のAnimatedContentが破棄されても、戻ったときの表示位置を維持する。
+        // 他のタブへ移った場合は従来どおり一覧状態を引き継がない。
+        val analysisHistoryListState = rememberSaveable(destination, saver = LazyListState.Saver) {
+          LazyListState()
+        }
         var moodSettingsScreenSessionId by rememberSaveable { mutableIntStateOf(0) }
         // Settingsで保存済み設定が無いままCustom Webhookを選んで来た場合、Webhook設定画面で既存設定が
         // 見つかればその場で有効化する。利用者が自分で設定項目を開いた場合は有効化しない。
@@ -407,6 +413,7 @@ class MainActivity : ComponentActivity() {
                       AnalysisHistoryScreen(
                         uiState = analysisHistoryUiState,
                         selectedItem = selectedAnalysisItem,
+                        listState = analysisHistoryListState,
                         canRunAnalysis = canRunAnalysis,
                         isRunning = isAnalysisRunning,
                         selectableDays = selectableDays,
