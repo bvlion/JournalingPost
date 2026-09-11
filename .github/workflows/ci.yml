@@ -55,7 +55,7 @@ jobs:
           HEAD="${{ steps.diff-range.outputs.head }}"
 
           # Android compile/test/lint に影響し得るパス(PRでの検証対象、source setの種類を問わない)
-          BUILD_REGEX='^(app/src/|app/build\.gradle\.kts$|app/proguard-rules\.pro$|app/schemas/|build\.gradle\.kts$|settings\.gradle\.kts$|gradle\.properties$|gradle/|gradlew$|gradlew\.bat$)'
+          BUILD_REGEX='^(app/src/|app/build\.gradle\.kts$|app/proguard-rules\.pro$|app/schemas/|build\.gradle\.kts$|settings\.gradle\.kts$|gradle\.properties$|gradle/|gradlew$|gradlew\.bat$|\.github/workflows/ci\.yml$)'
           # release APKに影響し得るパス(test/androidTest/debugのみの変更は含まない)
           RELEASE_REGEX='^(app/src/(main|release)/|app/schemas/|app/build\.gradle\.kts$|app/proguard-rules\.pro$|build\.gradle\.kts$|settings\.gradle\.kts$|gradle\.properties$|gradle/|gradlew$|gradlew\.bat$)'
 
