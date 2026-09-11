@@ -82,14 +82,14 @@ jobs:
             echo "release_affecting=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Set up JDK 17
+      - name: Set up JDK 25
         if: >-
           (github.event_name == 'pull_request' && steps.changes.outputs.build_affecting == 'true') ||
           (github.event_name == 'push' && steps.changes.outputs.release_affecting == 'true')
         uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "25"
 
       - name: Setup Gradle
         if: >-
