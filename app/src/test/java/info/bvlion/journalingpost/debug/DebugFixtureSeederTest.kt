@@ -67,6 +67,7 @@ class DebugFixtureSeederTest {
     assertTrue(entries.inserted.all { it.moodId != null })
     assertTrue(entries.inserted.any { it.note == null })
     assertTrue(entries.inserted.any { it.note != null })
+    assertTrue(entries.inserted.none { it.note?.contains("週") == true })
     assertEquals(
       JournalEntry(
         id = 1,
@@ -74,7 +75,7 @@ class DebugFixtureSeederTest {
         moodId = "calm",
         moodEmoji = "😌",
         moodLabel = "穏やか",
-        note = "朝から落ち着いている。今週は先週よりペースをつかめている気がする。",
+        note = "朝から落ち着いている。前よりペースをつかめている気がする。",
         source = JournalSource.WIDGET,
       ),
       entries.inserted.first(),
@@ -104,6 +105,8 @@ class DebugFixtureSeederTest {
     assertEquals("2026-08-19", startDates.first().toString())
     assertTrue(results.saved.first().body.startsWith("【要約】\n朝は落ち着いており"))
     assertTrue(results.saved.last().body.startsWith("【要約】\n朝から穏やかな気分で始まり"))
+    assertTrue(results.saved.none { it.body.contains("週") })
+    assertTrue(results.saved.none { it.body.contains("😊") })
     results.saved.forEach {
       assertEquals(Duration.ofDays(1), Duration.between(it.periodStart, it.periodEnd))
       assertTrue("analyzedAtが未来", !it.analyzedAt.isAfter(Instant.parse("2026-09-01T04:00:00Z")))

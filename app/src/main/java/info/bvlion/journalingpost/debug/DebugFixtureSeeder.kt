@@ -162,7 +162,7 @@ class DebugFixtureSeeder(
       ),
       FixtureDay(
         entries = listOf(
-          FixtureEntry(time = LocalTime.of(7, 50), moodEmoji = "😐", moodLabel = "普通", note = "週の始まり。少し眠いけれど、予定は整理できている。"),
+          FixtureEntry(time = LocalTime.of(7, 50), moodEmoji = "😐", moodLabel = "普通", note = "少し眠いけれど、予定は整理できている。"),
           FixtureEntry(time = LocalTime.of(12, 20), moodEmoji = "😕", moodLabel = "もやもや", note = "午前中に細かい作業が重なって、思ったより進まなかった。"),
           FixtureEntry(time = LocalTime.of(18, 10), moodEmoji = "😮‍💨", moodLabel = "疲れた", note = "夕方には集中力が落ちた。明日は最初に優先順位を決めたい。"),
         ),
@@ -193,7 +193,7 @@ class DebugFixtureSeeder(
         ),
         analysisBody = """
           【要約】
-          朝は気分が中立的だったが、やることを3つに絞って始め、午前中に最も気になっていた作業を終えた。その後は気分が😊から😌へ移り、昨日より余裕があった一日として記録されている。やることを絞る方法が、この日の進み方や余裕と関連していたように見える。
+          朝は気分が中立的だったが、やることを3つに絞って始め、午前中に最も気になっていた作業を終えた。その後は気分が😄から😌へ移り、昨日より余裕があった一日として記録されている。やることを絞る方法が、この日の進み方や余裕と関連していたように見える。
 
           【良かったこと】
           - 午前中のうちに、最も気になっていた作業を終えた。
@@ -242,7 +242,7 @@ class DebugFixtureSeeder(
         ),
         analysisBody = """
           【要約】
-          朝は前日の疲れが少し残り、無理をしない方針で始まったが、昼休みの外出が気分転換になったように見える。その後は予定していたところまで終え、昨日より落ち着いて進められたと記録されており、気分は😐から😌、😊へ改善した一日だった。
+          朝は前日の疲れが少し残り、無理をしない方針で始まったが、昼休みの外出が気分転換になったように見える。その後は予定していたところまで終え、昨日より落ち着いて進められたと記録されており、気分は😐から😌、😄へ改善した一日だった。
 
           【良かったこと】
           - 昼休みに外へ出て、短い時間でも気分転換になった。
@@ -263,15 +263,15 @@ class DebugFixtureSeeder(
           FixtureEntry(time = LocalTime.of(7, 45), moodEmoji = "😄", moodLabel = "嬉しい", note = "よく眠れて、朝から頭がすっきりしている。"),
           FixtureEntry(time = LocalTime.of(12, 15), moodEmoji = "😐", moodLabel = "普通"),
           FixtureEntry(time = LocalTime.of(15, 50), moodEmoji = "😮‍💨", moodLabel = "疲れた", note = "午後は少し集中力が落ちた。"),
-          FixtureEntry(time = LocalTime.of(19, 10), moodEmoji = "😌", moodLabel = "穏やか", note = "一週間が終わってほっとした。夜はのんびり過ごせた。"),
+          FixtureEntry(time = LocalTime.of(19, 10), moodEmoji = "😌", moodLabel = "穏やか", note = "予定していたことが終わってほっとした。夜はのんびり過ごせた。"),
         ),
         analysisBody = """
           【要約】
-          朝は睡眠が十分で頭がすっきりしており、良い状態で始まったようです。昼は中立的な気分となり、午後には集中力の低下が記録されましたが、夜は一週間の終了への安堵とゆったりした時間により、落ち着いた状態に戻った一日でした。
+          朝は睡眠が十分で頭がすっきりしており、良い状態で始まったようです。昼は中立的な気分となり、午後には集中力の低下が記録されましたが、夜は予定していたことを終えた安堵とゆったりした時間により、落ち着いた状態に戻った一日でした。
 
           【良かったこと】
           - よく眠れて、朝から頭がすっきりしていた
-          - 夜はのんびり過ごせ、一週間が終わってほっとした
+          - 夜はのんびり過ごせ、予定していたことが終わってほっとした
 
           【嫌だったこと】
           - 午後に少し集中力が落ちた
@@ -313,16 +313,16 @@ class DebugFixtureSeeder(
         entries = listOf(
           FixtureEntry(time = LocalTime.of(9, 10), moodEmoji = "😌", moodLabel = "穏やか", note = "予定を入れすぎず、ゆっくり朝を過ごした。"),
           FixtureEntry(time = LocalTime.of(14, 0), moodEmoji = "😄", moodLabel = "嬉しい", note = "部屋を片づけたら気分もすっきりした。"),
-          FixtureEntry(time = LocalTime.of(19, 30), moodEmoji = "😌", moodLabel = "穏やか", note = "明日の準備を少しだけ済ませた。落ち着いて週を終えられた。"),
+          FixtureEntry(time = LocalTime.of(19, 30), moodEmoji = "😌", moodLabel = "穏やか", note = "明日の準備を少しだけ済ませた。落ち着いて一日を終えられた。"),
         ),
         analysisBody = """
           【要約】
-          一日を通して😌と😊が続き、無理のないペースで過ごせたように見えます。片づけによるすっきり感や、翌日の準備を少し進められたこともあり、落ち着きと前向きさが保たれた一日でした。
+          一日を通して😌と😄が続き、無理のないペースで過ごせたように見えます。片づけによるすっきり感や、翌日の準備を少し進められたこともあり、落ち着きと前向きさが保たれた一日でした。
 
           【良かったこと】
           - 予定を詰め込まず、ゆっくり朝を過ごした
           - 部屋を片づけ、気分もすっきりした
-          - 明日の準備を少し済ませ、落ち着いて週を終えた
+          - 明日の準備を少し済ませ、落ち着いて一日を終えた
 
           【嫌だったこと】
           なし
@@ -336,18 +336,18 @@ class DebugFixtureSeeder(
       ),
       FixtureDay(
         entries = listOf(
-          FixtureEntry(time = LocalTime.of(8, 5), moodEmoji = "😐", moodLabel = "普通", note = "週明け。先週より気持ちに余裕がある。"),
+          FixtureEntry(time = LocalTime.of(8, 5), moodEmoji = "😐", moodLabel = "普通", note = "前より気持ちに余裕がある。"),
           FixtureEntry(time = LocalTime.of(12, 30), moodEmoji = "😄", moodLabel = "嬉しい", note = "午前中に予定どおり進められた。"),
           FixtureEntry(time = LocalTime.of(17, 20), moodEmoji = "😮‍💨", moodLabel = "疲れた", note = "夕方は少し疲れたが、やることは終えられた。"),
         ),
         analysisBody = """
           【要約】
-          週明けは先週より気持ちに余裕がある状態で始まり、午前中は予定どおり進められて気分も上向いた。夕方には少し疲れが見られたものの、必要なことは終えられており、全体としては順調に進んだ一日だったように見える。
+          朝は前より気持ちに余裕がある状態で始まり、午前中は予定どおり進められて気分も上向いた。夕方には少し疲れが見られたものの、必要なことは終えられており、全体としては順調に進んだ一日だったように見える。
 
           【良かったこと】
           - 午前中に予定どおり進められた。
           - 夕方までにやることを終えられた。
-          - 先週より気持ちに余裕があると記録されている。
+          - 前より気持ちに余裕があると記録されている。
 
           【嫌だったこと】
           - 夕方に少し疲れた。
@@ -439,19 +439,19 @@ class DebugFixtureSeeder(
       ),
       FixtureDay(
         entries = listOf(
-          FixtureEntry(time = LocalTime.of(8, 0), moodEmoji = "😌", moodLabel = "穏やか", note = "朝から落ち着いている。今週は先週よりペースをつかめている気がする。"),
+          FixtureEntry(time = LocalTime.of(8, 0), moodEmoji = "😌", moodLabel = "穏やか", note = "朝から落ち着いている。前よりペースをつかめている気がする。"),
           FixtureEntry(time = LocalTime.of(12, 25), moodEmoji = "😄", moodLabel = "嬉しい", note = "午前中に集中できて、予定していた作業が片づいた。"),
           FixtureEntry(time = LocalTime.of(16, 45), moodEmoji = "😮‍💨", moodLabel = "疲れた", note = "午後は少し疲れたので、早めに休憩を入れた。"),
-          FixtureEntry(time = LocalTime.of(19, 20), moodEmoji = "😌", moodLabel = "穏やか", note = "休憩したら気持ちを切り替えられた。今週は無理しすぎず進められたと思う。"),
+          FixtureEntry(time = LocalTime.of(19, 20), moodEmoji = "😌", moodLabel = "穏やか", note = "休憩したら気持ちを切り替えられた。無理しすぎず進められたと思う。"),
         ),
         analysisBody = """
           【要約】
-          朝は落ち着いており、午前中は集中して予定の作業を片づけられた。午後には少し疲れが出たものの、早めの休憩後に気持ちを切り替えられている。全体として、先週よりペースをつかみ、無理を抑えながら進められた一日だったように見える。
+          朝は落ち着いており、午前中は集中して予定の作業を片づけられた。午後には少し疲れが出たものの、早めの休憩後に気持ちを切り替えられている。全体として、前よりペースをつかみ、無理を抑えながら進められた一日だったように見える。
 
           【良かったこと】
           - 午前中に集中でき、予定していた作業を終えた。
           - 疲れを感じた午後に早めの休憩を入れ、その後気持ちを切り替えられた。
-          - 今週は先週よりペースをつかみ、無理しすぎず進められたと記録している。
+          - 前よりペースをつかみ、無理しすぎず進められたと記録している。
 
           【嫌だったこと】
           - 午後に少し疲れを感じた。
