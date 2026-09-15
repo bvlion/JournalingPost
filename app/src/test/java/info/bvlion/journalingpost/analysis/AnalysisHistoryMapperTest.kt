@@ -101,4 +101,25 @@ class AnalysisHistoryMapperTest {
 
     assertEquals("落ち着いた一週間でした", items.single().body)
   }
+
+  @Test
+  fun `表示本文だけ先頭の要約見出しを除き他の見出しを保つ`() {
+    val body = "【要約】\n穏やかな一日でした\n\n【良かったこと】\n散歩できました"
+    val item = listOf(
+      result(id = 1, analyzedAt = Instant.parse("2026-08-08T07:00:00Z"), body = body),
+    ).toAnalysisHistoryItems(utc).single()
+
+    assertEquals(body, item.body)
+    assertEquals("穏やかな一日でした\n\n【良かったこと】\n散歩できました", item.displayBody)
+  }
+
+  @Test
+  fun `先頭に要約見出しがない本文は表示時も変わらない`() {
+    val body = "本文\n【要約】\n別の行"
+    val item = listOf(
+      result(id = 1, analyzedAt = Instant.parse("2026-08-08T07:00:00Z"), body = body),
+    ).toAnalysisHistoryItems(utc).single()
+
+    assertEquals(body, item.displayBody)
+  }
 }

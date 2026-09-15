@@ -8,4 +8,10 @@ data class AnalysisHistoryItem(
   val periodEnd: LocalDateTime,
   val analyzedAt: LocalDateTime,
   val body: String,
-)
+) {
+  val displayBody: String get() = if (body.startsWith("【要約】")) {
+    body.removePrefix("【要約】").trimStart('\r', '\n')
+  } else {
+    body
+  }
+}

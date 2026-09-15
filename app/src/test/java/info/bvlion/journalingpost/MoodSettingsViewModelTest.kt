@@ -50,6 +50,7 @@ class MoodSettingsViewModelTest {
     advanceUntilIdle()
 
     assertEquals(listOf("first", "second"), viewModel.uiState.value.moods.map { it.id })
+    assertFalse(viewModel.uiState.value.hasUnsavedChanges)
   }
 
   @Test
@@ -63,6 +64,7 @@ class MoodSettingsViewModelTest {
     assertEquals(listOf("second", "first"), viewModel.uiState.value.moods.map { it.id })
     assertEquals("🤩", viewModel.uiState.value.moods.last().emoji)
     assertEquals("ワクワク", viewModel.uiState.value.moods.last().label)
+    assertTrue(viewModel.uiState.value.hasUnsavedChanges)
   }
 
   @Test
@@ -121,6 +123,7 @@ class MoodSettingsViewModelTest {
     assertEquals("新しい名称", repository.saved.single().label)
     assertEquals(1, refreshCount)
     assertEquals(listOf(MoodSettingsEvent.Saved), events)
+    assertFalse(viewModel.uiState.value.hasUnsavedChanges)
   }
 
   @Test
@@ -141,6 +144,7 @@ class MoodSettingsViewModelTest {
     assertEquals("変更中", viewModel.uiState.value.moods.single().label)
     assertFalse(viewModel.uiState.value.isSaving)
     assertEquals(listOf(MoodSettingsEvent.SaveFailed), events)
+    assertTrue(viewModel.uiState.value.hasUnsavedChanges)
   }
 
   @Test
@@ -160,6 +164,7 @@ class MoodSettingsViewModelTest {
     viewModel.save()
     runCurrent()
     refreshStarted.await()
+    assertTrue(viewModel.uiState.value.isSaving)
 
     viewModel.onScreenOpened(screenSessionId = 2)
     runCurrent()
@@ -191,6 +196,18 @@ class MoodSettingsViewModelTest {
     advanceUntilIdle()
 
     assertEquals("嬉しい", viewModel.uiState.value.moods.first().label)
+    assertFalse(viewModel.uiState.value.hasUnsavedChanges)
+  }
+
+  @Test
+  fun `編集を元に戻すと未保存変更がなくなる`() = runTest(dispatcher) {
+    val viewModel = createLoadedViewModel()
+
+    viewModel.updateLabel("first", "変更中")
+    assertTrue(viewModel.uiState.value.hasUnsavedChanges)
+    viewModel.updateLabel("first", "嬉しい")
+
+    assertFalse(viewModel.uiState.value.hasUnsavedChanges)
   }
 
   private suspend fun createLoadedViewModel(

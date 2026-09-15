@@ -40,6 +40,7 @@ class MoodSettingsViewModel(
       if (openedScreenSessionId != screenSessionId) return@launch
       _uiState.value = MoodSettingsUiState(
         moods = moods.map { it.toDraft() },
+        savedMoods = moods.map { it.toDraft() },
         isLoading = false,
       )
     }
@@ -98,6 +99,7 @@ class MoodSettingsViewModel(
         if (openedScreenSessionId != savingScreenSessionId) return@launch
         _uiState.value = MoodSettingsUiState(
           moods = normalized.map { it.toDraft() },
+          savedMoods = normalized.map { it.toDraft() },
           isLoading = false,
         )
         _events.send(MoodSettingsEvent.Saved)
@@ -145,9 +147,11 @@ data class MoodDraft(
 
 data class MoodSettingsUiState(
   val moods: List<MoodDraft> = emptyList(),
+  val savedMoods: List<MoodDraft> = emptyList(),
   val isLoading: Boolean = true,
   val isSaving: Boolean = false,
 ) {
+  val hasUnsavedChanges: Boolean get() = !isLoading && moods != savedMoods
   val canSave: Boolean get() = !isLoading && !isSaving && moods.isNotEmpty() &&
     moods.none { it.isContentBlank || it.isEmojiInvalid }
 }

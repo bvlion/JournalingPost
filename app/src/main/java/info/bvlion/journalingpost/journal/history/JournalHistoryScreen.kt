@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.AlertDialog
@@ -18,6 +18,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -262,8 +263,13 @@ private fun JournalHistoryDayPager(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
         contentPadding = PaddingValues(top = topContentPadding),
       ) {
-        items(items, key = { it.id }) { item ->
-          JournalHistoryRow(item = item, onDeleteRequest = { onDeleteRequest(item) })
+        itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
+          Column {
+            JournalHistoryRow(item = item, onDeleteRequest = { onDeleteRequest(item) })
+            if (index < items.lastIndex) {
+              HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            }
+          }
         }
       }
     }
