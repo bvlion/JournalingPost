@@ -164,6 +164,7 @@ class MoodSettingsViewModelTest {
     viewModel.save()
     runCurrent()
     refreshStarted.await()
+    assertTrue(viewModel.uiState.value.isSaving)
 
     viewModel.onScreenOpened(screenSessionId = 2)
     runCurrent()

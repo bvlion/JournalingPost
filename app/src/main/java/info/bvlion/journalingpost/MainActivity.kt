@@ -215,10 +215,12 @@ class MainActivity : ComponentActivity() {
           viewModel.resetState()
         }
         val closeMoodSettings: () -> Unit = {
-          if (moodSettingsViewModel.uiState.value.hasUnsavedChanges) {
-            showMoodDiscardConfirmation = true
-          } else {
-            subscreenDestination = null
+          if (!moodSettingsViewModel.uiState.value.isSaving) {
+            if (moodSettingsViewModel.uiState.value.hasUnsavedChanges) {
+              showMoodDiscardConfirmation = true
+            } else {
+              subscreenDestination = null
+            }
           }
         }
         val openMoodSettings: () -> Unit = {
@@ -353,10 +355,15 @@ class MainActivity : ComponentActivity() {
                       title = { Text(stringResource(R.string.mood_settings_discard_confirm_title)) },
                       text = { Text(stringResource(R.string.mood_settings_discard_confirm_body)) },
                       confirmButton = {
-                        TextButton(onClick = {
-                          showMoodDiscardConfirmation = false
-                          subscreenDestination = null
-                        }) {
+                        TextButton(
+                          enabled = !moodSettingsUiState.isSaving,
+                          onClick = {
+                            if (!moodSettingsViewModel.uiState.value.isSaving) {
+                              showMoodDiscardConfirmation = false
+                              subscreenDestination = null
+                            }
+                          },
+                        ) {
                           Text(stringResource(R.string.mood_settings_discard_confirm_action))
                         }
                       },
