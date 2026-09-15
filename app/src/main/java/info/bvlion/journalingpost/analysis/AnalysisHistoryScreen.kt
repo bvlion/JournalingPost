@@ -2,7 +2,6 @@ package info.bvlion.journalingpost.analysis
 
 import android.content.res.Resources
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,7 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -21,6 +20,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -145,7 +145,7 @@ fun AnalysisHistoryScreen(
           modifier = Modifier.padding(top = 2.dp),
         )
         Text(
-          text = selectedItem.body,
+          text = selectedItem.displayBody,
           style = HistoryReadingTextStyle,
           modifier = Modifier.padding(top = 16.dp),
         )
@@ -185,7 +185,6 @@ fun AnalysisHistoryScreen(
         state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = topLevelListContentPadding(),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
       ) {
         if (showTrigger) {
           item(key = ANALYSIS_TRIGGER_ITEM_KEY) {
@@ -194,12 +193,18 @@ fun AnalysisHistoryScreen(
               isRunning = isRunning,
               selectableDays = selectableDays,
               onAnalyze = onAnalyze,
+              modifier = Modifier.padding(bottom = 16.dp),
             )
           }
         }
 
-        items(uiState.items, key = { it.id }) { item ->
-          AnalysisHistoryCard(item = item, onClick = { onResultClick(item) })
+        itemsIndexed(uiState.items, key = { _, item -> item.id }) { index, item ->
+          Column {
+            AnalysisHistoryCard(item = item, onClick = { onResultClick(item) })
+            if (index < uiState.items.lastIndex) {
+              HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+            }
+          }
         }
       }
     }
@@ -215,11 +220,12 @@ private fun AnalysisTrigger(
   isRunning: Boolean,
   selectableDays: Set<LocalDate>,
   onAnalyze: (LocalDate) -> Unit,
+  modifier: Modifier = Modifier,
 ) {
   var showDatePicker by remember { mutableStateOf(false) }
 
   // 横方向の余白はLazyColumnのcontentPaddingが持つため、ここでは縦方向だけ空ける。
-  Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+  Column(modifier = modifier.fillMaxWidth().padding(vertical = 4.dp)) {
     when {
       isRunning -> Row(verticalAlignment = Alignment.CenterVertically) {
         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -318,7 +324,7 @@ private fun AnalysisHistoryCard(
       style = MaterialTheme.typography.titleSmall,
     )
     Text(
-      text = item.body,
+      text = item.displayBody,
       style = HistoryReadingTextStyle,
       modifier = Modifier.padding(top = 8.dp),
       maxLines = 3,

@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -37,6 +38,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -161,6 +163,7 @@ class MainActivity : ComponentActivity() {
           LazyListState()
         }
         var moodSettingsScreenSessionId by rememberSaveable { mutableIntStateOf(0) }
+        var showMoodDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
         // Settingsで保存済み設定が無いままCustom Webhookを選んで来た場合、Webhook設定画面で既存設定が
         // 見つかればその場で有効化する。利用者が自分で設定項目を開いた場合は有効化しない。
         var webhookSetupPending by rememberSaveable { mutableStateOf(false) }
@@ -211,8 +214,15 @@ class MainActivity : ComponentActivity() {
           isNoteOnlyRecording = false
           viewModel.resetState()
         }
-        val closeMoodSettings: () -> Unit = { subscreenDestination = null }
+        val closeMoodSettings: () -> Unit = {
+          if (moodSettingsViewModel.uiState.value.hasUnsavedChanges) {
+            showMoodDiscardConfirmation = true
+          } else {
+            subscreenDestination = null
+          }
+        }
         val openMoodSettings: () -> Unit = {
+          showMoodDiscardConfirmation = false
           moodSettingsScreenSessionId++
           subscreenDestination = SubscreenDestination.MOOD_SETTINGS
         }
@@ -318,7 +328,10 @@ class MainActivity : ComponentActivity() {
 
                   EventEffect(moodSettingsViewModel.events) { event ->
                     when (event) {
-                      MoodSettingsEvent.Saved -> showMessage(savedMessage)
+                      MoodSettingsEvent.Saved -> {
+                        showMoodDiscardConfirmation = false
+                        showMessage(savedMessage)
+                      }
                       MoodSettingsEvent.SaveFailed -> showMessage(saveFailedMessage)
                     }
                   }
@@ -334,6 +347,26 @@ class MainActivity : ComponentActivity() {
                     onSave = moodSettingsViewModel::save,
                     onBack = closeMoodSettings,
                   )
+                  if (showMoodDiscardConfirmation) {
+                    AlertDialog(
+                      onDismissRequest = { showMoodDiscardConfirmation = false },
+                      title = { Text(stringResource(R.string.mood_settings_discard_confirm_title)) },
+                      text = { Text(stringResource(R.string.mood_settings_discard_confirm_body)) },
+                      confirmButton = {
+                        TextButton(onClick = {
+                          showMoodDiscardConfirmation = false
+                          subscreenDestination = null
+                        }) {
+                          Text(stringResource(R.string.mood_settings_discard_confirm_action))
+                        }
+                      },
+                      dismissButton = {
+                        TextButton(onClick = { showMoodDiscardConfirmation = false }) {
+                          Text(stringResource(R.string.action_cancel))
+                        }
+                      },
+                    )
+                  }
                 } else if (currentSubscreenDestination == SubscreenDestination.WEBHOOK_SETTINGS) {
                   // process recreationでこの画面がそのまま復元された場合に備えたフォールバック。
                   LaunchedEffect(Unit) {

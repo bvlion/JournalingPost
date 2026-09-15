@@ -106,6 +106,9 @@
   <string name="settings_auto_analysis_save_failed">自動解析の設定を保存できませんでした</string>
   <string name="settings_mood_item">気分の選択肢</string>
   <string name="settings_mood_item_description">絵文字や名前、並び順を変更</string>
+  <string name="mood_settings_discard_confirm_title">変更を破棄しますか？</string>
+  <string name="mood_settings_discard_confirm_body">保存していない気分の選択肢の変更は失われます</string>
+  <string name="mood_settings_discard_confirm_action">破棄して戻る</string>
   <string name="settings_note_only_item">「メモだけ記録」を表示</string>
   <string name="settings_note_only_item_description">記録画面とWidgetに、気分を選ばずメモだけを記録する導線を追加</string>
   <string name="settings_note_only_save_failed">「メモだけ記録」の設定を保存できませんでした</string>
