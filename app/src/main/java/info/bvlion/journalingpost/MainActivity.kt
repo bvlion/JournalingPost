@@ -1,8 +1,6 @@
 package info.bvlion.journalingpost
 
 import android.Manifest
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -37,6 +35,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -441,6 +441,7 @@ class MainActivity : ComponentActivity() {
                       val isCustomWebhook by analysisHistoryViewModel.isCustomWebhook.collectAsStateWithLifecycle()
                       val isAnalysisRunning by analysisHistoryViewModel.isAnalysisRunning.collectAsStateWithLifecycle()
                       val selectableDays by analysisHistoryViewModel.selectableDays.collectAsStateWithLifecycle()
+                      val contactActionLabel = stringResource(R.string.analysis_failure_contact_action)
                       val selectedAnalysisItem = if (
                         currentSubscreenDestination == SubscreenDestination.ANALYSIS_RESULT_DETAIL
                       ) {
@@ -459,6 +460,20 @@ class MainActivity : ComponentActivity() {
                         selectableDays = selectableDays,
                         runResults = analysisHistoryViewModel.runResults,
                         onShowMessage = showMessage,
+                        onShowContactMessage = { message, supportId, analysisDate ->
+                          scope.launch {
+                            snackbarHostState.currentSnackbarData?.dismiss()
+                            if (snackbarHostState.showSnackbar(
+                                message = message,
+                                actionLabel = contactActionLabel,
+                                withDismissAction = true,
+                                duration = SnackbarDuration.Indefinite,
+                              ) == SnackbarResult.ActionPerformed
+                            ) {
+                              openFeedbackForm(context, supportId, analysisDate)
+                            }
+                          }
+                        },
                         onAnalyze = { day ->
                           if (
                             Build.VERSION.SDK_INT >= 37 &&
@@ -502,8 +517,6 @@ class MainActivity : ComponentActivity() {
                         stringResource(R.string.settings_debug_fixtures_already_seeded)
                       val debugFixturesSeedFailedMessage =
                         stringResource(R.string.settings_debug_fixtures_seed_failed)
-                      val supportIdCopiedMessage =
-                        stringResource(R.string.settings_about_support_id_copied)
 
                       // Snackbar表示と下位画面への遷移はこの画面の外側が持つため、Settingsの
                       // 一時的な結果はここで受け取る。
@@ -578,12 +591,6 @@ class MainActivity : ComponentActivity() {
                         onWebhookSettingsOpen = { openWebhookSettings(false) },
                         onWriteReviewOpen = { openStoreListingForReview(context) },
                         onSendFeedbackOpen = { openFeedbackForm(context) },
-                        onSupportIdCopy = { supportId ->
-                          context.getSystemService(ClipboardManager::class.java).setPrimaryClip(
-                            ClipData.newPlainText("Support ID", supportId),
-                          )
-                          showMessage(supportIdCopiedMessage)
-                        },
                         onPrivacyPolicyOpen = { openPrivacyPolicy(context) },
                         appVersionName = BuildConfig.VERSION_NAME,
                         onSeedDebugFixtures = if (BuildConfig.DEBUG) settingsViewModel::seedDebugFixtures else null,

@@ -62,7 +62,8 @@
   <string name="analysis_failure_local_read">端末内の記録を読み込めませんでした</string>
   <string name="analysis_failure_network">解析先と通信できませんでした</string>
   <string name="analysis_failure_server_error">解析先からエラーが返されました</string>
-  <string name="analysis_failure_rate_limited">この日はすでに解析済みです</string>
+  <string name="analysis_failure_rate_limited">この日の解析結果を受け取れていません</string>
+  <string name="analysis_failure_contact_action">お問い合わせ</string>
   <string name="analysis_failure_temporarily_unavailable">解析先が一時的に応答できません。しばらくしてからもう一度お試しください</string>
   <string name="analysis_failure_invalid_response">解析結果を受け取れませんでした</string>
   <string name="analysis_failure_save">解析結果を保存できませんでした</string>
@@ -121,8 +122,6 @@
   <string name="settings_about_heading">このアプリについて</string>
   <string name="settings_about_review_item">応援レビューを書く</string>
   <string name="settings_about_feedback_item">フィードバックを送る</string>
-  <string name="settings_about_support_id_item">Support IDをコピー</string>
-  <string name="settings_about_support_id_copied">Support IDをコピーしました</string>
   <string name="settings_about_privacy_policy_item">プライバシーポリシー</string>
   <string name="settings_about_version_item">バージョン</string>
 
