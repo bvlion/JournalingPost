@@ -44,7 +44,7 @@
   <string name="journal_history_delete_failed">記録を削除できませんでした</string>
   <string name="journal_history_delete_confirm_title">この記録を削除しますか？</string>
   <string name="journal_history_delete_confirm_body">削除すると元に戻せません</string>
-  <string name="journal_history_analyzed_delete_confirm_body">この記録はすでにふりかえりに使用されています。削除しても、作成済みのふりかえりの内容は変わりません。削除しますか？</string>
+  <string name="journal_history_analyzed_delete_confirm_body">この記録はすでにふりかえりに使用されています。削除すると、記録と作成済みのふりかえりの内容が一致しなくなる可能性があります。</string>
   <!-- %1$s は記録の時刻。一覧で同じ「削除」が並ぶため読み上げで対象を区別する。 -->
   <string name="journal_history_delete_row_description">%1$sの記録を削除</string>
 
