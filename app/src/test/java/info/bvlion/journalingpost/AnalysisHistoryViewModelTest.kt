@@ -7,6 +7,8 @@ import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.analysis.AnalysisResultWriter
 import info.bvlion.journalingpost.analysis.PeriodAnalysisOutcome
 import info.bvlion.journalingpost.analysis.PeriodAnalyzer
+import info.bvlion.journalingpost.hosted.HostedCredentialsRepository
+import info.bvlion.journalingpost.hosted.sha256Hex
 import info.bvlion.journalingpost.journal.JournalEntry
 import info.bvlion.journalingpost.journal.JournalEntryReader
 import info.bvlion.journalingpost.journal.JournalSource
@@ -340,6 +342,35 @@ class AnalysisHistoryViewModelTest {
   }
 
   @Test
+  fun `RATE_LIMITEDでは保存済みAPI keyからSupport IDを生成する`() = runTest(testDispatcher) {
+    val analyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.RATE_LIMITED }
+    val credentialsRepository = object : HostedCredentialsRepository {
+      override suspend fun apiKey(): String = "jpk_test"
+      override suspend fun store(apiKey: String) = Unit
+      override suspend fun clear() = Unit
+    }
+    val viewModel = createViewModel(
+      analyzer = analyzer,
+      hostedCredentialsRepository = credentialsRepository,
+    )
+    val results = collectRunResults(viewModel)
+
+    viewModel.analyze(LocalDate.of(2026, 8, 30))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(
+      listOf(
+        AnalysisRunResult.Failed(
+          PeriodAnalysisOutcome.Failure.RATE_LIMITED,
+          LocalDate.of(2026, 8, 30),
+          "jpk_test".sha256Hex(),
+        ),
+      ),
+      results,
+    )
+  }
+
+  @Test
   fun `AnalysisResult保存に失敗するとfailureなしのFailedになる`() = runTest(testDispatcher) {
     val analyzer = FakePeriodAnalyzer { success() }
     val writer = FakeAnalysisResultWriter(failOnSave = true)
@@ -458,6 +489,11 @@ class AnalysisHistoryViewModelTest {
     entryReader: PeriodJournalEntryReader = FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z"))),
     analyzer: PeriodAnalyzer = FakePeriodAnalyzer { success() },
     writer: AnalysisResultWriter = FakeAnalysisResultWriter(),
+    hostedCredentialsRepository: HostedCredentialsRepository = object : HostedCredentialsRepository {
+      override suspend fun apiKey(): String? = null
+      override suspend fun store(apiKey: String) = Unit
+      override suspend fun clear() = Unit
+    },
     currentZoneId: () -> ZoneId = { ZoneOffset.UTC },
     currentDate: () -> LocalDate = { LocalDate.of(2026, 9, 1) },
   ) = AnalysisHistoryViewModel(
@@ -467,6 +503,7 @@ class AnalysisHistoryViewModelTest {
     periodJournalEntryReader = entryReader,
     periodAnalyzer = analyzer,
     analysisResultWriter = writer,
+    hostedCredentialsRepository = hostedCredentialsRepository,
     currentZoneId = currentZoneId,
     currentDate = currentDate,
   )

@@ -84,6 +84,7 @@ fun AnalysisHistoryScreen(
   selectableDays: Set<LocalDate>,
   runResults: Flow<AnalysisRunResult>,
   onShowMessage: (String) -> Unit,
+  onShowContactMessage: (String, String, LocalDate) -> Unit,
   onAnalyze: (LocalDate) -> Unit,
   onResultClick: (AnalysisHistoryItem) -> Unit,
   onBack: () -> Unit,
@@ -107,7 +108,14 @@ fun AnalysisHistoryScreen(
         scrollToResultId = result.savedResultId
       }
 
-      is AnalysisRunResult.Failed -> onShowMessage(resources.failureMessage(result))
+      is AnalysisRunResult.Failed -> {
+        val message = resources.failureMessage(result)
+        if (result.failure == PeriodAnalysisOutcome.Failure.RATE_LIMITED && result.supportId != null) {
+          onShowContactMessage(message, result.supportId, result.day)
+        } else {
+          onShowMessage(message)
+        }
+      }
     }
   }
   LaunchedEffect(scrollToResultId, firstItemId, showTrigger, selectedItem) {
@@ -355,6 +363,7 @@ fun AnalysisHistoryScreenPreview() {
       selectableDays = setOf(LocalDate.of(2026, 8, 23), LocalDate.of(2026, 8, 24)),
       runResults = emptyFlow(),
       onShowMessage = {},
+      onShowContactMessage = { _, _, _ -> },
       onAnalyze = {},
       onResultClick = {},
       onBack = {},

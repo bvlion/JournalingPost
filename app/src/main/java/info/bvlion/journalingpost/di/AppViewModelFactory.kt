@@ -60,6 +60,7 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
       periodJournalEntryReader = container.periodJournalEntryReader,
       periodAnalyzer = container.periodAnalyzer,
       analysisResultWriter = container.analysisResultWriter,
+      hostedCredentialsRepository = container.hostedCredentialsRepository,
     )
   }
   initializer {

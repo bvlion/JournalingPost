@@ -4,6 +4,8 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import androidx.core.net.toUri
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 private const val FEEDBACK_URL = "https://contact.ambitious-i.net/usukou"
 
@@ -18,9 +20,12 @@ fun openStoreListingForReview(context: Context) {
   if (!context.startActivitySafely(playStore)) context.startActivitySafely(web)
 }
 
-fun openFeedbackForm(context: Context, supportId: String?) {
+fun openFeedbackForm(context: Context, supportId: String? = null, analysisDate: LocalDate? = null) {
   val feedbackUri = FEEDBACK_URL.toUri().buildUpon().apply {
-    if (supportId != null) appendQueryParameter("support_id", supportId)
+    if (supportId != null && analysisDate != null) {
+      appendQueryParameter("support_id", supportId)
+      appendQueryParameter("analysis_date", analysisDate.format(DateTimeFormatter.BASIC_ISO_DATE))
+    }
   }.build()
   context.startActivitySafely(Intent(Intent.ACTION_VIEW, feedbackUri))
 }

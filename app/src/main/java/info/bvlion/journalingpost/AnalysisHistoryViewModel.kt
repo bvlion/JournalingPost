@@ -10,6 +10,8 @@ import info.bvlion.journalingpost.analysis.PeriodAnalysisRunner
 import info.bvlion.journalingpost.analysis.PeriodAnalyzer
 import info.bvlion.journalingpost.analysis.manualAnalysisSelectableDays
 import info.bvlion.journalingpost.analysis.toAnalysisHistoryItems
+import info.bvlion.journalingpost.hosted.HostedCredentialsRepository
+import info.bvlion.journalingpost.hosted.sha256Hex
 import info.bvlion.journalingpost.journal.JournalEntryReader
 import info.bvlion.journalingpost.journal.PeriodJournalEntryReader
 import info.bvlion.journalingpost.settings.AnalysisIntegration
@@ -37,6 +39,7 @@ class AnalysisHistoryViewModel(
   private val periodJournalEntryReader: PeriodJournalEntryReader,
   periodAnalyzer: PeriodAnalyzer,
   analysisResultWriter: AnalysisResultWriter,
+  private val hostedCredentialsRepository: HostedCredentialsRepository,
   // 端末timezoneは解析開始・一覧生成のたびに解決する。ViewModel生成時に固定すると、移動などで
   // timezoneが変わったあと選択日の境界が古いオフセットで計算されてしまうため。
   private val currentZoneId: () -> ZoneId = { ZoneId.systemDefault() },
@@ -125,7 +128,20 @@ class AnalysisHistoryViewModel(
     // 端末保存確定のretry stateを持つanalyzerへの通知は[PeriodAnalysisRunner]へ閉じている。
     return when (val outcome = periodAnalysisRunner.run(periodStart, periodEnd, entries)) {
       is PeriodAnalysisRunner.Outcome.Saved -> AnalysisRunResult.Succeeded(outcome.savedResultId)
-      is PeriodAnalysisRunner.Outcome.Failed -> AnalysisRunResult.Failed(outcome.failure, day)
+      is PeriodAnalysisRunner.Outcome.Failed -> {
+        val supportId = if (outcome.failure == PeriodAnalysisOutcome.Failure.RATE_LIMITED) {
+          try {
+            hostedCredentialsRepository.apiKey()?.sha256Hex()
+          } catch (e: CancellationException) {
+            throw e
+          } catch (e: Exception) {
+            null
+          }
+        } else {
+          null
+        }
+        AnalysisRunResult.Failed(outcome.failure, day, supportId)
+      }
       PeriodAnalysisRunner.Outcome.SaveFailed -> AnalysisRunResult.Failed(null, day)
     }
   }
@@ -143,5 +159,9 @@ sealed interface AnalysisRunResult {
    * 失敗理由と同じ結果から組み立てられるように持つ。[failure]がnullなのは、解析自体は成功したが
    * AnalysisResultの端末保存に失敗した場合。
    */
-  data class Failed(val failure: PeriodAnalysisOutcome.Failure?, val day: LocalDate) : AnalysisRunResult
+  data class Failed(
+    val failure: PeriodAnalysisOutcome.Failure?,
+    val day: LocalDate,
+    val supportId: String? = null,
+  ) : AnalysisRunResult
 }

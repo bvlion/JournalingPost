@@ -62,7 +62,8 @@
   <string name="analysis_failure_local_read">端末内の記録を読み込めませんでした</string>
   <string name="analysis_failure_network">解析先と通信できませんでした</string>
   <string name="analysis_failure_server_error">解析先からエラーが返されました</string>
-  <string name="analysis_failure_rate_limited">この日はすでに解析済みです</string>
+  <string name="analysis_failure_rate_limited">この日の解析結果を受け取れていません</string>
+  <string name="analysis_failure_contact_action">お問い合わせ</string>
   <string name="analysis_failure_temporarily_unavailable">解析先が一時的に応答できません。しばらくしてからもう一度お試しください</string>
   <string name="analysis_failure_invalid_response">解析結果を受け取れませんでした</string>
   <string name="analysis_failure_save">解析結果を保存できませんでした</string>
