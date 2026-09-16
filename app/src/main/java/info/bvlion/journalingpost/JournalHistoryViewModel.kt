@@ -72,7 +72,10 @@ class JournalHistoryViewModel(
     )
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), JournalHistoryUiState.Loading)
 
-  // 削除失敗は継続的な画面状態ではなく1度きりの通知なので、画面がSnackbarで見せるまで保持して消費する。
+  // 削除結果は継続的な画面状態ではなく1度きりの通知なので、画面がSnackbarで見せるまで保持して消費する。
+  private val _deleteSuccesses = Channel<Unit>(Channel.BUFFERED)
+  val deleteSuccesses: Flow<Unit> = _deleteSuccesses.receiveAsFlow()
+
   private val _deleteFailures = Channel<Unit>(Channel.BUFFERED)
   val deleteFailures: Flow<Unit> = _deleteFailures.receiveAsFlow()
 
@@ -99,6 +102,7 @@ class JournalHistoryViewModel(
     viewModelScope.launch {
       try {
         deleter.delete(id)
+        _deleteSuccesses.send(Unit)
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {

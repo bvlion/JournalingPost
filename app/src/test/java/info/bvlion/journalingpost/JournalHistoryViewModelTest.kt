@@ -37,7 +37,7 @@ import org.junit.Test
 class JournalHistoryViewModelTest {
   private val testDispatcher = StandardTestDispatcher()
 
-  // Channel由来のdeleteFailuresは購読者がいる間だけ流れるため、テスト中はこのscopeで購読し続ける。
+  // Channel由来の削除結果は購読者がいる間だけ流れるため、テスト中はこのscopeで購読し続ける。
   private val collectorScope = CoroutineScope(testDispatcher)
 
   // 「今日」に依存する挙動を検証するため、テストからは固定値で与えて必要な場合だけ進める。
@@ -435,12 +435,15 @@ class JournalHistoryViewModelTest {
   fun `deleteEntryは指定したidだけを削除対象としてdeleterへ渡す`() = runTest(testDispatcher) {
     val deleter = FakeJournalEntryDeleter()
     val viewModel = createViewModel(FakeJournalEntryReader(), deleter = deleter)
+    val successes = mutableListOf<Unit>()
+    collectorScope.launch { viewModel.deleteSuccesses.collect { successes += it } }
     val failures = collectDeleteFailures(viewModel)
 
     viewModel.deleteEntry(2)
     testDispatcher.scheduler.advanceUntilIdle()
 
     assertEquals(listOf(2L), deleter.deletedIds)
+    assertEquals(1, successes.size)
     assertEquals(0, failures.size)
   }
 
@@ -489,11 +492,14 @@ class JournalHistoryViewModelTest {
   fun `削除に失敗すると未処理例外にならず削除失敗を1度だけ通知する`() = runTest(testDispatcher) {
     val deleter = FakeJournalEntryDeleter(failNextDeletes = 1)
     val viewModel = createViewModel(FakeJournalEntryReader(), deleter = deleter)
+    val successes = mutableListOf<Unit>()
+    collectorScope.launch { viewModel.deleteSuccesses.collect { successes += it } }
     val failures = collectDeleteFailures(viewModel)
 
     viewModel.deleteEntry(1)
     testDispatcher.scheduler.advanceUntilIdle()
 
+    assertTrue(successes.isEmpty())
     assertEquals(1, failures.size)
   }
 
@@ -501,6 +507,8 @@ class JournalHistoryViewModelTest {
   fun `削除に失敗した後に成功しても再度は通知しない`() = runTest(testDispatcher) {
     val deleter = FakeJournalEntryDeleter(failNextDeletes = 1)
     val viewModel = createViewModel(FakeJournalEntryReader(), deleter = deleter)
+    val successes = mutableListOf<Unit>()
+    collectorScope.launch { viewModel.deleteSuccesses.collect { successes += it } }
     val failures = collectDeleteFailures(viewModel)
     viewModel.deleteEntry(1)
     testDispatcher.scheduler.advanceUntilIdle()
@@ -509,6 +517,7 @@ class JournalHistoryViewModelTest {
     viewModel.deleteEntry(1)
     testDispatcher.scheduler.advanceUntilIdle()
 
+    assertEquals(1, successes.size)
     assertEquals(1, failures.size)
   }
 

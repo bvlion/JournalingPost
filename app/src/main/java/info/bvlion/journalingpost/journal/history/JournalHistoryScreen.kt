@@ -76,6 +76,7 @@ private val historyTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.J
 @Composable
 fun JournalHistoryScreen(
   uiState: JournalHistoryUiState,
+  deleteSuccesses: Flow<Unit>,
   deleteFailures: Flow<Unit>,
   onShowMessage: (String) -> Unit,
   onDelete: (Long) -> Unit,
@@ -88,7 +89,9 @@ fun JournalHistoryScreen(
   var pendingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
   var showDateJump by rememberSaveable { mutableStateOf(false) }
 
+  val deleteSucceededMessage = stringResource(R.string.journal_history_delete_succeeded)
   val deleteFailedMessage = stringResource(R.string.journal_history_delete_failed)
+  EventEffect(deleteSuccesses) { onShowMessage(deleteSucceededMessage) }
   EventEffect(deleteFailures) { onShowMessage(deleteFailedMessage) }
 
   Box(modifier = Modifier.fillMaxSize()) {
@@ -452,6 +455,7 @@ fun JournalHistoryScreenPreview() {
           ),
         ),
       ),
+      deleteSuccesses = emptyFlow(),
       deleteFailures = emptyFlow(),
       onShowMessage = {},
       onDelete = {},

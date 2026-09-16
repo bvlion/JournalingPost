@@ -129,7 +129,9 @@ class AnalysisHistoryViewModelTest {
       ),
     )
     val viewModel = createViewModel(deleter = deleter, executionRepository = executionRepository)
+    val successes = mutableListOf<Unit>()
     val failures = mutableListOf<Unit>()
+    collectorScope.launch { viewModel.deleteSuccesses.collect { successes += it } }
     collectorScope.launch { viewModel.deleteFailures.collect { failures += it } }
 
     viewModel.deleteResult(2)
@@ -138,18 +140,22 @@ class AnalysisHistoryViewModelTest {
     assertEquals(listOf(2L), deleter.deletedIds)
     assertTrue(executionRepository.state.value.entryIdsByResultId.isEmpty())
     assertEquals(setOf(LocalDate.of(2026, 8, 30)), executionRepository.state.value.hostedSuccessfulDays)
+    assertEquals(1, successes.size)
     assertTrue(failures.isEmpty())
   }
 
   @Test
   fun `ふりかえり削除に失敗すると未処理例外にならず削除失敗を1度だけ通知する`() = runTest(testDispatcher) {
     val viewModel = createViewModel(deleter = FakeAnalysisResultDeleter(failNextDeletes = 1))
+    val successes = mutableListOf<Unit>()
     val failures = mutableListOf<Unit>()
+    collectorScope.launch { viewModel.deleteSuccesses.collect { successes += it } }
     collectorScope.launch { viewModel.deleteFailures.collect { failures += it } }
 
     viewModel.deleteResult(1)
     testDispatcher.scheduler.advanceUntilIdle()
 
+    assertTrue(successes.isEmpty())
     assertEquals(1, failures.size)
   }
 

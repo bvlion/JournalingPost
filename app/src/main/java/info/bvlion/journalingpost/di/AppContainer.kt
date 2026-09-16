@@ -287,6 +287,7 @@ internal class AppContainer(context: Context) {
       DebugFixtureSeeder(
         journalEntryRepository = journalEntryRepository,
         analysisResultWriter = analysisResultRepository,
+        analysisExecutionRepository = analysisExecutionRepository,
         isAlreadySeeded = stateStore::isSeeded,
         markSeeded = stateStore::markSeeded,
         moods = { moodRepository.moods.first() },

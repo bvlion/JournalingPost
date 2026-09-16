@@ -1,5 +1,7 @@
 package info.bvlion.journalingpost.debug
 
+import info.bvlion.journalingpost.analysis.AnalysisExecutionRepository
+import info.bvlion.journalingpost.analysis.AnalysisExecutionState
 import info.bvlion.journalingpost.analysis.AnalysisResult
 import info.bvlion.journalingpost.analysis.AnalysisResultWriter
 import info.bvlion.journalingpost.journal.JournalEntry
@@ -11,6 +13,7 @@ import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
@@ -114,6 +117,24 @@ class DebugFixtureSeederTest {
   }
 
   @Test
+  fun `AnalysisResultごとに同じ日のJournalEntryを解析入力として記録する`() = runTest {
+    val entries = FakeJournalEntryRepository()
+    val results = FakeAnalysisResultWriter()
+    val seeder = seeder(entries = entries, results = results)
+
+    seeder.seed()
+
+    assertEquals(14, results.state.value.entryIdsByResultId.size)
+    results.saved.forEach { result ->
+      val expectedEntryIds = entries.inserted
+        .filter { !it.timestamp.isBefore(result.periodStart) && it.timestamp.isBefore(result.periodEnd) }
+        .mapTo(mutableSetOf()) { it.id }
+      assertEquals(expectedEntryIds, results.state.value.entryIdsByResultId[result.id])
+    }
+    assertTrue(results.state.value.hostedSuccessfulDays.isEmpty())
+  }
+
+  @Test
   fun `2回目の投入では何も追加せずAlreadySeededを返す`() = runTest {
     val entries = FakeJournalEntryRepository()
     val results = FakeAnalysisResultWriter()
@@ -173,6 +194,7 @@ class DebugFixtureSeederTest {
   ) = DebugFixtureSeeder(
     journalEntryRepository = entries,
     analysisResultWriter = results,
+    analysisExecutionRepository = results,
     isAlreadySeeded = { seededFlag[0] },
     markSeeded = { seededFlag[0] = true },
     moods = { moods },
@@ -193,15 +215,31 @@ class DebugFixtureSeederTest {
     }
   }
 
-  private class FakeAnalysisResultWriter : AnalysisResultWriter {
+  private class FakeAnalysisResultWriter : AnalysisResultWriter, AnalysisExecutionRepository {
     val saved = mutableListOf<AnalysisResult>()
     private var nextId = 1L
+    override val state = MutableStateFlow(AnalysisExecutionState())
 
     override suspend fun save(result: AnalysisResult): Long {
       yield()
       val id = nextId++
       saved += result.copy(id = id)
       return id
+    }
+
+    override suspend fun recordSuccess(
+      resultId: Long,
+      entryIds: Set<Long>,
+      hostedSuccessfulDay: java.time.LocalDate?,
+    ) {
+      state.value = state.value.copy(
+        entryIdsByResultId = state.value.entryIdsByResultId + (resultId to entryIds),
+        hostedSuccessfulDays = state.value.hostedSuccessfulDays + listOfNotNull(hostedSuccessfulDay),
+      )
+    }
+
+    override suspend fun removeResult(resultId: Long) {
+      state.value = state.value.copy(entryIdsByResultId = state.value.entryIdsByResultId - resultId)
     }
   }
 }

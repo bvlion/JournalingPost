@@ -99,6 +99,9 @@ class AnalysisHistoryViewModel(
   private val _runResults = Channel<AnalysisRunResult>(Channel.BUFFERED)
   val runResults: Flow<AnalysisRunResult> = _runResults.receiveAsFlow()
 
+  private val _deleteSuccesses = Channel<Unit>(Channel.BUFFERED)
+  val deleteSuccesses: Flow<Unit> = _deleteSuccesses.receiveAsFlow()
+
   private val _deleteFailures = Channel<Unit>(Channel.BUFFERED)
   val deleteFailures: Flow<Unit> = _deleteFailures.receiveAsFlow()
 
@@ -114,6 +117,7 @@ class AnalysisHistoryViewModel(
         } catch (e: Exception) {
           // AnalysisResultが無ければ残った対応関係は使用済み判定から除外されるため、削除自体は成功扱いにする。
         }
+        _deleteSuccesses.send(Unit)
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {

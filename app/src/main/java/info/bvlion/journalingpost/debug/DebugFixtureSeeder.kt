@@ -1,5 +1,6 @@
 package info.bvlion.journalingpost.debug
 
+import info.bvlion.journalingpost.analysis.AnalysisExecutionRepository
 import info.bvlion.journalingpost.analysis.AnalysisResult
 import info.bvlion.journalingpost.analysis.AnalysisResultWriter
 import info.bvlion.journalingpost.journal.JournalEntry
@@ -15,8 +16,8 @@ import kotlinx.coroutines.sync.withLock
 
 /**
  * debugビルドの動作確認用に、今日を含む過去14日分のJournalEntry / AnalysisResultを端末内DBへ直接
- * 投入する。本番の記録経路([info.bvlion.journalingpost.journal.JournalRecorder])や外部解析は
- * 経由しない。
+ * 投入し、解析入力の対応関係も保存する。本番の記録経路
+ * ([info.bvlion.journalingpost.journal.JournalRecorder])や外部解析は経由しない。
  *
  * 重複投入は[isAlreadySeeded] / [markSeeded](Room外のDataStoreフラグ)で防ぐ。設定項目の
  * ダブルタップ等で[seed]が並行しても、[seedMutex]で全体を直列化し、後続の呼び出しは先行処理の
@@ -28,6 +29,7 @@ import kotlinx.coroutines.sync.withLock
 class DebugFixtureSeeder(
   private val journalEntryRepository: JournalEntryRepository,
   private val analysisResultWriter: AnalysisResultWriter,
+  private val analysisExecutionRepository: AnalysisExecutionRepository,
   private val isAlreadySeeded: suspend () -> Boolean,
   private val markSeeded: suspend () -> Unit,
   private val moods: suspend () -> List<Mood>,
@@ -44,11 +46,21 @@ class DebugFixtureSeeder(
     val today = nowInstant.atZone(zone).toLocalDate()
     val moodList = moods()
 
-    val entries = buildEntries(today, zone, moodList)
-    for (entry in entries) journalEntryRepository.insert(entry)
+    val entries = buildEntries(today, zone, moodList).map { entry ->
+      entry.copy(id = journalEntryRepository.insert(entry))
+    }
 
     val results = buildAnalysisResults(today, zone, nowInstant)
-    for (result in results) analysisResultWriter.save(result)
+    for (result in results) {
+      val resultId = analysisResultWriter.save(result)
+      analysisExecutionRepository.recordSuccess(
+        resultId = resultId,
+        entryIds = entries
+          .filter { !it.timestamp.isBefore(result.periodStart) && it.timestamp.isBefore(result.periodEnd) }
+          .mapTo(mutableSetOf()) { it.id },
+        hostedSuccessfulDay = null,
+      )
+    }
 
     markSeeded()
     DebugFixtureSeedResult.Seeded(

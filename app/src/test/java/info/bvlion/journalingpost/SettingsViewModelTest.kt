@@ -1,5 +1,7 @@
 package info.bvlion.journalingpost
 
+import info.bvlion.journalingpost.analysis.AnalysisExecutionRepository
+import info.bvlion.journalingpost.analysis.AnalysisExecutionState
 import info.bvlion.journalingpost.debug.DebugFixtureSeeder
 import info.bvlion.journalingpost.hosted.HostedConsentRepository
 import info.bvlion.journalingpost.hosted.HostedCredentialsRepository
@@ -10,6 +12,7 @@ import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import info.bvlion.journalingpost.settings.MoodNoteInputRepository
 import info.bvlion.journalingpost.settings.NoteOnlyEntryRepository
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneOffset
 import info.bvlion.journalingpost.webhook.WebhookHeader
 import info.bvlion.journalingpost.webhook.WebhookSettings
@@ -405,6 +408,17 @@ class SettingsViewModelTest {
     val seeder = DebugFixtureSeeder(
       journalEntryRepository = { entries += it; entries.size.toLong() },
       analysisResultWriter = { 1L },
+      analysisExecutionRepository = object : AnalysisExecutionRepository {
+        override val state = MutableStateFlow(AnalysisExecutionState())
+
+        override suspend fun recordSuccess(
+          resultId: Long,
+          entryIds: Set<Long>,
+          hostedSuccessfulDay: LocalDate?,
+        ) = Unit
+
+        override suspend fun removeResult(resultId: Long) = Unit
+      },
       isAlreadySeeded = { false },
       markSeeded = {},
       moods = { listOf(Mood(id = "m", emoji = "😀", label = "嬉しい")) },
@@ -431,6 +445,17 @@ class SettingsViewModelTest {
     val seeder = DebugFixtureSeeder(
       journalEntryRepository = { error("should not insert") },
       analysisResultWriter = { error("should not save") },
+      analysisExecutionRepository = object : AnalysisExecutionRepository {
+        override val state = MutableStateFlow(AnalysisExecutionState())
+
+        override suspend fun recordSuccess(
+          resultId: Long,
+          entryIds: Set<Long>,
+          hostedSuccessfulDay: LocalDate?,
+        ) = error("should not record")
+
+        override suspend fun removeResult(resultId: Long) = Unit
+      },
       isAlreadySeeded = { true },
       markSeeded = {},
       moods = { emptyList() },

@@ -85,6 +85,7 @@ fun AnalysisHistoryScreen(
   isRunning: Boolean,
   selectableDays: Set<LocalDate>,
   runResults: Flow<AnalysisRunResult>,
+  deleteSuccesses: Flow<Unit>,
   deleteFailures: Flow<Unit>,
   onShowMessage: (String) -> Unit,
   onShowContactMessage: (String, String, LocalDate) -> Unit,
@@ -95,9 +96,11 @@ fun AnalysisHistoryScreen(
 ) {
   val resources = LocalResources.current
   val completedMessage = stringResource(R.string.analysis_completed)
+  val deleteSucceededMessage = stringResource(R.string.analysis_delete_succeeded)
   val deleteFailedMessage = stringResource(R.string.analysis_delete_failed)
   var pendingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
 
+  EventEffect(deleteSuccesses) { onShowMessage(deleteSucceededMessage) }
   EventEffect(deleteFailures) { onShowMessage(deleteFailedMessage) }
 
   // 選べる日が無いときは「解析する」を出さない。Hostedでは当日と解析済みの日を除くと対象が
@@ -399,6 +402,7 @@ fun AnalysisHistoryScreenPreview() {
       isRunning = false,
       selectableDays = setOf(LocalDate.of(2026, 8, 23), LocalDate.of(2026, 8, 24)),
       runResults = emptyFlow(),
+      deleteSuccesses = emptyFlow(),
       deleteFailures = emptyFlow(),
       onShowMessage = {},
       onShowContactMessage = { _, _, _ -> },
