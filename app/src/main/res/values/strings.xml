@@ -121,8 +121,6 @@
   <string name="settings_about_heading">このアプリについて</string>
   <string name="settings_about_review_item">応援レビューを書く</string>
   <string name="settings_about_feedback_item">フィードバックを送る</string>
-  <string name="settings_about_support_id_item">Support IDをコピー</string>
-  <string name="settings_about_support_id_copied">Support IDをコピーしました</string>
   <string name="settings_about_privacy_policy_item">プライバシーポリシー</string>
   <string name="settings_about_version_item">バージョン</string>
 

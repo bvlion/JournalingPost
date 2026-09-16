@@ -18,8 +18,11 @@ fun openStoreListingForReview(context: Context) {
   if (!context.startActivitySafely(playStore)) context.startActivitySafely(web)
 }
 
-fun openFeedbackForm(context: Context) {
-  context.startActivitySafely(Intent(Intent.ACTION_VIEW, FEEDBACK_URL.toUri()))
+fun openFeedbackForm(context: Context, supportId: String?) {
+  val feedbackUri = FEEDBACK_URL.toUri().buildUpon().apply {
+    if (supportId != null) appendQueryParameter("support_id", supportId)
+  }.build()
+  context.startActivitySafely(Intent(Intent.ACTION_VIEW, feedbackUri))
 }
 
 fun openPrivacyPolicy(context: Context) {
