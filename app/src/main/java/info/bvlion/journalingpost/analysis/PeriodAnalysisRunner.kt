@@ -1,12 +1,14 @@
 package info.bvlion.journalingpost.analysis
 
 import info.bvlion.journalingpost.journal.JournalEntry
+import info.bvlion.journalingpost.settings.AnalysisIntegration
 import java.time.Instant
 import java.time.LocalDate
 import kotlinx.coroutines.CancellationException
 
 /**
- * 対象期間のJournalEntryを解析先へ送り、成功時のみresponseの値で[AnalysisResult]を保存し、
+ * 対象期間のJournalEntryを解析先へ送り、成功時のみresponseの値で[AnalysisResult]を保存する。
+ * 同時に、実際に送信したJournalEntryのIDとHostedで成功した対象日を[AnalysisExecutionRepository]へ保存し、
  * 端末保存の確定をretry stateを持つanalyzer(現状Hosted)へ[AnalysisResultPersistenceListener]で
  * 通知するまでの共通処理。手動解析([info.bvlion.journalingpost.AnalysisHistoryViewModel])と
  * 自動解析([AutoAnalyzer])で同じ保存・通知経路を共有し、Idempotency-Keyの解放漏れを防ぐ。
@@ -17,12 +19,13 @@ import kotlinx.coroutines.CancellationException
 internal class PeriodAnalysisRunner(
   private val periodAnalyzer: PeriodAnalyzer,
   private val analysisResultWriter: AnalysisResultWriter,
+  private val analysisExecutionRepository: AnalysisExecutionRepository,
 ) {
   suspend fun run(
     periodStart: Instant,
     periodEnd: Instant,
     entries: List<JournalEntry>,
-    analysisDate: LocalDate? = null,
+    analysisDate: LocalDate,
   ): Outcome =
     try {
       when (val outcome = periodAnalyzer.analyze(periodStart, periodEnd, entries, analysisDate)) {
@@ -34,6 +37,11 @@ internal class PeriodAnalysisRunner(
               analyzedAt = outcome.analyzedAt,
               body = outcome.body,
             ),
+          )
+          analysisExecutionRepository.recordSuccess(
+            resultId = savedResultId,
+            entryIds = entries.mapTo(mutableSetOf()) { it.id },
+            hostedSuccessfulDay = analysisDate.takeIf { outcome.integration == AnalysisIntegration.HOSTED },
           )
           notifyResultPersisted(periodStart, periodEnd)
           Outcome.Saved(savedResultId)

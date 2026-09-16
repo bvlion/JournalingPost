@@ -2,6 +2,7 @@ package info.bvlion.journalingpost
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import info.bvlion.journalingpost.analysis.AnalysisExecutionRepository
 import info.bvlion.journalingpost.analysis.AnalysisHistoryUiState
 import info.bvlion.journalingpost.analysis.AnalysisResultDeleter
 import info.bvlion.journalingpost.analysis.AnalysisResultReader
@@ -41,13 +42,18 @@ class AnalysisHistoryViewModel(
   periodAnalyzer: PeriodAnalyzer,
   analysisResultWriter: AnalysisResultWriter,
   private val analysisResultDeleter: AnalysisResultDeleter,
+  private val analysisExecutionRepository: AnalysisExecutionRepository,
   private val hostedCredentialsRepository: HostedCredentialsRepository,
   // 端末timezoneは解析開始・一覧生成のたびに解決する。ViewModel生成時に固定すると、移動などで
   // timezoneが変わったあと選択日の境界が古いオフセットで計算されてしまうため。
   private val currentZoneId: () -> ZoneId = { ZoneId.systemDefault() },
   private val currentDate: () -> LocalDate = { LocalDate.now(currentZoneId()) },
 ) : ViewModel() {
-  private val periodAnalysisRunner = PeriodAnalysisRunner(periodAnalyzer, analysisResultWriter)
+  private val periodAnalysisRunner = PeriodAnalysisRunner(
+    periodAnalyzer,
+    analysisResultWriter,
+    analysisExecutionRepository,
+  )
   val uiState: StateFlow<AnalysisHistoryUiState> = reader.observeAll()
     .map { results ->
       val items = results.toAnalysisHistoryItems(currentZoneId())
@@ -65,18 +71,19 @@ class AnalysisHistoryViewModel(
 
   /**
    * 手動解析の日付選択で選べる日([currentZoneId]でのカレンダー日)。Custom Webhookは記録のある日すべて、
-   * Hostedは当日と解析済みの日を除いた前日以前の記録日だけ。境界は選択日と同じく端末timezoneで解決する。
+   * Hostedは当日とHosted成功済みの日を除いた前日以前の記録日だけ。境界は選択日と同じく端末timezoneで
+   * 解決する。
    */
   val selectableDays: StateFlow<Set<LocalDate>> = combine(
     analysisIntegrationRepository.analysisIntegration,
     journalEntryReader.observeAll(),
-    reader.observeAll(),
-  ) { integration, entries, results ->
+    analysisExecutionRepository.state,
+  ) { integration, entries, executionState ->
     val zoneId = currentZoneId()
     manualAnalysisSelectableDays(
       integration = integration,
       recordedDays = entries.mapTo(mutableSetOf()) { it.timestamp.atZone(zoneId).toLocalDate() },
-      analyzedDays = results.mapTo(mutableSetOf()) { it.periodStart.atZone(zoneId).toLocalDate() },
+      analyzedDays = executionState.hostedSuccessfulDays,
       today = currentDate(),
     )
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
@@ -100,6 +107,13 @@ class AnalysisHistoryViewModel(
     viewModelScope.launch {
       try {
         analysisResultDeleter.delete(id)
+        try {
+          analysisExecutionRepository.removeResult(id)
+        } catch (e: CancellationException) {
+          throw e
+        } catch (e: Exception) {
+          // AnalysisResultが無ければ残った対応関係は使用済み判定から除外されるため、削除自体は成功扱いにする。
+        }
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {
@@ -144,7 +158,7 @@ class AnalysisHistoryViewModel(
 
     // 対象期間・解析日時・本文はいずれもresponseの値を保存元にする(Custom Webhook契約)。保存と、
     // 端末保存確定のretry stateを持つanalyzerへの通知は[PeriodAnalysisRunner]へ閉じている。
-    return when (val outcome = periodAnalysisRunner.run(periodStart, periodEnd, entries)) {
+    return when (val outcome = periodAnalysisRunner.run(periodStart, periodEnd, entries, day)) {
       is PeriodAnalysisRunner.Outcome.Saved -> AnalysisRunResult.Succeeded(outcome.savedResultId)
       is PeriodAnalysisRunner.Outcome.Failed -> {
         val supportId = if (outcome.failure == PeriodAnalysisOutcome.Failure.RATE_LIMITED) {

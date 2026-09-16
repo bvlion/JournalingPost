@@ -11,11 +11,13 @@ import com.google.android.play.core.integrity.StandardIntegrityManager.PrepareIn
 import com.google.android.play.core.integrity.StandardIntegrityManager.StandardIntegrityTokenRequest
 import info.bvlion.journalingpost.AutoAnalysisScheduler
 import info.bvlion.journalingpost.BuildConfig
+import info.bvlion.journalingpost.analysis.AnalysisExecutionRepository
 import info.bvlion.journalingpost.analysis.AnalysisResultDeleter
 import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.analysis.AnalysisResultWriter
 import info.bvlion.journalingpost.analysis.AutoAnalysisAttemptStore
 import info.bvlion.journalingpost.analysis.AutoAnalyzer
+import info.bvlion.journalingpost.analysis.DataStoreAnalysisExecutionRepository
 import info.bvlion.journalingpost.analysis.DataStoreAutoAnalysisAttemptStore
 import info.bvlion.journalingpost.analysis.IntegrationRoutingPeriodAnalyzer
 import info.bvlion.journalingpost.analysis.PeriodAnalysisRunner
@@ -91,6 +93,10 @@ internal class AppContainer(context: Context) {
   private val journalEntryRepository by lazy { RoomJournalEntryRepository(database.journalEntryDao()) }
 
   private val analysisResultRepository by lazy { RoomAnalysisResultRepository(database.analysisResultDao()) }
+
+  val analysisExecutionRepository: AnalysisExecutionRepository by lazy {
+    DataStoreAnalysisExecutionRepository(createPreferenceDataStore(ANALYSIS_EXECUTION_FILE_NAME))
+  }
 
   private val httpClient by lazy {
     HttpClient(CIO) {
@@ -227,11 +233,19 @@ internal class AppContainer(context: Context) {
   }
 
   private val periodAnalysisRunner: PeriodAnalysisRunner by lazy {
-    PeriodAnalysisRunner(periodAnalyzer = periodAnalyzer, analysisResultWriter = analysisResultRepository)
+    PeriodAnalysisRunner(
+      periodAnalyzer = periodAnalyzer,
+      analysisResultWriter = analysisResultRepository,
+      analysisExecutionRepository = analysisExecutionRepository,
+    )
   }
 
   private val hostedPeriodAnalysisRunner: PeriodAnalysisRunner by lazy {
-    PeriodAnalysisRunner(periodAnalyzer = hostedPeriodAnalyzer, analysisResultWriter = analysisResultRepository)
+    PeriodAnalysisRunner(
+      periodAnalyzer = hostedPeriodAnalyzer,
+      analysisResultWriter = analysisResultRepository,
+      analysisExecutionRepository = analysisExecutionRepository,
+    )
   }
 
   val autoAnalysisSettingsRepository: AutoAnalysisSettingsRepository by lazy {
@@ -247,7 +261,7 @@ internal class AppContainer(context: Context) {
       autoAnalysisSettingsRepository = autoAnalysisSettingsRepository,
       analysisIntegrationRepository = analysisIntegrationRepository,
       periodJournalEntryReader = journalEntryRepository,
-      analysisResultReader = analysisResultRepository,
+      analysisExecutionRepository = analysisExecutionRepository,
       autoAnalysisAttemptStore = autoAnalysisAttemptStore,
       periodAnalysisRunner = periodAnalysisRunner,
       hostedPeriodAnalysisRunner = hostedPeriodAnalysisRunner,
@@ -304,6 +318,9 @@ internal class AppContainer(context: Context) {
     const val WEBHOOK_SETTINGS_FILE_NAME = "webhook_settings"
 
     const val ANALYSIS_INTEGRATION_FILE_NAME = "analysis_integration_settings"
+
+    /** 解析結果ごとの送信済み記録と、Hostedで成功済みの対象日。 */
+    const val ANALYSIS_EXECUTION_FILE_NAME = "analysis_execution_state"
 
     const val MOOD_SETTINGS_FILE_NAME = "mood_settings"
 

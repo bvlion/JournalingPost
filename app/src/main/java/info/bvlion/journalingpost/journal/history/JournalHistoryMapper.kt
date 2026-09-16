@@ -1,6 +1,5 @@
 package info.bvlion.journalingpost.journal.history
 
-import info.bvlion.journalingpost.analysis.AnalysisResult
 import info.bvlion.journalingpost.journal.JournalEntry
 import java.time.ZoneId
 
@@ -11,16 +10,16 @@ import java.time.ZoneId
  */
 fun List<JournalEntry>.toHistoryGroups(
   zoneId: ZoneId,
-  analysisResults: List<AnalysisResult> = emptyList(),
+  usedEntryIds: Set<Long> = emptySet(),
 ): List<JournalHistoryGroup> =
   sortedWith(compareByDescending<JournalEntry> { it.timestamp }.thenByDescending { it.id })
-    .map { it.toHistoryItem(zoneId, analysisResults) }
+    .map { it.toHistoryItem(zoneId, usedEntryIds) }
     .groupBy { it.date }
     .map { (date, items) -> JournalHistoryGroup(date, items) }
 
 private fun JournalEntry.toHistoryItem(
   zoneId: ZoneId,
-  analysisResults: List<AnalysisResult>,
+  usedEntryIds: Set<Long>,
 ): JournalHistoryItem {
   val zoned = timestamp.atZone(zoneId)
   return JournalHistoryItem(
@@ -30,8 +29,6 @@ private fun JournalEntry.toHistoryItem(
     moodEmoji = moodEmoji,
     moodLabel = moodLabel,
     note = note,
-    isUsedInAnalysis = analysisResults.any { result ->
-      !timestamp.isBefore(result.periodStart) && timestamp.isBefore(result.periodEnd)
-    },
+    isUsedInAnalysis = id in usedEntryIds,
   )
 }

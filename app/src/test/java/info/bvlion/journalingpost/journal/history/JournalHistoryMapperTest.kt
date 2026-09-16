@@ -1,6 +1,5 @@
 package info.bvlion.journalingpost.journal.history
 
-import info.bvlion.journalingpost.analysis.AnalysisResult
 import info.bvlion.journalingpost.journal.JournalEntry
 import info.bvlion.journalingpost.journal.JournalSource
 import java.time.Instant
@@ -135,19 +134,12 @@ class JournalHistoryMapperTest {
   }
 
   @Test
-  fun `解析対象期間内の記録はふりかえりに使用済みになる`() {
-    val result = AnalysisResult(
-      id = 1,
-      periodStart = Instant.parse("2026-08-26T00:00:00Z"),
-      periodEnd = Instant.parse("2026-08-27T00:00:00Z"),
-      analyzedAt = Instant.parse("2026-08-27T07:00:00Z"),
-      body = "本文",
-    )
+  fun `解析へ送ったidの記録だけがふりかえりに使用済みになる`() {
     val items = listOf(
       entry(id = 1, timestamp = Instant.parse("2026-08-26T00:00:00Z")),
       entry(id = 2, timestamp = Instant.parse("2026-08-26T23:59:59Z")),
       entry(id = 3, timestamp = Instant.parse("2026-08-27T00:00:00Z")),
-    ).toHistoryGroups(utc, listOf(result)).flatMap { it.items }.associateBy { it.id }
+    ).toHistoryGroups(utc, setOf(1L, 2L)).flatMap { it.items }.associateBy { it.id }
 
     assertTrue(requireNotNull(items[1]).isUsedInAnalysis)
     assertTrue(requireNotNull(items[2]).isUsedInAnalysis)

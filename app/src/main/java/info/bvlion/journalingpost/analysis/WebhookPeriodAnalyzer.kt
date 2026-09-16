@@ -114,6 +114,7 @@ internal class WebhookPeriodAnalyzer(
       periodEnd = responsePeriodEnd,
       analyzedAt = responseAnalyzedAt,
       body = analysis.text,
+      integration = AnalysisIntegration.CUSTOM_WEBHOOK,
     )
   }
 }

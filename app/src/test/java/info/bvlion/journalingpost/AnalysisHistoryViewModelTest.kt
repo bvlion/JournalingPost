@@ -1,5 +1,7 @@
 package info.bvlion.journalingpost
 
+import info.bvlion.journalingpost.analysis.AnalysisExecutionRepository
+import info.bvlion.journalingpost.analysis.AnalysisExecutionState
 import info.bvlion.journalingpost.analysis.AnalysisHistoryUiState
 import info.bvlion.journalingpost.analysis.AnalysisResult
 import info.bvlion.journalingpost.analysis.AnalysisResultDeleter
@@ -51,11 +53,15 @@ class AnalysisHistoryViewModelTest {
   private val responsePeriodEnd = Instant.parse("2026-08-31T00:05:00Z")
   private val responseAnalyzedAt = Instant.parse("2026-08-31T02:00:00Z")
 
-  private fun success(body: String = "結果") = PeriodAnalysisOutcome.Success(
+  private fun success(
+    body: String = "結果",
+    integration: AnalysisIntegration = AnalysisIntegration.CUSTOM_WEBHOOK,
+  ) = PeriodAnalysisOutcome.Success(
     periodStart = responsePeriodStart,
     periodEnd = responsePeriodEnd,
     analyzedAt = responseAnalyzedAt,
     body = body,
+    integration = integration,
   )
 
   @Before
@@ -114,9 +120,15 @@ class AnalysisHistoryViewModelTest {
   }
 
   @Test
-  fun `deleteResultは指定したidだけを削除対象としてdeleterへ渡す`() = runTest(testDispatcher) {
+  fun `deleteResultは指定したidだけを削除し送信記録との対応だけを消す`() = runTest(testDispatcher) {
     val deleter = FakeAnalysisResultDeleter()
-    val viewModel = createViewModel(deleter = deleter)
+    val executionRepository = FakeAnalysisExecutionRepository(
+      AnalysisExecutionState(
+        entryIdsByResultId = mapOf(2L to setOf(10L)),
+        hostedSuccessfulDays = setOf(LocalDate.of(2026, 8, 30)),
+      ),
+    )
+    val viewModel = createViewModel(deleter = deleter, executionRepository = executionRepository)
     val failures = mutableListOf<Unit>()
     collectorScope.launch { viewModel.deleteFailures.collect { failures += it } }
 
@@ -124,6 +136,8 @@ class AnalysisHistoryViewModelTest {
     testDispatcher.scheduler.advanceUntilIdle()
 
     assertEquals(listOf(2L), deleter.deletedIds)
+    assertTrue(executionRepository.state.value.entryIdsByResultId.isEmpty())
+    assertEquals(setOf(LocalDate.of(2026, 8, 30)), executionRepository.state.value.hostedSuccessfulDays)
     assertTrue(failures.isEmpty())
   }
 
@@ -211,24 +225,22 @@ class AnalysisHistoryViewModelTest {
   }
 
   @Test
-  fun `selectableDaysはHostedでは当日と解析済みの日を除いた前日以前の記録日だけになる`() = runTest(testDispatcher) {
+  fun `selectableDaysはHostedでは当日と成功済みの日を除いた前日以前の記録日だけになる`() = runTest(testDispatcher) {
     val journalEntryReader = FakeJournalEntryReader()
     val reader = FakeAnalysisResultReader()
     val viewModel = createViewModel(
       reader = reader,
       integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.HOSTED),
       journalEntryReader = journalEntryReader,
+      executionRepository = FakeAnalysisExecutionRepository(
+        AnalysisExecutionState(hostedSuccessfulDays = setOf(LocalDate.of(2026, 8, 28))),
+      ),
       currentZoneId = { ZoneOffset.UTC },
       currentDate = { LocalDate.of(2026, 8, 30) },
     )
     val collectJob = CoroutineScope(testDispatcher).launch { viewModel.selectableDays.collect {} }
 
-    reader.emit(
-      listOf(
-        result(id = 1, analyzedAt = "2026-08-29T07:00:00Z", body = "既に解析済み")
-          .copy(periodStart = Instant.parse("2026-08-28T00:00:00Z")),
-      ),
-    )
+    reader.emit(emptyList())
     journalEntryReader.emit(
       listOf(
         entry("2026-08-27T05:00:00Z"),
@@ -243,6 +255,48 @@ class AnalysisHistoryViewModelTest {
       setOf(LocalDate.of(2026, 8, 27), LocalDate.of(2026, 8, 29)),
       viewModel.selectableDays.value,
     )
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `Hosted成功済み日はAnalysisResult削除後もselectableDaysへ戻らない`() = runTest(testDispatcher) {
+    val journalEntryReader = FakeJournalEntryReader(listOf(entry("2026-08-29T05:00:00Z")))
+    val reader = FakeAnalysisResultReader().apply { emit(emptyList()) }
+    val executionRepository = FakeAnalysisExecutionRepository(
+      AnalysisExecutionState(hostedSuccessfulDays = setOf(LocalDate.of(2026, 8, 29))),
+    )
+    val viewModel = createViewModel(
+      reader = reader,
+      integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.HOSTED),
+      journalEntryReader = journalEntryReader,
+      executionRepository = executionRepository,
+      currentDate = { LocalDate.of(2026, 8, 30) },
+    )
+    val collectJob = CoroutineScope(testDispatcher).launch { viewModel.selectableDays.collect {} }
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertTrue(viewModel.selectableDays.value.isEmpty())
+    collectJob.cancel()
+  }
+
+  @Test
+  fun `Custom WebhookはHosted成功済み日でもselectableDaysへ含める`() = runTest(testDispatcher) {
+    val journalEntryReader = FakeJournalEntryReader(listOf(entry("2026-08-29T05:00:00Z")))
+    val reader = FakeAnalysisResultReader().apply { emit(emptyList()) }
+    val executionRepository = FakeAnalysisExecutionRepository(
+      AnalysisExecutionState(hostedSuccessfulDays = setOf(LocalDate.of(2026, 8, 29))),
+    )
+    val viewModel = createViewModel(
+      reader = reader,
+      integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK),
+      journalEntryReader = journalEntryReader,
+      executionRepository = executionRepository,
+      currentDate = { LocalDate.of(2026, 8, 30) },
+    )
+    val collectJob = CoroutineScope(testDispatcher).launch { viewModel.selectableDays.collect {} }
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(setOf(LocalDate.of(2026, 8, 29)), viewModel.selectableDays.value)
     collectJob.cancel()
   }
 
@@ -339,6 +393,42 @@ class AnalysisHistoryViewModelTest {
     assertEquals(responseAnalyzedAt, saved.analyzedAt)
     assertEquals("今日は穏やかでした", saved.body)
     assertEquals(listOf(AnalysisRunResult.Succeeded(1L)), results)
+  }
+
+  @Test
+  fun `Custom Webhook成功時はresponse periodに関係なく実際に送った記録idを保存する`() =
+    runTest(testDispatcher) {
+      val executionRepository = FakeAnalysisExecutionRepository()
+      val viewModel = createViewModel(
+        entryReader = FakePeriodJournalEntryReader(
+          listOf(entry("2026-08-30T00:01:00Z", id = 11), entry("2026-08-30T12:00:00Z", id = 12)),
+        ),
+        executionRepository = executionRepository,
+        currentZoneId = { ZoneOffset.UTC },
+      )
+
+      viewModel.analyze(LocalDate.of(2026, 8, 30))
+      testDispatcher.scheduler.advanceUntilIdle()
+
+      assertEquals(setOf(11L, 12L), executionRepository.state.value.entryIdsByResultId.getValue(1L))
+      assertTrue(executionRepository.state.value.hostedSuccessfulDays.isEmpty())
+    }
+
+  @Test
+  fun `Hosted成功時は対象日を成功済みとして保存する`() = runTest(testDispatcher) {
+    val executionRepository = FakeAnalysisExecutionRepository()
+    val viewModel = createViewModel(
+      analyzer = FakePeriodAnalyzer { success(integration = AnalysisIntegration.HOSTED) },
+      executionRepository = executionRepository,
+    )
+
+    viewModel.analyze(LocalDate.of(2026, 8, 30))
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(
+      setOf(LocalDate.of(2026, 8, 30)),
+      executionRepository.state.value.hostedSuccessfulDays,
+    )
   }
 
   @Test
@@ -518,6 +608,7 @@ class AnalysisHistoryViewModelTest {
     analyzer: PeriodAnalyzer = FakePeriodAnalyzer { success() },
     writer: AnalysisResultWriter = FakeAnalysisResultWriter(),
     deleter: AnalysisResultDeleter = FakeAnalysisResultDeleter(),
+    executionRepository: AnalysisExecutionRepository = FakeAnalysisExecutionRepository(),
     hostedCredentialsRepository: HostedCredentialsRepository = object : HostedCredentialsRepository {
       override suspend fun apiKey(): String? = null
       override suspend fun store(apiKey: String) = Unit
@@ -533,12 +624,14 @@ class AnalysisHistoryViewModelTest {
     periodAnalyzer = analyzer,
     analysisResultWriter = writer,
     analysisResultDeleter = deleter,
+    analysisExecutionRepository = executionRepository,
     hostedCredentialsRepository = hostedCredentialsRepository,
     currentZoneId = currentZoneId,
     currentDate = currentDate,
   )
 
-  private fun entry(at: String) = JournalEntry(
+  private fun entry(at: String, id: Long = 0) = JournalEntry(
+    id = id,
     timestamp = Instant.parse(at),
     note = "メモ",
     source = JournalSource.APP,
@@ -607,6 +700,27 @@ class AnalysisHistoryViewModelTest {
         throw IOException("db error")
       }
       _deletedIds += id
+    }
+  }
+
+  private class FakeAnalysisExecutionRepository(
+    initial: AnalysisExecutionState = AnalysisExecutionState(),
+  ) : AnalysisExecutionRepository {
+    override val state = MutableStateFlow(initial)
+
+    override suspend fun recordSuccess(
+      resultId: Long,
+      entryIds: Set<Long>,
+      hostedSuccessfulDay: LocalDate?,
+    ) {
+      state.value = state.value.copy(
+        entryIdsByResultId = state.value.entryIdsByResultId + (resultId to entryIds),
+        hostedSuccessfulDays = state.value.hostedSuccessfulDays + listOfNotNull(hostedSuccessfulDay),
+      )
+    }
+
+    override suspend fun removeResult(resultId: Long) {
+      state.value = state.value.copy(entryIdsByResultId = state.value.entryIdsByResultId - resultId)
     }
   }
 

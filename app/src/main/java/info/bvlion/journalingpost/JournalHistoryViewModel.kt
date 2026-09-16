@@ -2,6 +2,7 @@ package info.bvlion.journalingpost
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import info.bvlion.journalingpost.analysis.AnalysisExecutionRepository
 import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.journal.JournalEntryDeleter
 import info.bvlion.journalingpost.journal.JournalEntryReader
@@ -28,6 +29,7 @@ import kotlinx.coroutines.launch
 class JournalHistoryViewModel(
   reader: JournalEntryReader,
   analysisResultReader: AnalysisResultReader,
+  analysisExecutionRepository: AnalysisExecutionRepository,
   private val deleter: JournalEntryDeleter,
   private val zoneId: ZoneId = ZoneId.systemDefault(),
   private val now: () -> Instant = Instant::now,
@@ -46,8 +48,18 @@ class JournalHistoryViewModel(
    * たびに[syncRangeToGroups]で追従させる。
    */
   val uiState: StateFlow<JournalHistoryUiState> = combine(
-    combine(reader.observeAll(), analysisResultReader.observeAll()) { entries, analysisResults ->
-      entries.toHistoryGroups(zoneId, analysisResults)
+    combine(
+      reader.observeAll(),
+      analysisResultReader.observeAll(),
+      analysisExecutionRepository.state,
+    ) { entries, analysisResults, executionState ->
+      val existingResultIds = analysisResults.mapTo(mutableSetOf()) { it.id }
+      val usedEntryIds = executionState.entryIdsByResultId
+        .filterKeys { it in existingResultIds }
+        .values
+        .flatten()
+        .toSet()
+      entries.toHistoryGroups(zoneId, usedEntryIds)
     }.onEach(::syncRangeToGroups),
     selectedDate,
   ) { groups, selected ->
