@@ -459,6 +459,7 @@ class MainActivity : ComponentActivity() {
                         isRunning = isAnalysisRunning,
                         selectableDays = selectableDays,
                         runResults = analysisHistoryViewModel.runResults,
+                        deleteFailures = analysisHistoryViewModel.deleteFailures,
                         onShowMessage = showMessage,
                         onShowContactMessage = { message, supportId, analysisDate ->
                           scope.launch {
@@ -490,6 +491,7 @@ class MainActivity : ComponentActivity() {
                             analysisHistoryViewModel.analyze(day)
                           }
                         },
+                        onDelete = analysisHistoryViewModel::deleteResult,
                         onResultClick = {
                           selectedAnalysisResultId = it.id
                           subscreenDestination = SubscreenDestination.ANALYSIS_RESULT_DETAIL

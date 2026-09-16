@@ -3,6 +3,7 @@ package info.bvlion.journalingpost
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import info.bvlion.journalingpost.analysis.AnalysisHistoryUiState
+import info.bvlion.journalingpost.analysis.AnalysisResultDeleter
 import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.analysis.AnalysisResultWriter
 import info.bvlion.journalingpost.analysis.PeriodAnalysisOutcome
@@ -39,6 +40,7 @@ class AnalysisHistoryViewModel(
   private val periodJournalEntryReader: PeriodJournalEntryReader,
   periodAnalyzer: PeriodAnalyzer,
   analysisResultWriter: AnalysisResultWriter,
+  private val analysisResultDeleter: AnalysisResultDeleter,
   private val hostedCredentialsRepository: HostedCredentialsRepository,
   // 端末timezoneは解析開始・一覧生成のたびに解決する。ViewModel生成時に固定すると、移動などで
   // timezoneが変わったあと選択日の境界が古いオフセットで計算されてしまうため。
@@ -89,6 +91,22 @@ class AnalysisHistoryViewModel(
    */
   private val _runResults = Channel<AnalysisRunResult>(Channel.BUFFERED)
   val runResults: Flow<AnalysisRunResult> = _runResults.receiveAsFlow()
+
+  private val _deleteFailures = Channel<Unit>(Channel.BUFFERED)
+  val deleteFailures: Flow<Unit> = _deleteFailures.receiveAsFlow()
+
+  /** 削除後の一覧はRoomのFlowが更新するため、ここでuiStateを直接書き換えない。 */
+  fun deleteResult(id: Long) {
+    viewModelScope.launch {
+      try {
+        analysisResultDeleter.delete(id)
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        _deleteFailures.send(Unit)
+      }
+    }
+  }
 
   /**
    * [day]を、解析開始時点の現在の端末timezoneでの1日として `[00:00, 翌日00:00)` のInstant区間へ

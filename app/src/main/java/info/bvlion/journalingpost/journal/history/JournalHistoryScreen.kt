@@ -357,7 +357,13 @@ private fun JournalHistoryDeleteConfirmDialog(
           )
         }
         Text(
-          text = stringResource(R.string.journal_history_delete_confirm_body),
+          text = stringResource(
+            if (item.isUsedInAnalysis) {
+              R.string.journal_history_analyzed_delete_confirm_body
+            } else {
+              R.string.journal_history_delete_confirm_body
+            },
+          ),
           style = MaterialTheme.typography.bodySmall,
           modifier = Modifier.padding(top = 8.dp),
         )

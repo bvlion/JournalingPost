@@ -2,6 +2,7 @@ package info.bvlion.journalingpost
 
 import info.bvlion.journalingpost.analysis.AnalysisHistoryUiState
 import info.bvlion.journalingpost.analysis.AnalysisResult
+import info.bvlion.journalingpost.analysis.AnalysisResultDeleter
 import info.bvlion.journalingpost.analysis.AnalysisResultPersistenceListener
 import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.analysis.AnalysisResultWriter
@@ -15,6 +16,7 @@ import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.PeriodJournalEntryReader
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
+import java.io.IOException
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -43,7 +45,7 @@ import org.junit.Test
 class AnalysisHistoryViewModelTest {
   private val testDispatcher = StandardTestDispatcher()
 
-  // Channel由来のrunResultsは購読者がいる間だけ流れるため、テスト中はこのscopeで購読し続ける。
+  // Channel由来の実行・削除結果は購読者がいる間だけ流れるため、テスト中はこのscopeで購読し続ける。
   private val collectorScope = CoroutineScope(testDispatcher)
   private val responsePeriodStart = Instant.parse("2026-08-30T00:05:00Z")
   private val responsePeriodEnd = Instant.parse("2026-08-31T00:05:00Z")
@@ -109,6 +111,32 @@ class AnalysisHistoryViewModelTest {
     assertEquals(listOf("new", "old"), items.map { it.body })
     assertEquals(LocalDateTime.of(2026, 8, 8, 7, 0), items.first().analyzedAt)
     collectJob.cancel()
+  }
+
+  @Test
+  fun `deleteResultは指定したidだけを削除対象としてdeleterへ渡す`() = runTest(testDispatcher) {
+    val deleter = FakeAnalysisResultDeleter()
+    val viewModel = createViewModel(deleter = deleter)
+    val failures = mutableListOf<Unit>()
+    collectorScope.launch { viewModel.deleteFailures.collect { failures += it } }
+
+    viewModel.deleteResult(2)
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(listOf(2L), deleter.deletedIds)
+    assertTrue(failures.isEmpty())
+  }
+
+  @Test
+  fun `ふりかえり削除に失敗すると未処理例外にならず削除失敗を1度だけ通知する`() = runTest(testDispatcher) {
+    val viewModel = createViewModel(deleter = FakeAnalysisResultDeleter(failNextDeletes = 1))
+    val failures = mutableListOf<Unit>()
+    collectorScope.launch { viewModel.deleteFailures.collect { failures += it } }
+
+    viewModel.deleteResult(1)
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertEquals(1, failures.size)
   }
 
   @Test
@@ -489,6 +517,7 @@ class AnalysisHistoryViewModelTest {
     entryReader: PeriodJournalEntryReader = FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z"))),
     analyzer: PeriodAnalyzer = FakePeriodAnalyzer { success() },
     writer: AnalysisResultWriter = FakeAnalysisResultWriter(),
+    deleter: AnalysisResultDeleter = FakeAnalysisResultDeleter(),
     hostedCredentialsRepository: HostedCredentialsRepository = object : HostedCredentialsRepository {
       override suspend fun apiKey(): String? = null
       override suspend fun store(apiKey: String) = Unit
@@ -503,6 +532,7 @@ class AnalysisHistoryViewModelTest {
     periodJournalEntryReader = entryReader,
     periodAnalyzer = analyzer,
     analysisResultWriter = writer,
+    analysisResultDeleter = deleter,
     hostedCredentialsRepository = hostedCredentialsRepository,
     currentZoneId = currentZoneId,
     currentDate = currentDate,
@@ -562,6 +592,21 @@ class AnalysisHistoryViewModelTest {
       if (failOnSave) throw RuntimeException("db boom")
       saved += result
       return savedId
+    }
+  }
+
+  private class FakeAnalysisResultDeleter(
+    private var failNextDeletes: Int = 0,
+  ) : AnalysisResultDeleter {
+    private val _deletedIds = mutableListOf<Long>()
+    val deletedIds: List<Long> get() = _deletedIds
+
+    override suspend fun delete(id: Long) {
+      if (failNextDeletes > 0) {
+        failNextDeletes--
+        throw IOException("db error")
+      }
+      _deletedIds += id
     }
   }
 

@@ -11,6 +11,7 @@ import com.google.android.play.core.integrity.StandardIntegrityManager.PrepareIn
 import com.google.android.play.core.integrity.StandardIntegrityManager.StandardIntegrityTokenRequest
 import info.bvlion.journalingpost.AutoAnalysisScheduler
 import info.bvlion.journalingpost.BuildConfig
+import info.bvlion.journalingpost.analysis.AnalysisResultDeleter
 import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.analysis.AnalysisResultWriter
 import info.bvlion.journalingpost.analysis.AutoAnalysisAttemptStore
@@ -147,6 +148,8 @@ internal class AppContainer(context: Context) {
   val analysisResultReader: AnalysisResultReader get() = analysisResultRepository
 
   val analysisResultWriter: AnalysisResultWriter get() = analysisResultRepository
+
+  val analysisResultDeleter: AnalysisResultDeleter get() = analysisResultRepository
 
   val webhookSettingsRepository: WebhookSettingsRepository by lazy {
     DataStoreWebhookSettingsRepository(

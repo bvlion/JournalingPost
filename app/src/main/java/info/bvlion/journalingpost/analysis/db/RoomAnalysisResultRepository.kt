@@ -1,14 +1,17 @@
 package info.bvlion.journalingpost.analysis.db
 
 import info.bvlion.journalingpost.analysis.AnalysisResult
+import info.bvlion.journalingpost.analysis.AnalysisResultDeleter
 import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.analysis.AnalysisResultWriter
 import kotlinx.coroutines.flow.Flow
 
 internal class RoomAnalysisResultRepository(
   private val dao: AnalysisResultDao,
-) : AnalysisResultReader, AnalysisResultWriter {
+) : AnalysisResultReader, AnalysisResultWriter, AnalysisResultDeleter {
   override fun observeAll(): Flow<List<AnalysisResult>> = dao.observeAll()
 
   override suspend fun save(result: AnalysisResult): Long = dao.insert(result)
+
+  override suspend fun delete(id: Long) = dao.deleteById(id)
 }

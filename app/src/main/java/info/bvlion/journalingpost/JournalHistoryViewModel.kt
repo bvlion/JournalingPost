@@ -2,6 +2,7 @@ package info.bvlion.journalingpost
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.journal.JournalEntryDeleter
 import info.bvlion.journalingpost.journal.JournalEntryReader
 import info.bvlion.journalingpost.journal.history.JournalHistoryGroup
@@ -18,7 +19,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 
 class JournalHistoryViewModel(
   reader: JournalEntryReader,
+  analysisResultReader: AnalysisResultReader,
   private val deleter: JournalEntryDeleter,
   private val zoneId: ZoneId = ZoneId.systemDefault(),
   private val now: () -> Instant = Instant::now,
@@ -45,7 +46,9 @@ class JournalHistoryViewModel(
    * たびに[syncRangeToGroups]で追従させる。
    */
   val uiState: StateFlow<JournalHistoryUiState> = combine(
-    reader.observeAll().map { it.toHistoryGroups(zoneId) }.onEach(::syncRangeToGroups),
+    combine(reader.observeAll(), analysisResultReader.observeAll()) { entries, analysisResults ->
+      entries.toHistoryGroups(zoneId, analysisResults)
+    }.onEach(::syncRangeToGroups),
     selectedDate,
   ) { groups, selected ->
     JournalHistoryUiState.Content(

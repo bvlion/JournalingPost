@@ -1,5 +1,7 @@
 package info.bvlion.journalingpost
 
+import info.bvlion.journalingpost.analysis.AnalysisResult
+import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.journal.JournalEntry
 import info.bvlion.journalingpost.journal.JournalEntryDeleter
 import info.bvlion.journalingpost.journal.JournalEntryReader
@@ -352,6 +354,30 @@ class JournalHistoryViewModelTest {
   }
 
   @Test
+  fun `uiStateはふりかえりの対象期間に含まれる記録を使用済みとして返す`() = runTest(testDispatcher) {
+    val reader = FakeJournalEntryReader()
+    val analysisResultReader = FakeAnalysisResultReader()
+    val viewModel = createViewModel(reader, analysisResultReader = analysisResultReader)
+    val collectJob = launchCollection(viewModel)
+    reader.emit(listOf(entry(id = 1, at = "2026-08-26T10:00:00Z", note = "analyzed")))
+    analysisResultReader.emit(
+      listOf(
+        AnalysisResult(
+          id = 1,
+          periodStart = Instant.parse("2026-08-26T00:00:00Z"),
+          periodEnd = Instant.parse("2026-08-27T00:00:00Z"),
+          analyzedAt = Instant.parse("2026-08-27T07:00:00Z"),
+          body = "本文",
+        ),
+      ),
+    )
+    testDispatcher.scheduler.advanceUntilIdle()
+
+    assertTrue(viewModel.content().selectedItems.single().isUsedInAnalysis)
+    collectJob.cancel()
+  }
+
+  @Test
   fun `deleteEntryは指定したidだけを削除対象としてdeleterへ渡す`() = runTest(testDispatcher) {
     val deleter = FakeJournalEntryDeleter()
     val viewModel = createViewModel(FakeJournalEntryReader(), deleter = deleter)
@@ -434,9 +460,10 @@ class JournalHistoryViewModelTest {
 
   private fun createViewModel(
     reader: JournalEntryReader,
+    analysisResultReader: AnalysisResultReader = FakeAnalysisResultReader(emptyList()),
     deleter: JournalEntryDeleter = FakeJournalEntryDeleter(),
     zoneId: ZoneId = ZoneOffset.UTC,
-  ) = JournalHistoryViewModel(reader, deleter, zoneId) { now }
+  ) = JournalHistoryViewModel(reader, analysisResultReader, deleter, zoneId) { now }
 
   private fun JournalHistoryViewModel.content() = uiState.value as JournalHistoryUiState.Content
 
@@ -467,6 +494,20 @@ class JournalHistoryViewModelTest {
     }
 
     override fun observeAll(): Flow<List<JournalEntry>> = entries
+  }
+
+  private class FakeAnalysisResultReader(initial: List<AnalysisResult>? = null) : AnalysisResultReader {
+    private val results = MutableSharedFlow<List<AnalysisResult>>(replay = 1, extraBufferCapacity = 8)
+
+    init {
+      if (initial != null) emit(initial)
+    }
+
+    fun emit(results: List<AnalysisResult>) {
+      check(this.results.tryEmit(results))
+    }
+
+    override fun observeAll(): Flow<List<AnalysisResult>> = results
   }
 
   private class FakeJournalEntryDeleter(

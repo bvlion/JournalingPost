@@ -11,6 +11,9 @@ internal interface AnalysisResultDao {
   @Insert
   suspend fun insert(result: AnalysisResult): Long
 
+  @Query("DELETE FROM analysis_results WHERE id = :id")
+  suspend fun deleteById(id: Long)
+
   /** 解析日時の新しい順。analyzedAtが同一の結果もあり得るため、idを二次キーにして順序を安定させる。 */
   @Query("SELECT * FROM analysis_results ORDER BY analyzedAt DESC, id DESC")
   fun observeAll(): Flow<List<AnalysisResult>>
