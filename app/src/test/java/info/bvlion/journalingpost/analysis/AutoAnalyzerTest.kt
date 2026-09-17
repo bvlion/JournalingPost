@@ -94,13 +94,15 @@ class AutoAnalyzerTest {
   }
 
   @Test
-  fun `Hostedは対象日が解析済みなら送らない`() = runTest {
+  fun `HostedはAnalysisResult削除後も成功済みの対象日を送らない`() = runTest {
     val analyzer = FakePeriodAnalyzer { success() }
     val outcome = createAnalyzer(
       integration = AnalysisIntegration.HOSTED,
       analyzer = analyzer,
       entryReader = FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z"))),
-      results = listOf(analysisResult(periodStart = "2026-08-30T00:00:00Z")),
+      executionRepository = FakeAnalysisExecutionRepository(
+        AnalysisExecutionState(hostedSuccessfulDays = setOf(LocalDate.of(2026, 8, 30))),
+      ),
       currentDate = { LocalDate.of(2026, 8, 31) },
     ).runOnce()
 
@@ -110,12 +112,14 @@ class AutoAnalyzerTest {
 
   @Test
   fun `Custom Webhookは対象日が解析済みでも送る`() = runTest {
-    val analyzer = FakePeriodAnalyzer { success() }
+    val analyzer = FakePeriodAnalyzer { success(integration = AnalysisIntegration.CUSTOM_WEBHOOK) }
     val outcome = createAnalyzer(
       integration = AnalysisIntegration.CUSTOM_WEBHOOK,
       analyzer = analyzer,
       entryReader = FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z"))),
-      results = listOf(analysisResult(periodStart = "2026-08-30T00:00:00Z")),
+      executionRepository = FakeAnalysisExecutionRepository(
+        AnalysisExecutionState(hostedSuccessfulDays = setOf(LocalDate.of(2026, 8, 30))),
+      ),
       currentDate = { LocalDate.of(2026, 8, 31) },
     ).runOnce()
 
@@ -177,7 +181,9 @@ class AutoAnalyzerTest {
     val skippedByAlreadyAnalyzed = FakeAutoAnalysisAttemptStore()
     createAnalyzer(
       integration = AnalysisIntegration.HOSTED,
-      results = listOf(analysisResult(periodStart = "2026-08-30T00:00:00Z")),
+      executionRepository = FakeAnalysisExecutionRepository(
+        AnalysisExecutionState(hostedSuccessfulDays = setOf(LocalDate.of(2026, 8, 30))),
+      ),
       attemptStore = skippedByAlreadyAnalyzed,
       currentDate = { LocalDate.of(2026, 8, 31) },
     ).runOnce()
@@ -283,6 +289,7 @@ class AutoAnalyzerTest {
     val webhookAnalyzer = FakePeriodAnalyzer { PeriodAnalysisOutcome.Failure.NETWORK }
     val writer = FakeAnalysisResultWriter()
     val attemptStore = FakeAutoAnalysisAttemptStore()
+    val executionRepository = FakeAnalysisExecutionRepository()
     val routingAnalyzer = IntegrationRoutingPeriodAnalyzer(
       analysisIntegrationRepository = integrationRepository,
       webhookAnalyzer = webhookAnalyzer,
@@ -292,10 +299,10 @@ class AutoAnalyzerTest {
       autoAnalysisSettingsRepository = FakeAutoAnalysisSettingsRepository(enabledYesterday),
       analysisIntegrationRepository = integrationRepository,
       periodJournalEntryReader = FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z"))),
-      analysisResultReader = AnalysisResultReader { MutableStateFlow(emptyList()) },
+      analysisExecutionRepository = executionRepository,
       autoAnalysisAttemptStore = attemptStore,
-      periodAnalysisRunner = PeriodAnalysisRunner(routingAnalyzer, writer),
-      hostedPeriodAnalysisRunner = PeriodAnalysisRunner(hostedAnalyzer, writer),
+      periodAnalysisRunner = PeriodAnalysisRunner(routingAnalyzer, writer, executionRepository),
+      hostedPeriodAnalysisRunner = PeriodAnalysisRunner(hostedAnalyzer, writer, executionRepository),
       currentZoneId = { ZoneOffset.UTC },
       currentDate = { LocalDate.of(2026, 8, 31) },
     )
@@ -368,7 +375,7 @@ class AutoAnalyzerTest {
     writer: AnalysisResultWriter = FakeAnalysisResultWriter(),
     entryReader: PeriodJournalEntryReader =
       FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z"))),
-    results: List<AnalysisResult> = emptyList(),
+    executionRepository: AnalysisExecutionRepository = FakeAnalysisExecutionRepository(),
     attemptStore: FakeAutoAnalysisAttemptStore = FakeAutoAnalysisAttemptStore(),
     currentZoneId: () -> ZoneId = { ZoneOffset.UTC },
     currentDate: () -> LocalDate = { LocalDate.of(2026, 8, 31) },
@@ -376,28 +383,25 @@ class AutoAnalyzerTest {
     autoAnalysisSettingsRepository = FakeAutoAnalysisSettingsRepository(settings),
     analysisIntegrationRepository = FakeAnalysisIntegrationRepository(integration),
     periodJournalEntryReader = entryReader,
-    analysisResultReader = AnalysisResultReader { MutableStateFlow(results) },
+    analysisExecutionRepository = executionRepository,
     autoAnalysisAttemptStore = attemptStore,
-    periodAnalysisRunner = PeriodAnalysisRunner(analyzer, writer),
-    hostedPeriodAnalysisRunner = PeriodAnalysisRunner(analyzer, writer),
+    periodAnalysisRunner = PeriodAnalysisRunner(analyzer, writer, executionRepository),
+    hostedPeriodAnalysisRunner = PeriodAnalysisRunner(analyzer, writer, executionRepository),
     currentZoneId = currentZoneId,
     currentDate = currentDate,
   )
 
   private fun entry(at: String) = JournalEntry(timestamp = Instant.parse(at), note = "メモ", source = JournalSource.APP)
 
-  private fun analysisResult(periodStart: String) = AnalysisResult(
-    periodStart = Instant.parse(periodStart),
-    periodEnd = Instant.parse(periodStart).plusSeconds(86_400),
-    analyzedAt = Instant.parse(periodStart).plusSeconds(90_000),
-    body = "既存の解析結果",
-  )
-
-  private fun success(body: String = "結果") = PeriodAnalysisOutcome.Success(
+  private fun success(
+    body: String = "結果",
+    integration: AnalysisIntegration = AnalysisIntegration.HOSTED,
+  ) = PeriodAnalysisOutcome.Success(
     periodStart = RESPONSE_PERIOD_START,
     periodEnd = Instant.parse("2026-08-31T00:05:00Z"),
     analyzedAt = Instant.parse("2026-08-31T02:00:00Z"),
     body = body,
+    integration = integration,
   )
 
   private companion object {
@@ -422,6 +426,27 @@ class AutoAnalyzerTest {
 
   private class FakePeriodJournalEntryReader(private val entries: List<JournalEntry>) : PeriodJournalEntryReader {
     override suspend fun entriesInPeriod(periodStart: Instant, periodEnd: Instant): List<JournalEntry> = entries
+  }
+
+  private class FakeAnalysisExecutionRepository(
+    initial: AnalysisExecutionState = AnalysisExecutionState(),
+  ) : AnalysisExecutionRepository {
+    override val state = MutableStateFlow(initial)
+
+    override suspend fun recordSuccess(
+      resultId: Long,
+      entryIds: Set<Long>,
+      hostedSuccessfulDay: LocalDate?,
+    ) {
+      state.value = state.value.copy(
+        entryIdsByResultId = state.value.entryIdsByResultId + (resultId to entryIds),
+        hostedSuccessfulDays = state.value.hostedSuccessfulDays + listOfNotNull(hostedSuccessfulDay),
+      )
+    }
+
+    override suspend fun removeResult(resultId: Long) {
+      state.value = state.value.copy(entryIdsByResultId = state.value.entryIdsByResultId - resultId)
+    }
   }
 
   private class FakeAutoAnalysisAttemptStore(initial: LocalDate? = null) : AutoAnalysisAttemptStore {

@@ -1,6 +1,7 @@
 package info.bvlion.journalingpost.analysis
 
 import info.bvlion.journalingpost.journal.JournalEntry
+import info.bvlion.journalingpost.settings.AnalysisIntegration
 import java.time.Instant
 import java.time.LocalDate
 
@@ -17,7 +18,7 @@ fun interface PeriodAnalyzer {
     entries: List<JournalEntry>,
   ): PeriodAnalysisOutcome = analyze(periodStart, periodEnd, entries, null)
 
-  /** [analysisDate]はHosted自動retryで初回と同じrequest payloadを維持する場合だけ指定する。 */
+  /** [analysisDate]はHostedへ渡す対象日。Custom Webhookでは使用しない。 */
   suspend fun analyze(
     periodStart: Instant,
     periodEnd: Instant,
@@ -32,14 +33,15 @@ fun interface PeriodAnalyzer {
  */
 sealed interface PeriodAnalysisOutcome {
   /**
-   * Custom Webhookでは、[AnalysisResult]の対象期間・解析日時・本文はいずれもresponse
-   * (Hosted契約の `analysis`)から作る。requestで渡したInstantや受信時刻は使わない。
+   * [AnalysisResult]の対象期間・解析日時・本文はいずれもresponseから作る。[integration]は結果へ
+   * 保存せず、解析成功時にHosted固有の再解析防止状態を記録するためだけに使う。
    */
   data class Success(
     val periodStart: Instant,
     val periodEnd: Instant,
     val analyzedAt: Instant,
     val body: String,
+    val integration: AnalysisIntegration,
   ) : PeriodAnalysisOutcome
 
   enum class Failure : PeriodAnalysisOutcome {

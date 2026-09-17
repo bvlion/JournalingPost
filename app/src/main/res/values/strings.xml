@@ -40,9 +40,11 @@
   <!-- %1$s は表示中の日付。日付表示がそのまま日付指定の入口を兼ねるため読み上げで補う。 -->
   <string name="journal_history_date_jump_description">%1$sを表示中。日付を指定します</string>
   <string name="journal_history_date_jump_confirm">表示</string>
+  <string name="journal_history_delete_succeeded">記録を削除しました</string>
   <string name="journal_history_delete_failed">記録を削除できませんでした</string>
   <string name="journal_history_delete_confirm_title">この記録を削除しますか？</string>
   <string name="journal_history_delete_confirm_body">削除すると元に戻せません</string>
+  <string name="journal_history_analyzed_delete_confirm_body">この記録はすでにふりかえりに使用されています。削除した記録は元に戻せず、作成済みのふりかえりと内容が一致しなくなる可能性があります。</string>
   <!-- %1$s は記録の時刻。一覧で同じ「削除」が並ぶため読み上げで対象を区別する。 -->
   <string name="journal_history_delete_row_description">%1$sの記録を削除</string>
 
@@ -51,6 +53,10 @@
   <string name="analysis_run_button">解析する</string>
   <string name="analysis_running">解析中…</string>
   <string name="analysis_completed">解析が完了しました</string>
+  <string name="analysis_delete_succeeded">ふりかえりを削除しました</string>
+  <string name="analysis_delete_failed">ふりかえりを削除できませんでした</string>
+  <string name="analysis_delete_confirm_title">このふりかえりを削除しますか？</string>
+  <string name="analysis_delete_confirm_body">削除した解析結果は二度と元に戻せません。</string>
   <!-- %1$s 対象期間の開始、%2$s 対象期間の終了 -->
   <string name="analysis_card_period">対象期間：%1$s 〜 %2$s</string>
   <!-- %1$s 解析日時 -->

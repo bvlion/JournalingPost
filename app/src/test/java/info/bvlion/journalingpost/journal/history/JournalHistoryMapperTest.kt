@@ -132,4 +132,17 @@ class JournalHistoryMapperTest {
     assertEquals("廃止済みMoodの表示名", item.moodLabel)
     assertEquals("本文", item.note)
   }
+
+  @Test
+  fun `解析へ送ったidの記録だけがふりかえりに使用済みになる`() {
+    val items = listOf(
+      entry(id = 1, timestamp = Instant.parse("2026-08-26T00:00:00Z")),
+      entry(id = 2, timestamp = Instant.parse("2026-08-26T23:59:59Z")),
+      entry(id = 3, timestamp = Instant.parse("2026-08-27T00:00:00Z")),
+    ).toHistoryGroups(utc, setOf(1L, 2L)).flatMap { it.items }.associateBy { it.id }
+
+    assertTrue(requireNotNull(items[1]).isUsedInAnalysis)
+    assertTrue(requireNotNull(items[2]).isUsedInAnalysis)
+    assertEquals(false, requireNotNull(items[3]).isUsedInAnalysis)
+  }
 }

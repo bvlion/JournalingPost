@@ -1,5 +1,9 @@
 package info.bvlion.journalingpost
 
+import info.bvlion.journalingpost.analysis.AnalysisExecutionRepository
+import info.bvlion.journalingpost.analysis.AnalysisExecutionState
+import info.bvlion.journalingpost.analysis.AnalysisResult
+import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.journal.JournalEntry
 import info.bvlion.journalingpost.journal.JournalEntryDeleter
 import info.bvlion.journalingpost.journal.JournalEntryReader
@@ -16,6 +20,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -32,7 +37,7 @@ import org.junit.Test
 class JournalHistoryViewModelTest {
   private val testDispatcher = StandardTestDispatcher()
 
-  // Channel由来のdeleteFailuresは購読者がいる間だけ流れるため、テスト中はこのscopeで購読し続ける。
+  // Channel由来の削除結果は購読者がいる間だけ流れるため、テスト中はこのscopeで購読し続ける。
   private val collectorScope = CoroutineScope(testDispatcher)
 
   // 「今日」に依存する挙動を検証するため、テストからは固定値で与えて必要な場合だけ進める。
@@ -352,15 +357,93 @@ class JournalHistoryViewModelTest {
   }
 
   @Test
+  fun `uiStateはresponse periodではなく実際に送ったidの記録だけを使用済みとして返す`() =
+    runTest(testDispatcher) {
+      val reader = FakeJournalEntryReader()
+      val analysisResultReader = FakeAnalysisResultReader()
+      val analysisExecutionRepository = FakeAnalysisExecutionRepository(
+        AnalysisExecutionState(entryIdsByResultId = mapOf(1L to setOf(1L))),
+      )
+      val viewModel = createViewModel(
+        reader,
+        analysisResultReader = analysisResultReader,
+        analysisExecutionRepository = analysisExecutionRepository,
+      )
+      val collectJob = launchCollection(viewModel)
+      reader.emit(
+        listOf(
+          entry(id = 1, at = "2026-08-26T10:00:00Z", note = "sent"),
+          entry(id = 2, at = "2026-08-26T12:00:00Z", note = "added later"),
+        ),
+      )
+      analysisResultReader.emit(
+        listOf(
+          AnalysisResult(
+            id = 1,
+            periodStart = Instant.parse("2020-01-01T00:00:00Z"),
+            periodEnd = Instant.parse("2020-01-02T00:00:00Z"),
+            analyzedAt = Instant.parse("2026-08-27T07:00:00Z"),
+            body = "本文",
+          ),
+        ),
+      )
+      testDispatcher.scheduler.advanceUntilIdle()
+
+      val items = viewModel.content().selectedItems.associateBy { it.id }
+      assertTrue(requireNotNull(items[1]).isUsedInAnalysis)
+      assertFalse(requireNotNull(items[2]).isUsedInAnalysis)
+      collectJob.cancel()
+    }
+
+  @Test
+  fun `対応するふりかえりが削除されると残った送信記録情報は使用済み判定に使わない`() =
+    runTest(testDispatcher) {
+      val reader = FakeJournalEntryReader()
+      val analysisResultReader = FakeAnalysisResultReader()
+      val analysisExecutionRepository = FakeAnalysisExecutionRepository(
+        AnalysisExecutionState(entryIdsByResultId = mapOf(1L to setOf(1L))),
+      )
+      val viewModel = createViewModel(
+        reader,
+        analysisResultReader = analysisResultReader,
+        analysisExecutionRepository = analysisExecutionRepository,
+      )
+      val collectJob = launchCollection(viewModel)
+      reader.emit(listOf(entry(id = 1, at = "2026-08-26T10:00:00Z", note = "sent")))
+      analysisResultReader.emit(
+        listOf(
+          AnalysisResult(
+            id = 1,
+            periodStart = Instant.parse("2026-08-26T00:00:00Z"),
+            periodEnd = Instant.parse("2026-08-27T00:00:00Z"),
+            analyzedAt = Instant.parse("2026-08-27T07:00:00Z"),
+            body = "本文",
+          ),
+        ),
+      )
+      testDispatcher.scheduler.advanceUntilIdle()
+      assertTrue(viewModel.content().selectedItems.single().isUsedInAnalysis)
+
+      analysisResultReader.emit(emptyList())
+      testDispatcher.scheduler.advanceUntilIdle()
+
+      assertFalse(viewModel.content().selectedItems.single().isUsedInAnalysis)
+      collectJob.cancel()
+    }
+
+  @Test
   fun `deleteEntryは指定したidだけを削除対象としてdeleterへ渡す`() = runTest(testDispatcher) {
     val deleter = FakeJournalEntryDeleter()
     val viewModel = createViewModel(FakeJournalEntryReader(), deleter = deleter)
+    val successes = mutableListOf<Unit>()
+    collectorScope.launch { viewModel.deleteSuccesses.collect { successes += it } }
     val failures = collectDeleteFailures(viewModel)
 
     viewModel.deleteEntry(2)
     testDispatcher.scheduler.advanceUntilIdle()
 
     assertEquals(listOf(2L), deleter.deletedIds)
+    assertEquals(1, successes.size)
     assertEquals(0, failures.size)
   }
 
@@ -409,11 +492,14 @@ class JournalHistoryViewModelTest {
   fun `削除に失敗すると未処理例外にならず削除失敗を1度だけ通知する`() = runTest(testDispatcher) {
     val deleter = FakeJournalEntryDeleter(failNextDeletes = 1)
     val viewModel = createViewModel(FakeJournalEntryReader(), deleter = deleter)
+    val successes = mutableListOf<Unit>()
+    collectorScope.launch { viewModel.deleteSuccesses.collect { successes += it } }
     val failures = collectDeleteFailures(viewModel)
 
     viewModel.deleteEntry(1)
     testDispatcher.scheduler.advanceUntilIdle()
 
+    assertTrue(successes.isEmpty())
     assertEquals(1, failures.size)
   }
 
@@ -421,6 +507,8 @@ class JournalHistoryViewModelTest {
   fun `削除に失敗した後に成功しても再度は通知しない`() = runTest(testDispatcher) {
     val deleter = FakeJournalEntryDeleter(failNextDeletes = 1)
     val viewModel = createViewModel(FakeJournalEntryReader(), deleter = deleter)
+    val successes = mutableListOf<Unit>()
+    collectorScope.launch { viewModel.deleteSuccesses.collect { successes += it } }
     val failures = collectDeleteFailures(viewModel)
     viewModel.deleteEntry(1)
     testDispatcher.scheduler.advanceUntilIdle()
@@ -429,14 +517,17 @@ class JournalHistoryViewModelTest {
     viewModel.deleteEntry(1)
     testDispatcher.scheduler.advanceUntilIdle()
 
+    assertEquals(1, successes.size)
     assertEquals(1, failures.size)
   }
 
   private fun createViewModel(
     reader: JournalEntryReader,
+    analysisResultReader: AnalysisResultReader = FakeAnalysisResultReader(emptyList()),
+    analysisExecutionRepository: AnalysisExecutionRepository = FakeAnalysisExecutionRepository(),
     deleter: JournalEntryDeleter = FakeJournalEntryDeleter(),
     zoneId: ZoneId = ZoneOffset.UTC,
-  ) = JournalHistoryViewModel(reader, deleter, zoneId) { now }
+  ) = JournalHistoryViewModel(reader, analysisResultReader, analysisExecutionRepository, deleter, zoneId) { now }
 
   private fun JournalHistoryViewModel.content() = uiState.value as JournalHistoryUiState.Content
 
@@ -467,6 +558,34 @@ class JournalHistoryViewModelTest {
     }
 
     override fun observeAll(): Flow<List<JournalEntry>> = entries
+  }
+
+  private class FakeAnalysisResultReader(initial: List<AnalysisResult>? = null) : AnalysisResultReader {
+    private val results = MutableSharedFlow<List<AnalysisResult>>(replay = 1, extraBufferCapacity = 8)
+
+    init {
+      if (initial != null) emit(initial)
+    }
+
+    fun emit(results: List<AnalysisResult>) {
+      check(this.results.tryEmit(results))
+    }
+
+    override fun observeAll(): Flow<List<AnalysisResult>> = results
+  }
+
+  private class FakeAnalysisExecutionRepository(
+    initial: AnalysisExecutionState = AnalysisExecutionState(),
+  ) : AnalysisExecutionRepository {
+    override val state = MutableStateFlow(initial)
+
+    override suspend fun recordSuccess(
+      resultId: Long,
+      entryIds: Set<Long>,
+      hostedSuccessfulDay: LocalDate?,
+    ) = Unit
+
+    override suspend fun removeResult(resultId: Long) = Unit
   }
 
   private class FakeJournalEntryDeleter(

@@ -425,6 +425,7 @@ class MainActivity : ComponentActivity() {
                       val historyUiState by historyViewModel.uiState.collectAsStateWithLifecycle()
                       JournalHistoryScreen(
                         uiState = historyUiState,
+                        deleteSuccesses = historyViewModel.deleteSuccesses,
                         deleteFailures = historyViewModel.deleteFailures,
                         onShowMessage = showMessage,
                         onDelete = historyViewModel::deleteEntry,
@@ -459,6 +460,8 @@ class MainActivity : ComponentActivity() {
                         isRunning = isAnalysisRunning,
                         selectableDays = selectableDays,
                         runResults = analysisHistoryViewModel.runResults,
+                        deleteSuccesses = analysisHistoryViewModel.deleteSuccesses,
+                        deleteFailures = analysisHistoryViewModel.deleteFailures,
                         onShowMessage = showMessage,
                         onShowContactMessage = { message, supportId, analysisDate ->
                           scope.launch {
@@ -490,6 +493,7 @@ class MainActivity : ComponentActivity() {
                             analysisHistoryViewModel.analyze(day)
                           }
                         },
+                        onDelete = analysisHistoryViewModel::deleteResult,
                         onResultClick = {
                           selectedAnalysisResultId = it.id
                           subscreenDestination = SubscreenDestination.ANALYSIS_RESULT_DETAIL

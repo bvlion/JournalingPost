@@ -179,6 +179,7 @@ internal class HostedPeriodAnalyzer(
       periodEnd = end,
       analyzedAt = analyzedAt,
       body = analysis.text,
+      integration = AnalysisIntegration.HOSTED,
     )
   }
 

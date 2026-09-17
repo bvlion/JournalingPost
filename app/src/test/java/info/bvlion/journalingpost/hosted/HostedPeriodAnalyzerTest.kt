@@ -96,6 +96,7 @@ class HostedPeriodAnalyzerTest {
         periodEnd = periodEnd,
         analyzedAt = Instant.parse("2026-08-31T07:30:05Z"),
         body = "穏やかな一日でした",
+        integration = AnalysisIntegration.HOSTED,
       ),
       outcome,
     )

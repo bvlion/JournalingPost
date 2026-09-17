@@ -25,13 +25,13 @@ import kotlinx.coroutines.flow.first
  *
  * Hosted自動解析の新規開始は成功・失敗にかかわらず実行日ごとに最大1回。実際にHostedへ送る直前に
  * 実行日を[AutoAnalysisAttemptStore]へ記録し、同じ実行日の別の新規解析は送らない。加えて、対象日が
- * 既に解析済み(同じ日を対象期間とする[AnalysisResult]が存在する)なら送らず、試行済みにもしない。
+ * Hostedで成功済みなら送らず、試行済みにもしない。
  */
 internal class AutoAnalyzer(
   private val autoAnalysisSettingsRepository: AutoAnalysisSettingsRepository,
   private val analysisIntegrationRepository: AnalysisIntegrationRepository,
   private val periodJournalEntryReader: PeriodJournalEntryReader,
-  private val analysisResultReader: AnalysisResultReader,
+  private val analysisExecutionRepository: AnalysisExecutionRepository,
   private val autoAnalysisAttemptStore: AutoAnalysisAttemptStore,
   private val periodAnalysisRunner: PeriodAnalysisRunner,
   private val hostedPeriodAnalysisRunner: PeriodAnalysisRunner,
@@ -70,7 +70,7 @@ internal class AutoAnalyzer(
       if (autoAnalysisAttemptStore.lastHostedAttemptDate() == executionDate) {
         return AutoAnalysisOutcome.SKIPPED_ALREADY_ATTEMPTED_TODAY
       }
-      if (isAlreadyAnalyzed(targetDay, zoneId)) {
+      if (targetDay in analysisExecutionRepository.state.first().hostedSuccessfulDays) {
         return AutoAnalysisOutcome.SKIPPED_ALREADY_ANALYZED
       }
     }
@@ -131,9 +131,6 @@ internal class AutoAnalyzer(
     }
   }
 
-  private suspend fun isAlreadyAnalyzed(day: LocalDate, zoneId: ZoneId): Boolean =
-    analysisResultReader.observeAll().first()
-      .any { it.periodStart.atZone(zoneId).toLocalDate() == day }
 }
 
 /** 自動解析1回分の結果。Workerがretryまたは次回の日次実行を予約するために受け取る。 */

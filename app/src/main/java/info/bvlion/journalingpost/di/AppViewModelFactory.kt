@@ -49,6 +49,8 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
   initializer {
     JournalHistoryViewModel(
       reader = container.journalEntryReader,
+      analysisResultReader = container.analysisResultReader,
+      analysisExecutionRepository = container.analysisExecutionRepository,
       deleter = container.journalEntryDeleter,
     )
   }
@@ -60,6 +62,8 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
       periodJournalEntryReader = container.periodJournalEntryReader,
       periodAnalyzer = container.periodAnalyzer,
       analysisResultWriter = container.analysisResultWriter,
+      analysisResultDeleter = container.analysisResultDeleter,
+      analysisExecutionRepository = container.analysisExecutionRepository,
       hostedCredentialsRepository = container.hostedCredentialsRepository,
     )
   }

@@ -93,6 +93,7 @@ class WebhookPeriodAnalyzerTest {
         periodEnd = Instant.parse("2026-08-29T09:00:00Z"),
         analyzedAt = Instant.parse("2026-08-29T09:00:05Z"),
         body = "今週は穏やかでした",
+        integration = AnalysisIntegration.CUSTOM_WEBHOOK,
       ),
       analyzer.analyze(periodStart, periodEnd, oneEntry),
     )

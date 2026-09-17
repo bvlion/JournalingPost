@@ -2,6 +2,8 @@ package info.bvlion.journalingpost
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import info.bvlion.journalingpost.analysis.AnalysisExecutionRepository
+import info.bvlion.journalingpost.analysis.AnalysisResultReader
 import info.bvlion.journalingpost.journal.JournalEntryDeleter
 import info.bvlion.journalingpost.journal.JournalEntryReader
 import info.bvlion.journalingpost.journal.history.JournalHistoryGroup
@@ -18,7 +20,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -27,6 +28,8 @@ import kotlinx.coroutines.launch
 
 class JournalHistoryViewModel(
   reader: JournalEntryReader,
+  analysisResultReader: AnalysisResultReader,
+  analysisExecutionRepository: AnalysisExecutionRepository,
   private val deleter: JournalEntryDeleter,
   private val zoneId: ZoneId = ZoneId.systemDefault(),
   private val now: () -> Instant = Instant::now,
@@ -45,7 +48,19 @@ class JournalHistoryViewModel(
    * たびに[syncRangeToGroups]で追従させる。
    */
   val uiState: StateFlow<JournalHistoryUiState> = combine(
-    reader.observeAll().map { it.toHistoryGroups(zoneId) }.onEach(::syncRangeToGroups),
+    combine(
+      reader.observeAll(),
+      analysisResultReader.observeAll(),
+      analysisExecutionRepository.state,
+    ) { entries, analysisResults, executionState ->
+      val existingResultIds = analysisResults.mapTo(mutableSetOf()) { it.id }
+      val usedEntryIds = executionState.entryIdsByResultId
+        .filterKeys { it in existingResultIds }
+        .values
+        .flatten()
+        .toSet()
+      entries.toHistoryGroups(zoneId, usedEntryIds)
+    }.onEach(::syncRangeToGroups),
     selectedDate,
   ) { groups, selected ->
     JournalHistoryUiState.Content(
@@ -57,7 +72,10 @@ class JournalHistoryViewModel(
     )
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), JournalHistoryUiState.Loading)
 
-  // 削除失敗は継続的な画面状態ではなく1度きりの通知なので、画面がSnackbarで見せるまで保持して消費する。
+  // 削除結果は継続的な画面状態ではなく1度きりの通知なので、画面がSnackbarで見せるまで保持して消費する。
+  private val _deleteSuccesses = Channel<Unit>(Channel.BUFFERED)
+  val deleteSuccesses: Flow<Unit> = _deleteSuccesses.receiveAsFlow()
+
   private val _deleteFailures = Channel<Unit>(Channel.BUFFERED)
   val deleteFailures: Flow<Unit> = _deleteFailures.receiveAsFlow()
 
@@ -84,6 +102,7 @@ class JournalHistoryViewModel(
     viewModelScope.launch {
       try {
         deleter.delete(id)
+        _deleteSuccesses.send(Unit)
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {

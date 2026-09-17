@@ -8,13 +8,19 @@ import java.time.ZoneId
  * あっても、idの降順で二次的に順序を確定させるため、変換結果の並び順は呼び出しごとに
  * 揺れない。
  */
-fun List<JournalEntry>.toHistoryGroups(zoneId: ZoneId): List<JournalHistoryGroup> =
+fun List<JournalEntry>.toHistoryGroups(
+  zoneId: ZoneId,
+  usedEntryIds: Set<Long> = emptySet(),
+): List<JournalHistoryGroup> =
   sortedWith(compareByDescending<JournalEntry> { it.timestamp }.thenByDescending { it.id })
-    .map { it.toHistoryItem(zoneId) }
+    .map { it.toHistoryItem(zoneId, usedEntryIds) }
     .groupBy { it.date }
     .map { (date, items) -> JournalHistoryGroup(date, items) }
 
-private fun JournalEntry.toHistoryItem(zoneId: ZoneId): JournalHistoryItem {
+private fun JournalEntry.toHistoryItem(
+  zoneId: ZoneId,
+  usedEntryIds: Set<Long>,
+): JournalHistoryItem {
   val zoned = timestamp.atZone(zoneId)
   return JournalHistoryItem(
     id = id,
@@ -23,5 +29,6 @@ private fun JournalEntry.toHistoryItem(zoneId: ZoneId): JournalHistoryItem {
     moodEmoji = moodEmoji,
     moodLabel = moodLabel,
     note = note,
+    isUsedInAnalysis = id in usedEntryIds,
   )
 }

@@ -12,7 +12,7 @@ import java.time.ZoneOffset
  *
  * Custom Webhookは記録が1件以上ある日すべて(Issue #38で確定した扱いを維持する)。
  * Hostedは当日を対象にせず、昨日から6日前までの未解析の記録日だけにする(Issue #86)。
- * 自動解析・手動解析を問わず解析済み(その日を対象期間とする[AnalysisResult]が存在する)日も除外する。
+ * 自動解析・手動解析を問わずHostedで成功済みの対象日も除外する。
  */
 internal fun manualAnalysisSelectableDays(
   integration: AnalysisIntegration,

@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -30,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,14 +85,23 @@ fun AnalysisHistoryScreen(
   isRunning: Boolean,
   selectableDays: Set<LocalDate>,
   runResults: Flow<AnalysisRunResult>,
+  deleteSuccesses: Flow<Unit>,
+  deleteFailures: Flow<Unit>,
   onShowMessage: (String) -> Unit,
   onShowContactMessage: (String, String, LocalDate) -> Unit,
   onAnalyze: (LocalDate) -> Unit,
+  onDelete: (Long) -> Unit,
   onResultClick: (AnalysisHistoryItem) -> Unit,
   onBack: () -> Unit,
 ) {
   val resources = LocalResources.current
   val completedMessage = stringResource(R.string.analysis_completed)
+  val deleteSucceededMessage = stringResource(R.string.analysis_delete_succeeded)
+  val deleteFailedMessage = stringResource(R.string.analysis_delete_failed)
+  var pendingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
+
+  EventEffect(deleteSuccesses) { onShowMessage(deleteSucceededMessage) }
+  EventEffect(deleteFailures) { onShowMessage(deleteFailedMessage) }
 
   // 選べる日が無いときは「解析する」を出さない。Hostedでは当日と解析済みの日を除くと対象が
   // 無くなることがある(その場合は自動解析か翌日以降に委ねる)。導線を出す場合は一覧の先頭itemが
@@ -157,7 +168,36 @@ fun AnalysisHistoryScreen(
           style = HistoryReadingTextStyle,
           modifier = Modifier.padding(top = 16.dp),
         )
+        TextButton(
+          onClick = { pendingDeleteId = selectedItem.id },
+          modifier = Modifier.align(Alignment.End).padding(top = 16.dp),
+        ) {
+          Text(text = stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error)
+        }
       }
+    }
+    if (pendingDeleteId == selectedItem.id) {
+      AlertDialog(
+        onDismissRequest = { pendingDeleteId = null },
+        title = { Text(stringResource(R.string.analysis_delete_confirm_title)) },
+        text = { Text(stringResource(R.string.analysis_delete_confirm_body)) },
+        confirmButton = {
+          TextButton(
+            onClick = {
+              pendingDeleteId = null
+              onDelete(selectedItem.id)
+              onBack()
+            },
+          ) {
+            Text(text = stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error)
+          }
+        },
+        dismissButton = {
+          TextButton(onClick = { pendingDeleteId = null }) {
+            Text(stringResource(R.string.action_cancel))
+          }
+        },
+      )
     }
     return
   }
@@ -362,9 +402,12 @@ fun AnalysisHistoryScreenPreview() {
       isRunning = false,
       selectableDays = setOf(LocalDate.of(2026, 8, 23), LocalDate.of(2026, 8, 24)),
       runResults = emptyFlow(),
+      deleteSuccesses = emptyFlow(),
+      deleteFailures = emptyFlow(),
       onShowMessage = {},
       onShowContactMessage = { _, _, _ -> },
       onAnalyze = {},
+      onDelete = {},
       onResultClick = {},
       onBack = {},
     )
