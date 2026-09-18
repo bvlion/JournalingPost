@@ -80,6 +80,7 @@ import info.bvlion.journalingpost.settings.openStoreListingForReview
 import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
+import java.io.Serializable
 import java.time.LocalDate
 import java.util.Locale
 import kotlinx.coroutines.delay
@@ -87,7 +88,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-  private val viewModel: MainViewModel by viewModels { appViewModelFactory }
+  private val journalRecordViewModel: JournalRecordViewModel by viewModels { appViewModelFactory }
   private val historyViewModel: JournalHistoryViewModel by viewModels { appViewModelFactory }
   private val analysisHistoryViewModel: AnalysisHistoryViewModel by viewModels { appViewModelFactory }
   private val settingsViewModel: SettingsViewModel by viewModels { appViewModelFactory }
@@ -113,44 +114,55 @@ class MainActivity : ComponentActivity() {
 
     setContent {
       JournalingPostTheme {
-        val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+        val recordUiState by journalRecordViewModel.uiState.collectAsStateWithLifecycle()
         val moods by moodViewModel.moods.collectAsStateWithLifecycle()
         val isNoteOnlyEntryEnabled by noteOnlyEntryViewModel.isEnabled.collectAsStateWithLifecycle()
         val isMoodNoteInputInitiallyOpen by moodNoteInputViewModel.isInitiallyOpen.collectAsStateWithLifecycle()
         val onboardingUiState by onboardingViewModel.uiState.collectAsStateWithLifecycle()
 
         // 権限ダイアログ中に画面が再生成されても、要求前の操作を結果受領後に再開できるよう値で保持する。
-        var pendingAnalysisDayEpochDay by rememberSaveable { mutableStateOf<Long?>(null) }
-        var isAutoAnalysisEnablePending by rememberSaveable { mutableStateOf(false) }
+        var pendingLocalNetworkPermissionAction by rememberSaveable {
+          mutableStateOf<PendingLocalNetworkPermissionAction?>(null)
+        }
         var hasRequestedLocalNetworkPermission by rememberSaveable { mutableStateOf(false) }
         val localNetworkPermissionLauncher = rememberLauncherForActivityResult(
           ActivityResultContracts.RequestPermission(),
         ) {
           // 拒否時も公開先のWebhookは利用できるため、要求前の操作自体は
           // 既存どおり続行する。
-          pendingAnalysisDayEpochDay?.let { analysisHistoryViewModel.analyze(LocalDate.ofEpochDay(it)) }
-          if (isAutoAnalysisEnablePending) {
-            autoAnalysisSettingsViewModel.setEnabled(true)
+          when (val action = pendingLocalNetworkPermissionAction) {
+            is PendingLocalNetworkPermissionAction.Analyze ->
+              analysisHistoryViewModel.analyze(LocalDate.ofEpochDay(action.dayEpochDay))
+            PendingLocalNetworkPermissionAction.EnableAutoAnalysis ->
+              autoAnalysisSettingsViewModel.setEnabled(true)
+            null -> Unit
           }
-          pendingAnalysisDayEpochDay = null
-          isAutoAnalysisEnablePending = false
+          pendingLocalNetworkPermissionAction = null
         }
-        LaunchedEffect(Unit) {
-          if (
-            Build.VERSION.SDK_INT >= 37 &&
-            checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) != PackageManager.PERMISSION_GRANTED
-          ) {
-            val container = (application as JournalingPostApplication).container
-            val isAutoAnalysisEnabled = container.autoAnalysisSettingsRepository.autoAnalysisSettings.first().enabled
-            if (
-              isAutoAnalysisEnabled &&
-              container.analysisIntegrationRepository.analysisIntegration.first() ==
-              AnalysisIntegration.CUSTOM_WEBHOOK &&
-              !hasRequestedLocalNetworkPermission
-            ) {
+        val requestLocalNetworkPermissionIfNeeded:
+          (Boolean, PendingLocalNetworkPermissionAction?) -> Boolean = { isCustomWebhook, pendingAction ->
+            val shouldRequest = Build.VERSION.SDK_INT >= 37 &&
+              isCustomWebhook &&
+              !hasRequestedLocalNetworkPermission &&
+              checkSelfPermission(
+                Manifest.permission.ACCESS_LOCAL_NETWORK,
+              ) != PackageManager.PERMISSION_GRANTED
+            if (shouldRequest) {
+              pendingLocalNetworkPermissionAction = pendingAction
               hasRequestedLocalNetworkPermission = true
               localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
             }
+            shouldRequest
+        }
+        LaunchedEffect(Unit) {
+          val container = (application as JournalingPostApplication).container
+          val isAutoAnalysisEnabled = container.autoAnalysisSettingsRepository.autoAnalysisSettings.first().enabled
+          if (isAutoAnalysisEnabled) {
+            requestLocalNetworkPermissionIfNeeded(
+              container.analysisIntegrationRepository.analysisIntegration.first() ==
+                AnalysisIntegration.CUSTOM_WEBHOOK,
+              null,
+            )
           }
         }
 
@@ -193,10 +205,10 @@ class MainActivity : ComponentActivity() {
           }
         }
 
-        // 記録処理中〜完了直後はダイアログの操作もタブ切り替えも受け付けない。MainViewModelは
+        // 記録処理中〜完了直後はダイアログの操作もタブ切り替えも受け付けない。JournalRecordViewModelは
         // INITへ戻さないため、SUCCESSもlock対象に含める。
-        val recordInProgress = uiState == MainViewModel.UiState.LOADING ||
-          uiState == MainViewModel.UiState.SUCCESS
+        val recordInProgress = recordUiState == JournalRecordViewModel.UiState.LOADING ||
+          recordUiState == JournalRecordViewModel.UiState.SUCCESS
 
         val openWebhookSettings: (Boolean) -> Unit = { activatePendingSelection ->
           webhookSetupPending = activatePendingSelection
@@ -212,7 +224,7 @@ class MainActivity : ComponentActivity() {
         val closeRecordOverlay: () -> Unit = {
           selectedMoodId = null
           isNoteOnlyRecording = false
-          viewModel.resetState()
+          journalRecordViewModel.resetState()
         }
         val closeMoodSettings: () -> Unit = {
           if (!moodSettingsViewModel.uiState.value.isSaving) {
@@ -411,11 +423,11 @@ class MainActivity : ComponentActivity() {
                         isNoteOnlyEntryVisible = isNoteOnlyEntryEnabled == true,
                         highlightMoodSelection = onboardingUiState.highlightMoodSelection,
                         onMoodClick = { mood ->
-                          viewModel.resetState()
+                          journalRecordViewModel.resetState()
                           selectedMoodId = mood.id
                         },
                         onNoteOnlyClick = {
-                          viewModel.resetState()
+                          journalRecordViewModel.resetState()
                           isNoteOnlyRecording = true
                         },
                       )
@@ -478,18 +490,11 @@ class MainActivity : ComponentActivity() {
                           }
                         },
                         onAnalyze = { day ->
-                          if (
-                            Build.VERSION.SDK_INT >= 37 &&
-                            isCustomWebhook &&
-                            !hasRequestedLocalNetworkPermission &&
-                            checkSelfPermission(
-                              Manifest.permission.ACCESS_LOCAL_NETWORK,
-                            ) != PackageManager.PERMISSION_GRANTED
-                          ) {
-                            pendingAnalysisDayEpochDay = day.toEpochDay()
-                            hasRequestedLocalNetworkPermission = true
-                            localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
-                          } else {
+                          val isLocalNetworkPermissionRequested = requestLocalNetworkPermissionIfNeeded(
+                            isCustomWebhook,
+                            PendingLocalNetworkPermissionAction.Analyze(day.toEpochDay()),
+                          )
+                          if (!isLocalNetworkPermissionRequested) {
                             analysisHistoryViewModel.analyze(day)
                           }
                         },
@@ -552,17 +557,11 @@ class MainActivity : ComponentActivity() {
                       }
 
                       LaunchedEffect(settingsUiState.selectedIntegration, autoAnalysisUiState?.enabled) {
-                        if (
-                          Build.VERSION.SDK_INT >= 37 &&
-                          settingsUiState.selectedIntegration == AnalysisIntegration.CUSTOM_WEBHOOK &&
-                          autoAnalysisUiState?.enabled == true &&
-                          !hasRequestedLocalNetworkPermission &&
-                          checkSelfPermission(
-                            Manifest.permission.ACCESS_LOCAL_NETWORK,
-                          ) != PackageManager.PERMISSION_GRANTED
-                        ) {
-                          hasRequestedLocalNetworkPermission = true
-                          localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
+                        if (autoAnalysisUiState?.enabled == true) {
+                          requestLocalNetworkPermissionIfNeeded(
+                            settingsUiState.selectedIntegration == AnalysisIntegration.CUSTOM_WEBHOOK,
+                            null,
+                          )
                         }
                       }
 
@@ -574,19 +573,12 @@ class MainActivity : ComponentActivity() {
                         onNoteOnlyEntryChange = settingsViewModel::setNoteOnlyEntryEnabled,
                         onMoodNoteInputInitiallyOpenChange = settingsViewModel::setMoodNoteInputInitiallyOpen,
                         onAutoAnalysisEnabledChange = { enabled ->
-                          if (
-                            Build.VERSION.SDK_INT >= 37 &&
-                            enabled &&
-                            settingsUiState.selectedIntegration == AnalysisIntegration.CUSTOM_WEBHOOK &&
-                            !hasRequestedLocalNetworkPermission &&
-                            checkSelfPermission(
-                              Manifest.permission.ACCESS_LOCAL_NETWORK,
-                            ) != PackageManager.PERMISSION_GRANTED
-                          ) {
-                            isAutoAnalysisEnablePending = true
-                            hasRequestedLocalNetworkPermission = true
-                            localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
-                          } else {
+                          val isLocalNetworkPermissionRequested = enabled &&
+                            requestLocalNetworkPermissionIfNeeded(
+                              settingsUiState.selectedIntegration == AnalysisIntegration.CUSTOM_WEBHOOK,
+                              PendingLocalNetworkPermissionAction.EnableAutoAnalysis,
+                            )
+                          if (!isLocalNetworkPermissionRequested) {
                             autoAnalysisSettingsViewModel.setEnabled(enabled)
                           }
                         },
@@ -631,7 +623,7 @@ class MainActivity : ComponentActivity() {
               // (dialogは開いたままで、入力内容を保持して再試行できる)。
               hasFailure = false,
               onRecord = { note ->
-                viewModel.record(
+                journalRecordViewModel.record(
                   note = note,
                   mood = recordingMood?.let { MoodSnapshot(id = it.id, emoji = it.emoji, label = it.label) },
                   source = JournalSource.APP,
@@ -640,9 +632,9 @@ class MainActivity : ComponentActivity() {
               onDismiss = closeRecordOverlay,
             )
 
-            LaunchedEffect(uiState) {
-              when (uiState) {
-                MainViewModel.UiState.SUCCESS -> {
+            LaunchedEffect(recordUiState) {
+              when (recordUiState) {
+                JournalRecordViewModel.UiState.SUCCESS -> {
                   closeRecordOverlay()
                   showMessage(successMessage)
                   // closeRecordOverlay()のresetState()でuiStateがINITへ変わり、この
@@ -654,9 +646,9 @@ class MainActivity : ComponentActivity() {
                   }
                 }
 
-                MainViewModel.UiState.FAILURE -> {
+                JournalRecordViewModel.UiState.FAILURE -> {
                   showMessage(failureMessage)
-                  viewModel.resetState()
+                  journalRecordViewModel.resetState()
                 }
 
                 else -> Unit
@@ -705,7 +697,13 @@ private enum class SubscreenDestination {
   MOOD_SETTINGS,
 }
 
-enum class MainDestination(
+private sealed interface PendingLocalNetworkPermissionAction : Serializable {
+  data class Analyze(val dayEpochDay: Long) : PendingLocalNetworkPermissionAction
+
+  data object EnableAutoAnalysis : PendingLocalNetworkPermissionAction
+}
+
+private enum class MainDestination(
   @param:StringRes val labelRes: Int,
   val icon: Int,
 ) {

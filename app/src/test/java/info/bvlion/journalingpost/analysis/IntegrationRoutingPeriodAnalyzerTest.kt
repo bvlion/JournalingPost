@@ -25,7 +25,7 @@ class IntegrationRoutingPeriodAnalyzerTest {
     val webhook = RecordingAnalyzer(PeriodAnalysisOutcome.Failure.SERVER_ERROR)
     val hosted = RecordingAnalyzer(PeriodAnalysisOutcome.Failure.NETWORK)
 
-    router(AnalysisIntegration.CUSTOM_WEBHOOK, webhook, hosted).analyze(start, end, entries)
+    router(AnalysisIntegration.CUSTOM_WEBHOOK, webhook, hosted).analyze(start, end, entries, analysisDate = null)
 
     assertEquals(1, webhook.callCount)
     assertEquals(0, hosted.callCount)
@@ -36,7 +36,7 @@ class IntegrationRoutingPeriodAnalyzerTest {
     val webhook = RecordingAnalyzer(PeriodAnalysisOutcome.Failure.SERVER_ERROR)
     val hosted = RecordingAnalyzer(PeriodAnalysisOutcome.Failure.NETWORK)
 
-    router(AnalysisIntegration.HOSTED, webhook, hosted).analyze(start, end, entries)
+    router(AnalysisIntegration.HOSTED, webhook, hosted).analyze(start, end, entries, analysisDate = null)
 
     assertEquals(0, webhook.callCount)
     assertEquals(1, hosted.callCount)
@@ -47,7 +47,7 @@ class IntegrationRoutingPeriodAnalyzerTest {
     val webhook = RecordingAnalyzer(PeriodAnalysisOutcome.Failure.SERVER_ERROR)
     val hosted = RecordingAnalyzer(PeriodAnalysisOutcome.Failure.NETWORK)
 
-    val outcome = router(AnalysisIntegration.NONE, webhook, hosted).analyze(start, end, entries)
+    val outcome = router(AnalysisIntegration.NONE, webhook, hosted).analyze(start, end, entries, analysisDate = null)
 
     assertEquals(PeriodAnalysisOutcome.Failure.INTEGRATION_UNAVAILABLE, outcome)
     assertEquals(0, webhook.callCount)
@@ -60,7 +60,7 @@ class IntegrationRoutingPeriodAnalyzerTest {
     val hosted = RecordingPersistenceAnalyzer()
     val router = router(AnalysisIntegration.HOSTED, webhook, hosted)
 
-    router.analyze(start, end, entries)
+    router.analyze(start, end, entries, analysisDate = null)
     router.onAnalysisResultPersisted(start, end)
 
     assertEquals(listOf(start to end), hosted.persistedPeriods)
@@ -72,7 +72,7 @@ class IntegrationRoutingPeriodAnalyzerTest {
     val hosted = RecordingPersistenceAnalyzer()
     val router = router(AnalysisIntegration.CUSTOM_WEBHOOK, webhook, hosted)
 
-    router.analyze(start, end, entries)
+    router.analyze(start, end, entries, analysisDate = null)
     router.onAnalysisResultPersisted(start, end)
 
     assertTrue(hosted.persistedPeriods.isEmpty())

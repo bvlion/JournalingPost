@@ -26,7 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import info.bvlion.journalingpost.MainViewModel
+import info.bvlion.journalingpost.JournalRecordViewModel
 import info.bvlion.journalingpost.MoodNoteInputViewModel
 import info.bvlion.journalingpost.MoodViewModel
 import info.bvlion.journalingpost.R
@@ -38,9 +38,9 @@ import info.bvlion.journalingpost.mood.MoodSnapshot
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import kotlinx.coroutines.launch
 
-/** 既存MainViewModel/JournalRecorderを再利用する。 */
+/** アプリ内記録と同じJournalRecordViewModel/JournalRecorderを再利用する。 */
 class MoodEntryActivity : ComponentActivity() {
-  private val viewModel: MainViewModel by viewModels { appViewModelFactory }
+  private val journalRecordViewModel: JournalRecordViewModel by viewModels { appViewModelFactory }
   private val moodViewModel: MoodViewModel by viewModels { appViewModelFactory }
   private val moodNoteInputViewModel: MoodNoteInputViewModel by viewModels { appViewModelFactory }
   private var moodId by mutableStateOf<String?>(null)
@@ -79,15 +79,15 @@ class MoodEntryActivity : ComponentActivity() {
         if (isNoteOnlyEntry || (currentMood != null && isMoodNoteInputInitiallyOpen != null)) {
           val recordingMood = if (isNoteOnlyEntry) null else currentMood
           val currentSessionId = sessionId
-          val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+          val recordUiState by journalRecordViewModel.uiState.collectAsStateWithLifecycle()
 
           key(currentSessionId) {
             MoodEntryScreen(
               mood = recordingMood,
               isNoteInitiallyVisible = recordingMood != null && isMoodNoteInputInitiallyOpen == true,
-              uiState = uiState,
+              recordUiState = recordUiState,
               onRecord = { note ->
-                viewModel.record(
+                journalRecordViewModel.record(
                   note = note,
                   mood = recordingMood?.let { MoodSnapshot(id = it.id, emoji = it.emoji, label = it.label) },
                   source = JournalSource.WIDGET,
@@ -110,12 +110,12 @@ class MoodEntryActivity : ComponentActivity() {
   /** launchMode=singleTaskのため、Widgetを再度タップしても新しいinstanceは作られずここへ届く。 */
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
-    if (!viewModel.uiState.value.acceptsNewMoodEntry()) return
+    if (!journalRecordViewModel.uiState.value.acceptsNewMoodEntry()) return
     if (!applyEntryIntent(intent)) return
     // 構成変更でActivityが作り直されたときも新しい記録対象を読めるようにIntentごと差し替える。
     setIntent(intent)
     sessionId++
-    viewModel.resetState()
+    journalRecordViewModel.resetState()
   }
 
   /** 記録対象をIntentから読み取る。どちらの記録も指していない場合はfalseを返し、状態を変えない。 */
@@ -148,8 +148,8 @@ class MoodEntryActivity : ComponentActivity() {
  * 記録処理中(LOADING)だけは、新しいentryへ置き換えると実行中のrecord()をcancelしてしまうため
  * 受け付けない。完了済みのSUCCESSは次のWidgetタップを取りこぼさないよう受け付ける。
  */
-internal fun MainViewModel.UiState.acceptsNewMoodEntry(): Boolean =
-  this != MainViewModel.UiState.LOADING
+internal fun JournalRecordViewModel.UiState.acceptsNewMoodEntry(): Boolean =
+  this != JournalRecordViewModel.UiState.LOADING
 
 private const val CLOSE_FADE_DURATION_MS = 250
 
@@ -164,11 +164,11 @@ private const val CLOSE_FADE_DURATION_MS = 250
 fun MoodEntryScreen(
   mood: Mood?,
   isNoteInitiallyVisible: Boolean,
-  uiState: MainViewModel.UiState,
+  recordUiState: JournalRecordViewModel.UiState,
   onRecord: (String) -> Unit,
   onClose: () -> Unit,
 ) {
-  // MainViewModelは前のsessionの結果を保持したままなので、このsessionが記録を始めるまでは
+  // JournalRecordViewModelは前のsessionの結果を保持したままなので、このsessionが記録を始めるまでは
   // その結果へ反応しない。そうしないと、直前の記録が成功したまま開かれたsessionが
   // いきなりfade/finishしてWidgetタップを失う。
   var hasRequestedRecord by rememberSaveable { mutableStateOf(false) }
@@ -178,14 +178,14 @@ fun MoodEntryScreen(
   val contentAlpha = remember { Animatable(1f) }
   val successMessage = stringResource(R.string.record_success)
 
-  val sessionState = if (hasRequestedRecord) uiState else MainViewModel.UiState.INIT
-  val isRecording = sessionState == MainViewModel.UiState.LOADING
-  val isSuccess = sessionState == MainViewModel.UiState.SUCCESS
+  val sessionState = if (hasRequestedRecord) recordUiState else JournalRecordViewModel.UiState.INIT
+  val isRecording = sessionState == JournalRecordViewModel.UiState.LOADING
+  val isSuccess = sessionState == JournalRecordViewModel.UiState.SUCCESS
   // SUCCESS到達後もrecomposeで「記録」ボタンが一瞬通常表示へ戻らないよう、LOADING/SUCCESS/
-  // fade中(isClosing)のすべてを「操作不能」として扱う。MainViewModelはINITへ戻さないため、
+  // fade中(isClosing)のすべてを「操作不能」として扱う。JournalRecordViewModelはINITへ戻さないため、
   // この操作lockはUI側だけで判定する。
   val isInteractionLocked = isRecording || isSuccess || isClosing
-  val hasFailure = sessionState == MainViewModel.UiState.FAILURE
+  val hasFailure = sessionState == JournalRecordViewModel.UiState.FAILURE
 
   // finish()するとViewModelのcoroutineごと破棄されるため、fade outを完了させてから
   // Activityを閉じる。ここはWidgetタップで開いて記録後すぐ閉じるsurfaceで、閉じたあとに
@@ -237,7 +237,7 @@ fun MoodEntryScreenPreview() {
     MoodEntryScreen(
       mood = Mood(id = "1", emoji = "😄", label = "嬉しい"),
       isNoteInitiallyVisible = false,
-      uiState = MainViewModel.UiState.INIT,
+      recordUiState = JournalRecordViewModel.UiState.INIT,
       onRecord = {},
       onClose = {},
     )
@@ -251,7 +251,7 @@ fun NoteOnlyEntryScreenPreview() {
     MoodEntryScreen(
       mood = null,
       isNoteInitiallyVisible = false,
-      uiState = MainViewModel.UiState.INIT,
+      recordUiState = JournalRecordViewModel.UiState.INIT,
       onRecord = {},
       onClose = {},
     )

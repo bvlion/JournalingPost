@@ -62,7 +62,7 @@ class HostedPeriodAnalyzerTest {
 
     assertEquals(
       PeriodAnalysisOutcome.Failure.INTEGRATION_UNAVAILABLE,
-      analyzer.analyze(periodStart, periodEnd, oneEntry),
+      analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null),
     )
     assertFalse(requested)
   }
@@ -72,7 +72,7 @@ class HostedPeriodAnalyzerTest {
     var requested = false
     val analyzer = analyzer { requested = true; respondJson(successBody) }
 
-    assertEquals(PeriodAnalysisOutcome.Failure.NO_ENTRIES, analyzer.analyze(periodStart, periodEnd, emptyList()))
+    assertEquals(PeriodAnalysisOutcome.Failure.NO_ENTRIES, analyzer.analyze(periodStart, periodEnd, emptyList(), analysisDate = null))
     assertFalse(requested)
   }
 
@@ -88,7 +88,7 @@ class HostedPeriodAnalyzerTest {
       }
     }
 
-    val outcome = analyzer.analyze(periodStart, periodEnd, oneEntry)
+    val outcome = analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null)
 
     assertEquals(
       PeriodAnalysisOutcome.Success(
@@ -112,7 +112,7 @@ class HostedPeriodAnalyzerTest {
       respondJson(successBody)
     }
 
-    analyzer.analyze(periodStart, periodEnd, oneEntry)
+    analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null)
 
     assertEquals(listOf("/v1/analyses"), paths)
   }
@@ -169,7 +169,7 @@ class HostedPeriodAnalyzerTest {
 
     assertEquals(
       PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE,
-      analyzer.analyze(periodStart, periodEnd, oneEntry),
+      analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null),
     )
     assertFalse(keyStore.wasCleared(period))
   }
@@ -182,7 +182,7 @@ class HostedPeriodAnalyzerTest {
       keyStore = keyStore,
     ) { throw IOException("boom") }
 
-    assertEquals(PeriodAnalysisOutcome.Failure.NETWORK, analyzer.analyze(periodStart, periodEnd, oneEntry))
+    assertEquals(PeriodAnalysisOutcome.Failure.NETWORK, analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null))
     assertFalse(keyStore.wasCleared(period))
   }
 
@@ -198,7 +198,7 @@ class HostedPeriodAnalyzerTest {
       assertEquals(
         "status=$status",
         PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE,
-        analyzer.analyze(periodStart, periodEnd, oneEntry),
+        analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null),
       )
       assertFalse("status=$status", keyStore.wasCleared(period))
     }
@@ -214,7 +214,7 @@ class HostedPeriodAnalyzerTest {
 
     assertEquals(
       PeriodAnalysisOutcome.Failure.RATE_LIMITED,
-      analyzer.analyze(periodStart, periodEnd, oneEntry),
+      analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null),
     )
     assertFalse(keyStore.wasCleared(period))
   }
@@ -226,7 +226,7 @@ class HostedPeriodAnalyzerTest {
       PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE,
       analyzer(credentials = FakeHostedCredentialsRepository(stored = "k"), keyStore = inProgress) {
         respondJson("""{"error":{"code":"analysis_in_progress"}}""", HttpStatusCode.Conflict)
-      }.analyze(periodStart, periodEnd, oneEntry),
+      }.analyze(periodStart, periodEnd, oneEntry, analysisDate = null),
     )
     assertFalse(inProgress.wasCleared(period))
 
@@ -235,7 +235,7 @@ class HostedPeriodAnalyzerTest {
       PeriodAnalysisOutcome.Failure.SERVER_ERROR,
       analyzer(credentials = FakeHostedCredentialsRepository(stored = "k"), keyStore = reuse) {
       respondJson("""{"error":{"code":"idempotency_key_reuse"}}""", HttpStatusCode.Conflict)
-      }.analyze(periodStart, periodEnd, oneEntry),
+      }.analyze(periodStart, periodEnd, oneEntry, analysisDate = null),
     )
     assertTrue(reuse.wasCleared(period))
   }
@@ -247,7 +247,7 @@ class HostedPeriodAnalyzerTest {
       respondJson("""{"error":{"code":"validation_error"}}""", HttpStatusCode.UnprocessableEntity)
     }
 
-    assertEquals(PeriodAnalysisOutcome.Failure.SERVER_ERROR, analyzer.analyze(periodStart, periodEnd, oneEntry))
+    assertEquals(PeriodAnalysisOutcome.Failure.SERVER_ERROR, analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null))
     assertTrue(keyStore.wasCleared(period))
   }
 
@@ -259,7 +259,7 @@ class HostedPeriodAnalyzerTest {
       respondJson("""{"error":{"code":"unauthorized"}}""", HttpStatusCode.Unauthorized)
     }
 
-    assertEquals(PeriodAnalysisOutcome.Failure.SERVER_ERROR, analyzer.analyze(periodStart, periodEnd, oneEntry))
+    assertEquals(PeriodAnalysisOutcome.Failure.SERVER_ERROR, analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null))
     assertTrue(credentials.cleared)
     assertTrue(keyStore.wasCleared(period))
   }
@@ -270,7 +270,7 @@ class HostedPeriodAnalyzerTest {
       val analyzer = analyzer(credentials = FakeHostedCredentialsRepository(stored = "k")) { respondJson(body) }
       assertEquals(
         PeriodAnalysisOutcome.Failure.INVALID_RESPONSE,
-        analyzer.analyze(periodStart, periodEnd, oneEntry),
+        analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null),
       )
     }
   }
@@ -282,7 +282,7 @@ class HostedPeriodAnalyzerTest {
       respondJson(successBody)
     }
 
-    analyzer.analyze(periodStart, periodEnd, oneEntry)
+    analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null)
 
     assertFalse(keyStore.wasCleared(period))
   }
@@ -295,9 +295,14 @@ class HostedPeriodAnalyzerTest {
       respondJson("""{"error":{"code":"x"}}""", HttpStatusCode.ServiceUnavailable)
     }
 
-    analyzer.analyze(periodStart, periodEnd, oneEntry)
-    analyzer.analyze(periodStart, periodEnd, oneEntry)
-    analyzer.analyze(periodStart, periodEnd, listOf(entry("2026-08-30T01:00:00Z", note = "編集後のメモ")))
+    analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null)
+    analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null)
+    analyzer.analyze(
+      periodStart,
+      periodEnd,
+      listOf(entry("2026-08-30T01:00:00Z", note = "編集後のメモ")),
+      analysisDate = null,
+    )
 
     assertEquals(keys[0], keys[1])
     assertNotEquals(keys[1], keys[2])
@@ -311,10 +316,10 @@ class HostedPeriodAnalyzerTest {
       respondJson(successBody)
     }
 
-    analyzer.analyze(periodStart, periodEnd, oneEntry)
+    analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null)
     // AnalysisResultの端末保存まで成功した時点。
     analyzer.onAnalysisResultPersisted(periodStart, periodEnd)
-    analyzer.analyze(periodStart, periodEnd, oneEntry)
+    analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null)
 
     assertNotEquals(keys[0], keys[1])
   }
@@ -327,9 +332,9 @@ class HostedPeriodAnalyzerTest {
       respondJson(successBody)
     }
 
-    analyzer.analyze(periodStart, periodEnd, oneEntry)
+    analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null)
     // onAnalysisResultPersisted を呼ばない(端末保存に失敗した想定)。
-    analyzer.analyze(periodStart, periodEnd, oneEntry)
+    analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null)
 
     assertEquals(keys[0], keys[1])
   }
@@ -352,7 +357,7 @@ class HostedPeriodAnalyzerTest {
       }
     }
 
-    val outcome = analyzer.analyze(periodStart, periodEnd, oneEntry)
+    val outcome = analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null)
 
     assertEquals(PeriodAnalysisOutcome.Failure.INTEGRATION_UNAVAILABLE, outcome)
     assertEquals(listOf("/v1/installations"), paths)
@@ -364,7 +369,7 @@ class HostedPeriodAnalyzerTest {
       respondJson("""{}""", HttpStatusCode.BadRequest)
     }
 
-    assertEquals(PeriodAnalysisOutcome.Failure.SERVER_ERROR, analyzer.analyze(periodStart, periodEnd, oneEntry))
+    assertEquals(PeriodAnalysisOutcome.Failure.SERVER_ERROR, analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null))
   }
 
   @Test
@@ -375,7 +380,7 @@ class HostedPeriodAnalyzerTest {
 
     assertEquals(
       PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE,
-      analyzer.analyze(periodStart, periodEnd, oneEntry),
+      analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null),
     )
   }
 

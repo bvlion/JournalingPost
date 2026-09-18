@@ -50,7 +50,7 @@ class WebhookPeriodAnalyzerTest {
       handler = { requested = true; respondText() },
     )
 
-    assertEquals(PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE, analyzer.analyze(periodStart, periodEnd, oneEntry))
+    assertEquals(PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE, analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null))
     assertFalse(requested)
   }
 
@@ -59,7 +59,7 @@ class WebhookPeriodAnalyzerTest {
     var requested = false
     val analyzer = analyzer(integration = AnalysisIntegration.NONE, handler = { requested = true; respondText() })
 
-    assertEquals(PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE, analyzer.analyze(periodStart, periodEnd, oneEntry))
+    assertEquals(PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE, analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null))
     assertFalse(requested)
   }
 
@@ -68,7 +68,7 @@ class WebhookPeriodAnalyzerTest {
     var requested = false
     val analyzer = analyzer(handler = { requested = true; respondText() })
 
-    assertEquals(PeriodAnalysisOutcome.Failure.NO_ENTRIES, analyzer.analyze(periodStart, periodEnd, emptyList()))
+    assertEquals(PeriodAnalysisOutcome.Failure.NO_ENTRIES, analyzer.analyze(periodStart, periodEnd, emptyList(), analysisDate = null))
     assertFalse(requested)
   }
 
@@ -95,7 +95,7 @@ class WebhookPeriodAnalyzerTest {
         body = "今週は穏やかでした",
         integration = AnalysisIntegration.CUSTOM_WEBHOOK,
       ),
-      analyzer.analyze(periodStart, periodEnd, oneEntry),
+      analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null),
     )
   }
 
@@ -105,7 +105,7 @@ class WebhookPeriodAnalyzerTest {
 
     assertEquals(
       PeriodAnalysisOutcome.Failure.INVALID_RESPONSE,
-      analyzer.analyze(periodStart, periodEnd, oneEntry),
+      analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null),
     )
   }
 
@@ -124,7 +124,7 @@ class WebhookPeriodAnalyzerTest {
       assertEquals(
         "analyzedAt=$badTimestamp",
         PeriodAnalysisOutcome.Failure.INVALID_RESPONSE,
-        analyzer.analyze(periodStart, periodEnd, oneEntry),
+        analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null),
       )
     }
   }
@@ -138,7 +138,7 @@ class WebhookPeriodAnalyzerTest {
     )
     val analyzer = analyzer(handler = { request -> body = String(request.body.toByteArray()); respondText("ok") })
 
-    analyzer.analyze(periodStart, periodEnd, entries)
+    analyzer.analyze(periodStart, periodEnd, entries, analysisDate = null)
 
     val json = Json.parseToJsonElement(requireNotNull(body)).jsonObject
     val period = json.getValue("period").jsonObject
@@ -164,7 +164,7 @@ class WebhookPeriodAnalyzerTest {
       handler = { request -> body = String(request.body.toByteArray()); respondText("ok") },
     )
 
-    analyzer.analyze(periodStart, periodEnd, oneEntry)
+    analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null)
 
     val json = Json.parseToJsonElement(requireNotNull(body)).jsonObject
     assertEquals("2026-08-30T00:00:00Z", json.getValue("start").jsonPrimitive.content)
@@ -181,7 +181,7 @@ class WebhookPeriodAnalyzerTest {
     )
     val analyzer = analyzer(handler = { request -> body = String(request.body.toByteArray()); respondText("ok") })
 
-    analyzer.analyze(periodStart, periodEnd, entries)
+    analyzer.analyze(periodStart, periodEnd, entries, analysisDate = null)
 
     val jsonEntries = Json.parseToJsonElement(requireNotNull(body)).jsonObject.getValue("entries").jsonArray
     val mood = jsonEntries[0].jsonObject.getValue("mood").jsonObject
@@ -212,7 +212,7 @@ class WebhookPeriodAnalyzerTest {
       },
     )
 
-    val outcome = analyzer.analyze(periodStart, periodEnd, oneEntry)
+    val outcome = analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null)
     assertTrue(outcome is PeriodAnalysisOutcome.Success)
     assertEquals("ok", (outcome as PeriodAnalysisOutcome.Success).body)
   }
@@ -223,7 +223,7 @@ class WebhookPeriodAnalyzerTest {
 
     assertEquals(
       PeriodAnalysisOutcome.Failure.INVALID_RESPONSE,
-      analyzer.analyze(periodStart, periodEnd, oneEntry),
+      analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null),
     )
   }
 
@@ -233,7 +233,7 @@ class WebhookPeriodAnalyzerTest {
 
     assertEquals(
       PeriodAnalysisOutcome.Failure.INVALID_RESPONSE,
-      analyzer.analyze(periodStart, periodEnd, oneEntry),
+      analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null),
     )
   }
 
@@ -241,21 +241,21 @@ class WebhookPeriodAnalyzerTest {
   fun `HTTP 500はSERVER_ERROR`() = runTest {
     val analyzer = analyzer(handler = { respondJson("""{"analysis":{"text":"x"}}""", HttpStatusCode.InternalServerError) })
 
-    assertEquals(PeriodAnalysisOutcome.Failure.SERVER_ERROR, analyzer.analyze(periodStart, periodEnd, oneEntry))
+    assertEquals(PeriodAnalysisOutcome.Failure.SERVER_ERROR, analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null))
   }
 
   @Test
   fun `3xxは成功扱いにせずSERVER_ERROR`() = runTest {
     val analyzer = analyzer(handler = { respondJson("""{"analysis":{"text":"x"}}""", HttpStatusCode.Found) })
 
-    assertEquals(PeriodAnalysisOutcome.Failure.SERVER_ERROR, analyzer.analyze(periodStart, periodEnd, oneEntry))
+    assertEquals(PeriodAnalysisOutcome.Failure.SERVER_ERROR, analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null))
   }
 
   @Test
   fun `送信時の例外はNETWORK`() = runTest {
     val analyzer = analyzer(handler = { throw IOException("boom") })
 
-    assertEquals(PeriodAnalysisOutcome.Failure.NETWORK, analyzer.analyze(periodStart, periodEnd, oneEntry))
+    assertEquals(PeriodAnalysisOutcome.Failure.NETWORK, analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null))
   }
 
   @Test
@@ -270,7 +270,7 @@ class WebhookPeriodAnalyzerTest {
       },
     )
 
-    assertEquals(PeriodAnalysisOutcome.Failure.NETWORK, analyzer.analyze(periodStart, periodEnd, oneEntry))
+    assertEquals(PeriodAnalysisOutcome.Failure.NETWORK, analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null))
   }
 
   @Test
@@ -284,7 +284,7 @@ class WebhookPeriodAnalyzerTest {
       },
     )
 
-    analyzer.analyze(periodStart, periodEnd, oneEntry)
+    analyzer.analyze(periodStart, periodEnd, oneEntry, analysisDate = null)
 
     assertEquals("Bearer secret", authorization)
   }

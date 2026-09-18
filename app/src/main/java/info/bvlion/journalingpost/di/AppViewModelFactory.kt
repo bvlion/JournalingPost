@@ -9,7 +9,7 @@ import info.bvlion.journalingpost.AnalysisHistoryViewModel
 import info.bvlion.journalingpost.AutoAnalysisSettingsViewModel
 import info.bvlion.journalingpost.JournalHistoryViewModel
 import info.bvlion.journalingpost.JournalingPostApplication
-import info.bvlion.journalingpost.MainViewModel
+import info.bvlion.journalingpost.JournalRecordViewModel
 import info.bvlion.journalingpost.MoodNoteInputViewModel
 import info.bvlion.journalingpost.MoodSettingsViewModel
 import info.bvlion.journalingpost.MoodViewModel
@@ -21,7 +21,7 @@ import info.bvlion.journalingpost.WebhookSettingsViewModel
 /** 全ViewModelの生成をここへまとめる。依存関係は[AppContainer]からのみ取り出す。 */
 val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
   initializer {
-    MainViewModel(journalRecorder = container.journalRecorder)
+    JournalRecordViewModel(journalRecorder = container.journalRecorder)
   }
   initializer {
     MoodViewModel(repository = container.moodRepository)

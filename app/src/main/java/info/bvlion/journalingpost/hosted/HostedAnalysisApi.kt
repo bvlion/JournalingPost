@@ -1,12 +1,6 @@
 package info.bvlion.journalingpost.hosted
 
 import info.bvlion.journalingpost.journal.JournalEntry
-import java.time.Instant
-import java.time.LocalDateTime
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
-import java.time.format.ResolverStyle
 import kotlinx.serialization.Serializable
 
 /** `POST /v1/installations` のrequest body。Play Integrity tokenはこの登録時だけ送る。 */
@@ -55,28 +49,6 @@ internal data class HostedAnalysisRequest(
   }
 }
 
-/**
- * `POST /v1/analyses` の Response 200。Hosted契約の必須fieldが揃ってparseできることを
- * 成功の条件とする。未知fieldは無視する。`entryCount` / `model` は現在の
- * [info.bvlion.journalingpost.analysis.AnalysisResult]に保存先が無いためparseするだけ。
- */
-@Serializable
-internal data class HostedAnalysisResponse(
-  val analysis: Analysis,
-) {
-  @Serializable
-  internal data class Analysis(
-    val period: Period,
-    val analyzedAt: String,
-    val entryCount: Int,
-    val model: String,
-    val text: String,
-  ) {
-    @Serializable
-    internal data class Period(val start: String, val end: String)
-  }
-}
-
 /** エラー応答の共通形。`code` で分岐する(Server `docs/hosted-analysis-api.md` の Error response)。 */
 @Serializable
 internal data class HostedErrorResponse(
@@ -100,15 +72,4 @@ internal fun JournalEntry.toHostedAnalysisEntry(): HostedAnalysisRequest.Entry {
     null
   }
   return HostedAnalysisRequest.Entry(recordedAt = timestamp.toString(), mood = mood, note = note)
-}
-
-// Hosted契約のresponse timestampはUTC・秒精度の `2026-08-29T09:00:05Z` 表記に固定されている。
-// offset付き(`+09:00`)や小数秒など他の表記は受け付けず、INVALID_RESPONSEとして扱う。
-private val hostedResponseInstantFormatter: DateTimeFormatter =
-  DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss'Z'").withResolverStyle(ResolverStyle.STRICT)
-
-internal fun String.toHostedResponseInstantOrNull(): Instant? = try {
-  LocalDateTime.parse(this, hostedResponseInstantFormatter).toInstant(ZoneOffset.UTC)
-} catch (e: DateTimeParseException) {
-  null
 }
