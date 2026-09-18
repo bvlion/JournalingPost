@@ -10,8 +10,8 @@ import java.time.Instant
  * 残す。同じ対象期間に対する複数回の解析結果も、それぞれ独立した行として保持する。
  *
  * periodStart/periodEnd/analyzedAtはUTC基準のInstantで保存し、表示時に端末のタイムゾーンへ変換する。
- * Custom Webhookの手動解析では、これらと本文はいずれも解析先responseの `analysis`(Hosted契約)から
- * 作る。利用者が選んだ日は解析先へ渡す対象期間の算出にだけ使い、保存値はresponseを正とする。
+ * これらと本文はいずれも解析先responseの `analysis`(HostedとCustom Webhookの共通契約)から
+ * 作る。呼び出し側が指定した解析対象日は期間の算出にだけ使い、保存値はresponseを正とする。
  */
 @Entity(tableName = "analysis_results")
 data class AnalysisResult(

@@ -16,11 +16,6 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
-import java.time.format.ResolverStyle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
@@ -44,7 +39,6 @@ internal class WebhookPeriodAnalyzer(
 ) : PeriodAnalyzer {
   // moodのみ/noteのみのentryではnullのフィールドをJSONへ出さない(Hostedのentries[]と同じ形)。
   private val entriesJson = Json { explicitNulls = false }
-  private val responseJson = Json { ignoreUnknownKeys = true }
 
   override suspend fun analyze(
     periodStart: Instant,
@@ -93,39 +87,7 @@ internal class WebhookPeriodAnalyzer(
       return PeriodAnalysisOutcome.Failure.NETWORK
     }
 
-    val analysis = try {
-      responseJson.decodeFromString<WebhookAnalysisResponse>(responseText).analysis
-    } catch (e: CancellationException) {
-      throw e
-    } catch (e: Exception) {
-      return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
-    }
-    if (analysis.text.isBlank()) return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
-
-    val responsePeriodStart = analysis.period.start.toHostedResponseInstantOrNull()
-      ?: return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
-    val responsePeriodEnd = analysis.period.end.toHostedResponseInstantOrNull()
-      ?: return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
-    val responseAnalyzedAt = analysis.analyzedAt.toHostedResponseInstantOrNull()
-      ?: return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
-
-    return PeriodAnalysisOutcome.Success(
-      periodStart = responsePeriodStart,
-      periodEnd = responsePeriodEnd,
-      analyzedAt = responseAnalyzedAt,
-      body = analysis.text,
-      integration = AnalysisIntegration.CUSTOM_WEBHOOK,
-    )
+    return parseAnalysisSuccessResponse(responseText, AnalysisIntegration.CUSTOM_WEBHOOK)
+      ?: PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
   }
-}
-
-// Hosted契約のresponse timestampはUTC・秒精度の `2026-08-29T09:00:05Z` 表記に固定されている。
-// offset付き(`+09:00`)や小数秒など他の表記は受け付けず、INVALID_RESPONSEとして扱う。
-private val hostedResponseInstantFormatter: DateTimeFormatter =
-  DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss'Z'").withResolverStyle(ResolverStyle.STRICT)
-
-private fun String.toHostedResponseInstantOrNull(): Instant? = try {
-  LocalDateTime.parse(this, hostedResponseInstantFormatter).toInstant(ZoneOffset.UTC)
-} catch (e: DateTimeParseException) {
-  null
 }

@@ -21,8 +21,8 @@ internal class IntegrationRoutingPeriodAnalyzer(
    * 直近の[analyze]の委譲先。[onAnalysisResultPersisted]を「その結果を作ったanalyzer」だけへ送るため
    * に覚える。別の解析先で同じ期間を解析し直しても、他方のretry stateを消さない。
    *
-   * [AnalysisHistoryViewModel]は analyze → 保存 → [onAnalysisResultPersisted] を1回の実行の中で直列に
-   * 呼び、実行中の再呼び出しも抑止するため、単純なvarで足りる。
+   * [PeriodAnalysisRunner]は analyze → 保存 → [onAnalysisResultPersisted] の順に呼ぶ。この値は
+   * その通知先を引き継ぐために使う。
    */
   private var lastDelegate: PeriodAnalyzer? = null
 

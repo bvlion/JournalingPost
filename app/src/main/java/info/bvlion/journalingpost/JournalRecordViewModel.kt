@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class MainViewModel(
+class JournalRecordViewModel(
   private val journalRecorder: JournalRecorder,
 ) : ViewModel() {
   private val _uiState = MutableStateFlow(UiState.INIT)

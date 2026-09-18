@@ -3,6 +3,7 @@ package info.bvlion.journalingpost.hosted
 import info.bvlion.journalingpost.analysis.AnalysisResultPersistenceListener
 import info.bvlion.journalingpost.analysis.PeriodAnalysisOutcome
 import info.bvlion.journalingpost.analysis.PeriodAnalyzer
+import info.bvlion.journalingpost.analysis.parseAnalysisSuccessResponse
 import info.bvlion.journalingpost.journal.JournalEntry
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
@@ -27,7 +28,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
- * JournalingPost Hosted解析への手動接続(JournalingPostServer #40)。
+ * JournalingPost Hosted解析への接続(JournalingPostServer #40)。
  *
  * 開始時点の実効[AnalysisIntegration]がHOSTEDのときだけ動く。匿名installation登録→Bearer API key
  * 取得→`POST /v1/analyses`→200 response bodyから[PeriodAnalysisOutcome.Success]の生成までを行う。
@@ -156,31 +157,10 @@ internal class HostedPeriodAnalyzer(
       return PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE
     }
 
-    val analysis = try {
-      responseJson.decodeFromString<HostedAnalysisResponse>(text).analysis
-    } catch (e: CancellationException) {
-      throw e
-    } catch (e: Exception) {
-      return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
-    }
-    if (analysis.text.isBlank()) return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
-
-    val start = analysis.period.start.toHostedResponseInstantOrNull()
-      ?: return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
-    val end = analysis.period.end.toHostedResponseInstantOrNull()
-      ?: return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
-    val analyzedAt = analysis.analyzedAt.toHostedResponseInstantOrNull()
-      ?: return PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
-
     // 成功してもkeyは消さない。端末保存の確定は呼び出し側だけが知るため、
     // [onAnalysisResultPersisted]まで保持する(保存失敗時のretryをbufferで引けるようにするため)。
-    return PeriodAnalysisOutcome.Success(
-      periodStart = start,
-      periodEnd = end,
-      analyzedAt = analyzedAt,
-      body = analysis.text,
-      integration = AnalysisIntegration.HOSTED,
-    )
+    return parseAnalysisSuccessResponse(text, AnalysisIntegration.HOSTED)
+      ?: PeriodAnalysisOutcome.Failure.INVALID_RESPONSE
   }
 
   /**

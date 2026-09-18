@@ -9,7 +9,7 @@ import java.time.Instant
  * Hosted responseを受け取っても端末保存が確定するまではkeyを保持し、保存が失敗すれば同じpayloadの
  * retryがbufferから同じ結果を取得できる。保存まで成功したら、以降の明示実行は新しいkeyになる。
  *
- * Custom Webhookはこの種のretry stateを持たないため実装しない。[AnalysisHistoryViewModel]は
+ * Custom Webhookはこの種のretry stateを持たないため実装しない。[PeriodAnalysisRunner]は
  * `analyzer as? AnalysisResultPersistenceListener` でのみ関与し、共通の解析フローへHosted固有の
  * 概念を持ち込まない。
  */

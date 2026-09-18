@@ -160,7 +160,7 @@ class AnalysisHistoryViewModel(
     }
     if (entries.isEmpty()) return AnalysisRunResult.Failed(PeriodAnalysisOutcome.Failure.NO_ENTRIES, day)
 
-    // 対象期間・解析日時・本文はいずれもresponseの値を保存元にする(Custom Webhook契約)。保存と、
+    // 対象期間・解析日時・本文はいずれも解析先responseの値を保存元にする。保存と、
     // 端末保存確定のretry stateを持つanalyzerへの通知は[PeriodAnalysisRunner]へ閉じている。
     return when (val outcome = periodAnalysisRunner.run(periodStart, periodEnd, entries, day)) {
       is PeriodAnalysisRunner.Outcome.Saved -> AnalysisRunResult.Succeeded(outcome.savedResultId)

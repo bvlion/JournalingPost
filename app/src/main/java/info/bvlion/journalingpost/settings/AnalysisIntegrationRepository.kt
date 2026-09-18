@@ -2,7 +2,7 @@ package info.bvlion.journalingpost.settings
 
 import kotlinx.coroutines.flow.Flow
 
-/** JournalRecorder/SettingsViewModelはこのinterfaceのみへ依存する。 */
+/** 解析先の設定と解析実行は、このinterfaceを介して現在の選択を共有する。 */
 interface AnalysisIntegrationRepository {
   val analysisIntegration: Flow<AnalysisIntegration>
 

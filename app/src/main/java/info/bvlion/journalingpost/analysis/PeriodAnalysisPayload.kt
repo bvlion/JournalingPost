@@ -23,33 +23,6 @@ internal data class WebhookAnalysisEntry(
 }
 
 /**
- * Custom Webhookからの成功response。Hosted解析APIの `POST /v1/analyses` Response 200と同じschemaとして
- * 扱う(定義元はJournalingPostServerの `docs/hosted-analysis-api.md`)。ここで定義した必須fieldが揃って
- * parseできることを成功responseの条件とする。未知fieldはHosted契約どおり無視する。
- *
- * `entryCount` / `model` は現在の[AnalysisResult]に保存先が無いためparseするだけで永続化しない。
- */
-@Serializable
-internal data class WebhookAnalysisResponse(
-  val analysis: Analysis,
-) {
-  @Serializable
-  internal data class Analysis(
-    val period: Period,
-    val analyzedAt: String,
-    val entryCount: Int,
-    val model: String,
-    val text: String,
-  ) {
-    @Serializable
-    internal data class Period(
-      val start: String,
-      val end: String,
-    )
-  }
-}
-
-/**
  * moodはwire契約に合わせemoji/labelのsnapshotが揃っているときだけ載せる(moodIdはAndroid内部用で
  * wireに無いため判定に使わない)。noteはinsert時にblank→nullで正規化済み。
  */

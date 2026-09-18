@@ -17,7 +17,7 @@ import org.junit.Before
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class MainViewModelTest {
+class JournalRecordViewModelTest {
   private val testDispatcher = StandardTestDispatcher()
 
   @Before
@@ -32,65 +32,65 @@ class MainViewModelTest {
 
   @Test
   fun `初期状態はINITになる`() {
-    val viewModel = MainViewModel(FakeJournalRecorder())
+    val viewModel = JournalRecordViewModel(FakeJournalRecorder())
 
-    assertEquals(MainViewModel.UiState.INIT, viewModel.uiState.value)
+    assertEquals(JournalRecordViewModel.UiState.INIT, viewModel.uiState.value)
   }
 
   @Test
   fun `recordはrecorder完了前にLOADINGへ遷移する`() = runTest(testDispatcher) {
-    val viewModel = MainViewModel(FakeJournalRecorder())
+    val viewModel = JournalRecordViewModel(FakeJournalRecorder())
 
     viewModel.record("today was good", source = JournalSource.APP)
 
-    assertEquals(MainViewModel.UiState.LOADING, viewModel.uiState.value)
+    assertEquals(JournalRecordViewModel.UiState.LOADING, viewModel.uiState.value)
   }
 
   @Test
   fun `recorderが正常終了するとSUCCESSへ遷移する`() = runTest(testDispatcher) {
-    val viewModel = MainViewModel(FakeJournalRecorder())
+    val viewModel = JournalRecordViewModel(FakeJournalRecorder())
 
     viewModel.record("today was good", source = JournalSource.APP)
     testDispatcher.scheduler.advanceUntilIdle()
 
-    assertEquals(MainViewModel.UiState.SUCCESS, viewModel.uiState.value)
+    assertEquals(JournalRecordViewModel.UiState.SUCCESS, viewModel.uiState.value)
   }
 
   @Test
   fun `ローカル保存が失敗するとFAILUREへ遷移する`() = runTest(testDispatcher) {
-    val viewModel = MainViewModel(FakeJournalRecorder { throw RuntimeException("boom") })
+    val viewModel = JournalRecordViewModel(FakeJournalRecorder { throw RuntimeException("boom") })
 
     viewModel.record("today was good", source = JournalSource.APP)
     testDispatcher.scheduler.advanceUntilIdle()
 
-    assertEquals(MainViewModel.UiState.FAILURE, viewModel.uiState.value)
+    assertEquals(JournalRecordViewModel.UiState.FAILURE, viewModel.uiState.value)
   }
 
   @Test
   fun `CancellationExceptionはFAILURE扱いにしない`() = runTest(testDispatcher) {
-    val viewModel = MainViewModel(FakeJournalRecorder { throw CancellationException("cancelled") })
+    val viewModel = JournalRecordViewModel(FakeJournalRecorder { throw CancellationException("cancelled") })
 
     viewModel.record("today was good", source = JournalSource.APP)
     testDispatcher.scheduler.advanceUntilIdle()
 
-    assertEquals(MainViewModel.UiState.LOADING, viewModel.uiState.value)
+    assertEquals(JournalRecordViewModel.UiState.LOADING, viewModel.uiState.value)
   }
 
   @Test
   fun `resetStateで状態がINITに戻る`() = runTest(testDispatcher) {
-    val viewModel = MainViewModel(FakeJournalRecorder())
+    val viewModel = JournalRecordViewModel(FakeJournalRecorder())
     viewModel.record("today was good", source = JournalSource.APP)
     testDispatcher.scheduler.advanceUntilIdle()
 
     viewModel.resetState()
 
-    assertEquals(MainViewModel.UiState.INIT, viewModel.uiState.value)
+    assertEquals(JournalRecordViewModel.UiState.INIT, viewModel.uiState.value)
   }
 
   @Test
   fun `recordはnote・mood・sourceをそのままrecorderへ渡す`() = runTest(testDispatcher) {
     val fakeJournalRecorder = FakeJournalRecorder()
-    val viewModel = MainViewModel(fakeJournalRecorder)
+    val viewModel = JournalRecordViewModel(fakeJournalRecorder)
     assertNull(fakeJournalRecorder.lastNote)
     val mood = MoodSnapshot(id = "HAPPY", emoji = "🙂", label = "嬉しい")
 
@@ -105,7 +105,7 @@ class MainViewModelTest {
   @Test
   fun `直前のrecordが処理中の呼び出しは無視される`() = runTest(testDispatcher) {
     val fakeJournalRecorder = FakeJournalRecorder()
-    val viewModel = MainViewModel(fakeJournalRecorder)
+    val viewModel = JournalRecordViewModel(fakeJournalRecorder)
 
     viewModel.record("first", source = JournalSource.APP)
     viewModel.record("second", source = JournalSource.APP)
@@ -118,7 +118,7 @@ class MainViewModelTest {
   @Test
   fun `直前のrecordが完了していれば新しい呼び出しを受け付ける`() = runTest(testDispatcher) {
     val fakeJournalRecorder = FakeJournalRecorder()
-    val viewModel = MainViewModel(fakeJournalRecorder)
+    val viewModel = JournalRecordViewModel(fakeJournalRecorder)
 
     viewModel.record("first", source = JournalSource.APP)
     testDispatcher.scheduler.advanceUntilIdle()
