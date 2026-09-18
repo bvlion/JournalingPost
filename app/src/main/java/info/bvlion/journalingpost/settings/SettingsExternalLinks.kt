@@ -41,5 +41,4 @@ fun openPrivacyPolicy(context: Context) {
 private fun Context.openExternalLink(intent: Intent) = try {
   startActivity(intent)
 } catch (e: ActivityNotFoundException) {
-  // 記録の継続に必須ではない補助導線のため、対応アプリが無い場合は通知しない。
 }
