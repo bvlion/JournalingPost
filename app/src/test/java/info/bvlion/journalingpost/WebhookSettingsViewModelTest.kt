@@ -181,10 +181,10 @@ class WebhookSettingsViewModelTest {
   }
 
   @Test
-  fun `validation失敗時はWebhook設定を保存しない`() = runTest(dispatcher) {
+  fun `HTTP URLはWebhook設定として保存しない`() = runTest(dispatcher) {
     val webhookRepository = FakeWebhookSettingsRepository()
     val viewModel = createViewModel(webhookRepository)
-    viewModel.updateUrl("not a url")
+    viewModel.updateUrl("http://hooks.example.com/webhook")
 
     viewModel.save()
     advanceUntilIdle()

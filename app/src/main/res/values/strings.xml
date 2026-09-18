@@ -163,7 +163,7 @@
   <string name="webhook_settings_save_succeeded">Webhook設定を保存しました</string>
   <string name="webhook_settings_save_failed">Webhook設定を保存できませんでした</string>
   <string name="webhook_settings_activation_failed">Webhook設定は保存しましたが、Custom Webhookを有効にできませんでした</string>
-  <string name="webhook_settings_error_invalid_url">URLが正しくありません。http:// または https:// で始まるURLを入力してください</string>
+  <string name="webhook_settings_error_invalid_url">URLが正しくありません。https:// で始まるURLを入力してください</string>
   <string name="webhook_settings_error_blank_header_name">ヘッダー名が空の項目があります</string>
   <string name="webhook_settings_error_duplicate_header_name">同じ名前のヘッダーが複数あります</string>
   <string name="webhook_settings_error_reserved_content_type">Content-Typeはヘッダーに指定できません</string>

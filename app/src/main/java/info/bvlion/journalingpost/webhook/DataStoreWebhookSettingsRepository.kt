@@ -29,6 +29,13 @@ internal class DataStoreWebhookSettingsRepository(
     }
 
   override suspend fun save(settings: WebhookSettings) {
+    require(
+      WebhookSettingsValidator.ValidationError.INVALID_URL !in WebhookSettingsValidator.validate(
+        settings.url,
+        settings.headers,
+        settings.bodyTemplate,
+      ).errors,
+    ) { "Custom WebhookのURLにはHTTPS endpointを指定してください" }
     val plaintext = Json.encodeToString(settings).encodeToByteArray()
     val encrypted = cipher.encrypt(plaintext)
     dataStore.edit { preferences ->
@@ -46,7 +53,18 @@ internal class DataStoreWebhookSettingsRepository(
         iv = Base64.getDecoder().decode(ivBase64),
       )
       val plaintext = cipher.decrypt(encrypted).toString(Charsets.UTF_8)
-      WebhookSettingsState.Configured(Json.decodeFromString<WebhookSettings>(plaintext))
+      val settings = Json.decodeFromString<WebhookSettings>(plaintext)
+      if (
+        WebhookSettingsValidator.ValidationError.INVALID_URL in WebhookSettingsValidator.validate(
+          settings.url,
+          settings.headers,
+          settings.bodyTemplate,
+        ).errors
+      ) {
+        WebhookSettingsState.NotConfigured
+      } else {
+        WebhookSettingsState.Configured(settings)
+      }
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
