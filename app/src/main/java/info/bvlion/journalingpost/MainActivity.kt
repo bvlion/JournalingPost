@@ -1,15 +1,11 @@
 package info.bvlion.journalingpost
 
-import android.Manifest
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
@@ -70,7 +66,6 @@ import info.bvlion.journalingpost.mood.MoodSettingsScreen
 import info.bvlion.journalingpost.mood.MoodSnapshot
 import info.bvlion.journalingpost.onboarding.AnalysisIntroductionDialog
 import info.bvlion.journalingpost.onboarding.WelcomeDialog
-import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.HostedConsentDialog
 import info.bvlion.journalingpost.settings.SettingsScreen
 import info.bvlion.journalingpost.settings.WebhookSettingsScreen
@@ -80,11 +75,9 @@ import info.bvlion.journalingpost.settings.openStoreListingForReview
 import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
-import java.io.Serializable
 import java.time.LocalDate
 import java.util.Locale
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -119,52 +112,6 @@ class MainActivity : ComponentActivity() {
         val isNoteOnlyEntryEnabled by noteOnlyEntryViewModel.isEnabled.collectAsStateWithLifecycle()
         val isMoodNoteInputInitiallyOpen by moodNoteInputViewModel.isInitiallyOpen.collectAsStateWithLifecycle()
         val onboardingUiState by onboardingViewModel.uiState.collectAsStateWithLifecycle()
-
-        // 権限ダイアログ中に画面が再生成されても、要求前の操作を結果受領後に再開できるよう値で保持する。
-        var pendingLocalNetworkPermissionAction by rememberSaveable {
-          mutableStateOf<PendingLocalNetworkPermissionAction?>(null)
-        }
-        var hasRequestedLocalNetworkPermission by rememberSaveable { mutableStateOf(false) }
-        val localNetworkPermissionLauncher = rememberLauncherForActivityResult(
-          ActivityResultContracts.RequestPermission(),
-        ) {
-          // 拒否時も公開先のWebhookは利用できるため、要求前の操作自体は
-          // 既存どおり続行する。
-          when (val action = pendingLocalNetworkPermissionAction) {
-            is PendingLocalNetworkPermissionAction.Analyze ->
-              analysisHistoryViewModel.analyze(LocalDate.ofEpochDay(action.dayEpochDay))
-            PendingLocalNetworkPermissionAction.EnableAutoAnalysis ->
-              autoAnalysisSettingsViewModel.setEnabled(true)
-            null -> Unit
-          }
-          pendingLocalNetworkPermissionAction = null
-        }
-        val requestLocalNetworkPermissionIfNeeded:
-          (Boolean, PendingLocalNetworkPermissionAction?) -> Boolean = { isCustomWebhook, pendingAction ->
-            val shouldRequest = Build.VERSION.SDK_INT >= 37 &&
-              isCustomWebhook &&
-              !hasRequestedLocalNetworkPermission &&
-              checkSelfPermission(
-                Manifest.permission.ACCESS_LOCAL_NETWORK,
-              ) != PackageManager.PERMISSION_GRANTED
-            if (shouldRequest) {
-              pendingLocalNetworkPermissionAction = pendingAction
-              hasRequestedLocalNetworkPermission = true
-              localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
-            }
-            shouldRequest
-        }
-        LaunchedEffect(Unit) {
-          val container = (application as JournalingPostApplication).container
-          val isAutoAnalysisEnabled = container.autoAnalysisSettingsRepository.autoAnalysisSettings.first().enabled
-          if (isAutoAnalysisEnabled) {
-            requestLocalNetworkPermissionIfNeeded(
-              container.analysisIntegrationRepository.analysisIntegration.first() ==
-                AnalysisIntegration.CUSTOM_WEBHOOK,
-              null,
-            )
-          }
-        }
 
         var destination by rememberSaveable { mutableStateOf(MainDestination.RECORD) }
         var subscreenDestination by rememberSaveable { mutableStateOf<SubscreenDestination?>(null) }
@@ -451,7 +398,6 @@ class MainActivity : ComponentActivity() {
                     MainDestination.ANALYSIS_HISTORY -> {
                       val analysisHistoryUiState by analysisHistoryViewModel.uiState.collectAsStateWithLifecycle()
                       val canRunAnalysis by analysisHistoryViewModel.canRunAnalysis.collectAsStateWithLifecycle()
-                      val isCustomWebhook by analysisHistoryViewModel.isCustomWebhook.collectAsStateWithLifecycle()
                       val isAnalysisRunning by analysisHistoryViewModel.isAnalysisRunning.collectAsStateWithLifecycle()
                       val selectableDays by analysisHistoryViewModel.selectableDays.collectAsStateWithLifecycle()
                       val contactActionLabel = stringResource(R.string.analysis_failure_contact_action)
@@ -489,15 +435,7 @@ class MainActivity : ComponentActivity() {
                             }
                           }
                         },
-                        onAnalyze = { day ->
-                          val isLocalNetworkPermissionRequested = requestLocalNetworkPermissionIfNeeded(
-                            isCustomWebhook,
-                            PendingLocalNetworkPermissionAction.Analyze(day.toEpochDay()),
-                          )
-                          if (!isLocalNetworkPermissionRequested) {
-                            analysisHistoryViewModel.analyze(day)
-                          }
-                        },
+                        onAnalyze = analysisHistoryViewModel::analyze,
                         onDelete = analysisHistoryViewModel::deleteResult,
                         onResultClick = {
                           selectedAnalysisResultId = it.id
@@ -556,15 +494,6 @@ class MainActivity : ComponentActivity() {
                         }
                       }
 
-                      LaunchedEffect(settingsUiState.selectedIntegration, autoAnalysisUiState?.enabled) {
-                        if (autoAnalysisUiState?.enabled == true) {
-                          requestLocalNetworkPermissionIfNeeded(
-                            settingsUiState.selectedIntegration == AnalysisIntegration.CUSTOM_WEBHOOK,
-                            null,
-                          )
-                        }
-                      }
-
                       SettingsScreen(
                         uiState = settingsUiState,
                         autoAnalysisUiState = autoAnalysisUiState,
@@ -572,16 +501,7 @@ class MainActivity : ComponentActivity() {
                         onAnalysisIntegrationChange = settingsViewModel::setAnalysisIntegration,
                         onNoteOnlyEntryChange = settingsViewModel::setNoteOnlyEntryEnabled,
                         onMoodNoteInputInitiallyOpenChange = settingsViewModel::setMoodNoteInputInitiallyOpen,
-                        onAutoAnalysisEnabledChange = { enabled ->
-                          val isLocalNetworkPermissionRequested = enabled &&
-                            requestLocalNetworkPermissionIfNeeded(
-                              settingsUiState.selectedIntegration == AnalysisIntegration.CUSTOM_WEBHOOK,
-                              PendingLocalNetworkPermissionAction.EnableAutoAnalysis,
-                            )
-                          if (!isLocalNetworkPermissionRequested) {
-                            autoAnalysisSettingsViewModel.setEnabled(enabled)
-                          }
-                        },
+                        onAutoAnalysisEnabledChange = autoAnalysisSettingsViewModel::setEnabled,
                         onAutoAnalysisScheduleChange = autoAnalysisSettingsViewModel::setSchedule,
                         onMoodSettingsOpen = openMoodSettings,
                         onWebhookSettingsOpen = { openWebhookSettings(false) },
@@ -695,12 +615,6 @@ private enum class SubscreenDestination {
   ANALYSIS_RESULT_DETAIL,
   WEBHOOK_SETTINGS,
   MOOD_SETTINGS,
-}
-
-private sealed interface PendingLocalNetworkPermissionAction : Serializable {
-  data class Analyze(val dayEpochDay: Long) : PendingLocalNetworkPermissionAction
-
-  data object EnableAutoAnalysis : PendingLocalNetworkPermissionAction
 }
 
 private enum class MainDestination(

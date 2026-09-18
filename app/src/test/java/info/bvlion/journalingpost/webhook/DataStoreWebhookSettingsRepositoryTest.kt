@@ -56,6 +56,32 @@ class DataStoreWebhookSettingsRepositoryTest {
   }
 
   @Test
+  fun `HTTP URLの設定はsaveできない`() = runTest {
+    val repository = createRepository()
+    var thrown: Throwable? = null
+
+    try {
+      repository.save(sampleSettings.copy(url = "http://example.com/webhook"))
+    } catch (e: IllegalArgumentException) {
+      thrown = e
+    }
+
+    assertEquals("Custom WebhookのURLにはHTTPS endpointを指定してください", thrown?.message)
+    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first())
+  }
+
+  @Test
+  fun `保存済みのHTTP URL設定は未設定として扱う`() = runTest {
+    val repository = DataStoreWebhookSettingsRepository(
+      RecoveringDataStore(configuredPreferences(sampleSettings.copy(url = "http://example.com/webhook"))),
+      FakeWebhookSettingsCipher(),
+    )
+
+    assertEquals(WebhookSettingsState.Unavailable, repository.settings.first())
+    assertEquals(WebhookSettingsState.NotConfigured, repository.settings.first { it !is WebhookSettingsState.Unavailable })
+  }
+
+  @Test
   fun `save内容はcipherへ渡される`() = runTest {
     val cipher = FakeWebhookSettingsCipher()
     val repository = createRepository(cipher)

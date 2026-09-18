@@ -27,8 +27,15 @@ class WebhookSettingsValidatorTest {
   }
 
   @Test
-  fun `URLがhttp・https以外のscheme場合はINVALID_URL`() {
+  fun `URLがHTTPS以外のschemeの場合はINVALID_URL`() {
     val result = validate(url = "ftp://example.com")
+
+    assertEquals(listOf(WebhookSettingsValidator.ValidationError.INVALID_URL), result.errors)
+  }
+
+  @Test
+  fun `URLがHTTPの場合はINVALID_URL`() {
+    val result = validate(url = "http://example.com")
 
     assertEquals(listOf(WebhookSettingsValidator.ValidationError.INVALID_URL), result.errors)
   }

@@ -44,7 +44,7 @@ object WebhookSettingsValidator {
 
   fun validate(url: String, headers: List<WebhookHeader>, bodyTemplate: String): Result {
     val errors = mutableListOf<ValidationError>()
-    if (!isPostableHttpUrl(url)) errors += ValidationError.INVALID_URL
+    if (!isPostableHttpsUrl(url)) errors += ValidationError.INVALID_URL
 
     val normalizedHeaders = headers.map { it.copy(name = it.name.trim()) }
     val headerErrors = headerErrors(normalizedHeaders)
@@ -105,14 +105,14 @@ object WebhookSettingsValidator {
 
   private fun String.containsCrOrLf(): Boolean = any { it == '\r' || it == '\n' }
 
-  private fun isPostableHttpUrl(url: String): Boolean {
+  private fun isPostableHttpsUrl(url: String): Boolean {
     val uri = try {
       URI(url)
     } catch (e: URISyntaxException) {
       return false
     }
     val scheme = uri.scheme?.lowercase()
-    return (scheme == "http" || scheme == "https") && !uri.host.isNullOrBlank()
+    return scheme == "https" && !uri.host.isNullOrBlank()
   }
 
   private const val CONTENT_TYPE_HEADER_NAME = "content-type"
