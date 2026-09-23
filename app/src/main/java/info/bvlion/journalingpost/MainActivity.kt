@@ -79,6 +79,7 @@ import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
 import java.time.LocalDate
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -113,8 +114,12 @@ class MainActivity : ComponentActivity() {
         val isNoteOnlyEntryEnabled by noteOnlyEntryViewModel.isEnabled.collectAsStateWithLifecycle()
         val isMoodNoteInputInitiallyOpen by moodNoteInputViewModel.isInitiallyOpen.collectAsStateWithLifecycle()
         val onboardingUiState by onboardingViewModel.uiState.collectAsStateWithLifecycle()
-        val analysisIntegration by (application as JournalingPostApplication).container.analysisIntegrationRepository.analysisIntegration
-          .collectAsStateWithLifecycle(initialValue = AnalysisIntegration.NONE)
+        val analysisIntegrationFlow = remember {
+          (application as JournalingPostApplication).container.analysisIntegrationRepository.analysisIntegration
+            .map<AnalysisIntegration, AnalysisIntegration?> { it }
+        }
+        val analysisIntegration by analysisIntegrationFlow
+          .collectAsStateWithLifecycle(initialValue = null)
 
         var destination by rememberSaveable { mutableStateOf(MainDestination.RECORD) }
         var subscreenDestination by rememberSaveable { mutableStateOf<SubscreenDestination?>(null) }
