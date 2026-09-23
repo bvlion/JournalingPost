@@ -66,6 +66,7 @@ import info.bvlion.journalingpost.mood.MoodSettingsScreen
 import info.bvlion.journalingpost.mood.MoodSnapshot
 import info.bvlion.journalingpost.onboarding.AnalysisIntroductionDialog
 import info.bvlion.journalingpost.onboarding.WelcomeDialog
+import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.HostedConsentDialog
 import info.bvlion.journalingpost.settings.SettingsScreen
 import info.bvlion.journalingpost.settings.WebhookSettingsScreen
@@ -78,6 +79,7 @@ import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
 import java.time.LocalDate
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -112,6 +114,12 @@ class MainActivity : ComponentActivity() {
         val isNoteOnlyEntryEnabled by noteOnlyEntryViewModel.isEnabled.collectAsStateWithLifecycle()
         val isMoodNoteInputInitiallyOpen by moodNoteInputViewModel.isInitiallyOpen.collectAsStateWithLifecycle()
         val onboardingUiState by onboardingViewModel.uiState.collectAsStateWithLifecycle()
+        val analysisIntegrationFlow = remember {
+          (application as JournalingPostApplication).container.analysisIntegrationRepository.analysisIntegration
+            .map<AnalysisIntegration, AnalysisIntegration?> { it }
+        }
+        val analysisIntegration by analysisIntegrationFlow
+          .collectAsStateWithLifecycle(initialValue = null)
 
         var destination by rememberSaveable { mutableStateOf(MainDestination.RECORD) }
         var subscreenDestination by rememberSaveable { mutableStateOf<SubscreenDestination?>(null) }
@@ -196,6 +204,14 @@ class MainActivity : ComponentActivity() {
           }
         }
 
+        LaunchedEffect(analysisIntegration, destination) {
+          if (analysisIntegration == AnalysisIntegration.NONE && destination == MainDestination.ANALYSIS_HISTORY) {
+            destination = MainDestination.RECORD
+            subscreenDestination = null
+            selectedAnalysisResultId = null
+          }
+        }
+
         EventEffect(onboardingViewModel.events) { event ->
           when (event) {
             OnboardingEvent.NavigateToAnalysisSettings -> {
@@ -248,7 +264,9 @@ class MainActivity : ComponentActivity() {
                       navigationBarHeight = with(density) { it.size.height.toDp() }
                     },
                   ) {
-                    MainDestination.entries.forEach { item ->
+                    MainDestination.entries
+                      .filter { it != MainDestination.ANALYSIS_HISTORY || analysisIntegration != AnalysisIntegration.NONE }
+                      .forEach { item ->
                       NavigationBarItem(
                         selected = destination == item,
                         onClick = {
