@@ -88,6 +88,37 @@ class AnalysisHistoryViewModel(
   private val _isAnalysisRunning = MutableStateFlow(false)
   val isAnalysisRunning: StateFlow<Boolean> = _isAnalysisRunning.asStateFlow()
 
+  private val runningAnalysisDay = MutableStateFlow<LocalDate?>(null)
+
+  // 記録のない日はMapに含めない。初回読み込み中はnullとして、未確認の条件で実行を許可しない。
+  val manualAnalysisUnavailableReasons: StateFlow<Map<LocalDate, Int?>?> = combine(
+    analysisIntegrationRepository.analysisIntegration,
+    journalEntryReader.observeAll(),
+    analysisExecutionRepository.state,
+    runningAnalysisDay,
+  ) { integration, entries, executionState, runningDay ->
+    val zoneId = currentZoneId()
+    val recordedDays = entries.mapTo(mutableSetOf()) { it.timestamp.atZone(zoneId).toLocalDate() }
+    val selectableDays = manualAnalysisSelectableDays(
+      integration = integration,
+      recordedDays = recordedDays,
+      analyzedDays = executionState.hostedSuccessfulDays,
+      today = currentDate(),
+    )
+    recordedDays.associateWith { day ->
+      when {
+        integration == AnalysisIntegration.NONE -> R.string.analysis_failure_integration_unavailable
+        integration == AnalysisIntegration.HOSTED && day in executionState.hostedSuccessfulDays ->
+          R.string.journal_history_analysis_already_completed
+        integration == AnalysisIntegration.HOSTED && day !in selectableDays ->
+          R.string.journal_history_analysis_outside_period
+        runningDay == day -> R.string.journal_history_analysis_running_day
+        runningDay != null -> R.string.journal_history_analysis_running_other_day
+        else -> null
+      }
+    }
+  }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
   /**
    * 解析実行の結果。1件ずつ画面が受け取って消費する。実行中にタブを離れて戻ったケースでも結果を
    * 落とさないよう、画面が受け取るまでは保持する。
@@ -130,6 +161,7 @@ class AnalysisHistoryViewModel(
   fun analyze(day: LocalDate) {
     if (_isAnalysisRunning.value) return
     _isAnalysisRunning.value = true
+    runningAnalysisDay.value = day
     val zoneId = currentZoneId()
     val periodStart = day.atStartOfDay(zoneId).toInstant()
     val periodEnd = day.plusDays(1).atStartOfDay(zoneId).toInstant()
@@ -137,6 +169,7 @@ class AnalysisHistoryViewModel(
       try {
         _runResults.send(runAnalysis(day, periodStart, periodEnd))
       } finally {
+        runningAnalysisDay.value = null
         _isAnalysisRunning.value = false
       }
     }
@@ -181,8 +214,7 @@ class AnalysisHistoryViewModel(
 
 sealed interface AnalysisRunResult {
   /**
-   * 解析が成功しAnalysisResultを保存した。[savedResultId]は保存した行のidで、一覧へ反映された
-   * この結果が先頭に来たとき画面を先頭へ寄せ、生成された結果をそのまま見せるために使う。
+   * 解析が成功しAnalysisResultを保存した。[savedResultId]は保存した行のid。
    */
   data class Succeeded(val savedResultId: Long) : AnalysisRunResult
 

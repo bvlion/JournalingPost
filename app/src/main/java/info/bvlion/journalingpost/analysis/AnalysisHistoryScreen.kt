@@ -27,7 +27,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,7 +34,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,7 +41,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.AnalysisRunResult
 import info.bvlion.journalingpost.R
-import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.HistoryEmptyMessage
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
 import info.bvlion.journalingpost.ui.TopLevelScreen
@@ -54,8 +51,6 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
 
 // 期間は時間帯まで指定され得るため(#40)、日付だけでなく時刻も表示する。
 private val analysisDateTimeFormatter = DateTimeFormatter.ofPattern("yyyy/M/d HH:mm", Locale.JAPAN)
@@ -72,9 +67,6 @@ private val analysisDayFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日"
  * 解析先(Custom WebhookまたはHosted)が有効な場合([canRunAnalysis])だけ「解析する」導線を出し、
  * 選択可能な日([selectableDays])から1日選んで手動解析を実行できる。実行結果はSnackbarで伝える。
  * 対象日の記録が0件かどうかは実行後の解析処理側でも判定する(防御的なエラーハンドリングは残す)。
- *
- * 解析に成功して新しいAnalysisResultが一覧の先頭へ追加されたら、一覧を先頭へスクロールして、
- * 生成された結果をそのまま確認できる状態にする。
  */
 @Composable
 fun AnalysisHistoryScreen(
@@ -84,58 +76,16 @@ fun AnalysisHistoryScreen(
   canRunAnalysis: Boolean,
   isRunning: Boolean,
   selectableDays: Set<LocalDate>,
-  runResults: Flow<AnalysisRunResult>,
-  deleteSuccesses: Flow<Unit>,
-  deleteFailures: Flow<Unit>,
-  onShowMessage: (String) -> Unit,
-  onShowContactMessage: (String, String, LocalDate) -> Unit,
   onAnalyze: (LocalDate) -> Unit,
   onDelete: (Long) -> Unit,
   onResultClick: (AnalysisHistoryItem) -> Unit,
   onBack: () -> Unit,
 ) {
-  val resources = LocalResources.current
-  val completedMessage = stringResource(R.string.analysis_completed)
-  val deleteSucceededMessage = stringResource(R.string.analysis_delete_succeeded)
-  val deleteFailedMessage = stringResource(R.string.analysis_delete_failed)
   var pendingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
 
-  EventEffect(deleteSuccesses) { onShowMessage(deleteSucceededMessage) }
-  EventEffect(deleteFailures) { onShowMessage(deleteFailedMessage) }
-
   // 選べる日が無いときは「解析する」を出さない。Hostedでは当日と解析済みの日を除くと対象が
-  // 無くなることがある(その場合は自動解析か翌日以降に委ねる)。導線を出す場合は一覧の先頭itemが
-  // 導線になり、生成結果はその次のindexになる。
+  // 無くなることがある(その場合は自動解析か翌日以降に委ねる)。
   val showTrigger = (canRunAnalysis && selectableDays.isNotEmpty()) || isRunning
-
-  // 保存した結果はRoomのFlow経由で一覧へ反映される。反映のタイミングは成功通知の前後どちらもあり得る
-  // ため、保存した行のidが一覧の先頭に来たことを条件にして、そこで初めて生成結果itemへ寄せる。
-  val firstItemId = (uiState as? AnalysisHistoryUiState.Content)?.items?.firstOrNull()?.id
-  var scrollToResultId by remember { mutableStateOf<Long?>(null) }
-  EventEffect(runResults) { result ->
-    when (result) {
-      is AnalysisRunResult.Succeeded -> {
-        onShowMessage(completedMessage)
-        scrollToResultId = result.savedResultId
-      }
-
-      is AnalysisRunResult.Failed -> {
-        val message = resources.failureMessage(result)
-        if (result.failure == PeriodAnalysisOutcome.Failure.RATE_LIMITED && result.supportId != null) {
-          onShowContactMessage(message, result.supportId, result.day)
-        } else {
-          onShowMessage(message)
-        }
-      }
-    }
-  }
-  LaunchedEffect(scrollToResultId, firstItemId, showTrigger, selectedItem) {
-    if (selectedItem == null && scrollToResultId != null && firstItemId == scrollToResultId) {
-      // 生成結果は一覧の先頭。「解析する」導線を出しているときはその1つ下。
-      listState.animateScrollToItem(if (showTrigger) 1 else 0)
-      scrollToResultId = null
-    }
-  }
 
   if (selectedItem != null) {
     Column(modifier = Modifier.fillMaxSize()) {
@@ -334,7 +284,7 @@ private fun AnalysisTrigger(
 }
 
 /** 対象日をSnackbar側で持ち直さず、失敗結果に含まれる日をそのまま文言へ入れる。 */
-private fun Resources.failureMessage(failed: AnalysisRunResult.Failed): String = when (failed.failure) {
+internal fun Resources.failureMessage(failed: AnalysisRunResult.Failed): String = when (failed.failure) {
   PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE -> getString(R.string.analysis_failure_webhook_unavailable)
   PeriodAnalysisOutcome.Failure.INTEGRATION_UNAVAILABLE ->
     getString(R.string.analysis_failure_integration_unavailable)
@@ -401,11 +351,6 @@ fun AnalysisHistoryScreenPreview() {
       canRunAnalysis = true,
       isRunning = false,
       selectableDays = setOf(LocalDate.of(2026, 8, 23), LocalDate.of(2026, 8, 24)),
-      runResults = emptyFlow(),
-      deleteSuccesses = emptyFlow(),
-      deleteFailures = emptyFlow(),
-      onShowMessage = {},
-      onShowContactMessage = { _, _, _ -> },
       onAnalyze = {},
       onDelete = {},
       onResultClick = {},

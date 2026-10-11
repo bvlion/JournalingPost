@@ -24,6 +24,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -299,6 +300,117 @@ class AnalysisHistoryViewModelTest {
 
     assertEquals(setOf(LocalDate.of(2026, 8, 29)), viewModel.selectableDays.value)
     collectJob.cancel()
+  }
+
+  @Test
+  fun `履歴の解析可否は記録の初回読み込み前には確定しない`() = runTest(testDispatcher) {
+    val entries = MutableSharedFlow<List<JournalEntry>>(replay = 1)
+    val viewModel = createViewModel(journalEntryReader = JournalEntryReader { entries })
+    collectorScope.launch { viewModel.manualAnalysisUnavailableReasons.collect {} }
+    testDispatcher.scheduler.runCurrent()
+
+    assertEquals(null, viewModel.manualAnalysisUnavailableReasons.value)
+    entries.emit(emptyList())
+    testDispatcher.scheduler.runCurrent()
+    assertEquals(emptyMap<LocalDate, Int?>(), viewModel.manualAnalysisUnavailableReasons.value)
+  }
+
+  @Test
+  fun `履歴のHosted解析は昨日と6日前を許可し当日と7日前と成功済み日を区別する`() = runTest(testDispatcher) {
+    val journalEntryReader = FakeJournalEntryReader(
+      listOf(23, 24, 28, 29, 30).map { entry("2026-08-${it}T05:00:00Z") },
+    )
+    val viewModel = createViewModel(
+      journalEntryReader = journalEntryReader,
+      integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.HOSTED),
+      executionRepository = FakeAnalysisExecutionRepository(
+        AnalysisExecutionState(hostedSuccessfulDays = setOf(LocalDate.of(2026, 8, 28))),
+      ),
+      currentDate = { LocalDate.of(2026, 8, 30) },
+    )
+    collectorScope.launch { viewModel.manualAnalysisUnavailableReasons.collect {} }
+    testDispatcher.scheduler.runCurrent()
+
+    val reasons = requireNotNull(viewModel.manualAnalysisUnavailableReasons.value)
+    assertEquals(R.string.journal_history_analysis_outside_period, reasons[LocalDate.of(2026, 8, 23)])
+    assertEquals(null, reasons.getValue(LocalDate.of(2026, 8, 24)))
+    assertEquals(R.string.journal_history_analysis_already_completed, reasons[LocalDate.of(2026, 8, 28)])
+    assertEquals(null, reasons.getValue(LocalDate.of(2026, 8, 29)))
+    assertEquals(R.string.journal_history_analysis_outside_period, reasons[LocalDate.of(2026, 8, 30)])
+    assertFalse(LocalDate.of(2026, 8, 27) in reasons)
+  }
+
+  @Test
+  fun `履歴のCustom Webhook解析はHostedの期間と成功済み制限を受けず解析先なしを区別する`() =
+    runTest(testDispatcher) {
+      val integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK)
+      val viewModel = createViewModel(
+        integrationRepository = integrationRepository,
+        journalEntryReader = FakeJournalEntryReader(
+          listOf(entry("2026-08-30T16:00:00Z"), entry("2026-08-01T16:00:00Z")),
+        ),
+        executionRepository = FakeAnalysisExecutionRepository(
+          AnalysisExecutionState(hostedSuccessfulDays = setOf(LocalDate.of(2026, 8, 31))),
+        ),
+        currentZoneId = { ZoneId.of("Asia/Tokyo") },
+        currentDate = { LocalDate.of(2026, 8, 31) },
+      )
+      collectorScope.launch { viewModel.manualAnalysisUnavailableReasons.collect {} }
+      testDispatcher.scheduler.runCurrent()
+
+      assertEquals(
+        mapOf(LocalDate.of(2026, 8, 31) to null, LocalDate.of(2026, 8, 2) to null),
+        viewModel.manualAnalysisUnavailableReasons.value,
+      )
+      integrationRepository.set(AnalysisIntegration.NONE)
+      testDispatcher.scheduler.runCurrent()
+      assertEquals(
+        mapOf(
+          LocalDate.of(2026, 8, 31) to R.string.analysis_failure_integration_unavailable,
+          LocalDate.of(2026, 8, 2) to R.string.analysis_failure_integration_unavailable,
+        ),
+        viewModel.manualAnalysisUnavailableReasons.value,
+      )
+    }
+
+  @Test
+  fun `履歴は解析中の対象日と別の日を区別し恒久的な制限を優先して完了後に更新する`() = runTest(testDispatcher) {
+    val pendingEntries = CompletableDeferred<List<JournalEntry>>()
+    val analyzer = FakePeriodAnalyzer { success(integration = AnalysisIntegration.HOSTED) }
+    val viewModel = createViewModel(
+      integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.HOSTED),
+      journalEntryReader = FakeJournalEntryReader(
+        listOf(23, 27, 28, 29, 30).map { entry("2026-08-${it}T05:00:00Z") },
+      ),
+      entryReader = PeriodJournalEntryReader { _, _ -> pendingEntries.await() },
+      analyzer = analyzer,
+      executionRepository = FakeAnalysisExecutionRepository(
+        AnalysisExecutionState(hostedSuccessfulDays = setOf(LocalDate.of(2026, 8, 28))),
+      ),
+      currentDate = { LocalDate.of(2026, 8, 30) },
+    )
+    collectorScope.launch { viewModel.manualAnalysisUnavailableReasons.collect {} }
+    testDispatcher.scheduler.runCurrent()
+    viewModel.analyze(LocalDate.of(2026, 8, 29))
+    testDispatcher.scheduler.runCurrent()
+
+    val reasons = requireNotNull(viewModel.manualAnalysisUnavailableReasons.value)
+    assertEquals(R.string.journal_history_analysis_running_day, reasons[LocalDate.of(2026, 8, 29)])
+    assertEquals(R.string.journal_history_analysis_running_other_day, reasons[LocalDate.of(2026, 8, 27)])
+    assertEquals(R.string.journal_history_analysis_already_completed, reasons[LocalDate.of(2026, 8, 28)])
+    assertEquals(R.string.journal_history_analysis_outside_period, reasons[LocalDate.of(2026, 8, 30)])
+    assertEquals(R.string.journal_history_analysis_outside_period, reasons[LocalDate.of(2026, 8, 23)])
+    viewModel.analyze(LocalDate.of(2026, 8, 27))
+    pendingEntries.complete(listOf(entry("2026-08-29T05:00:00Z")))
+    testDispatcher.scheduler.runCurrent()
+
+    assertEquals(1, analyzer.callCount)
+    assertFalse(viewModel.isAnalysisRunning.value)
+    assertEquals(
+      R.string.journal_history_analysis_already_completed,
+      requireNotNull(viewModel.manualAnalysisUnavailableReasons.value)[LocalDate.of(2026, 8, 29)],
+    )
+    assertEquals(null, requireNotNull(viewModel.manualAnalysisUnavailableReasons.value).getValue(LocalDate.of(2026, 8, 27)))
   }
 
   @Test
