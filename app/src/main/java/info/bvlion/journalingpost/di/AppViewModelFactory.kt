@@ -52,6 +52,7 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
       analysisResultReader = container.analysisResultReader,
       analysisExecutionRepository = container.analysisExecutionRepository,
       deleter = container.journalEntryDeleter,
+      currentZoneId = container.currentZoneId,
     )
   }
   initializer {
@@ -65,6 +66,7 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
       analysisResultDeleter = container.analysisResultDeleter,
       analysisExecutionRepository = container.analysisExecutionRepository,
       hostedCredentialsRepository = container.hostedCredentialsRepository,
+      currentZoneId = container.currentZoneId,
     )
   }
   initializer {

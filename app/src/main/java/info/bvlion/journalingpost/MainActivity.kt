@@ -1,5 +1,9 @@
 package info.bvlion.journalingpost
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -36,6 +40,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -54,6 +59,10 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import info.bvlion.journalingpost.analysis.AnalysisHistoryScreen
@@ -81,6 +90,7 @@ import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
 import java.time.LocalDate
+import java.time.ZoneId
 import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.map
@@ -152,6 +162,33 @@ class MainActivity : ComponentActivity() {
         val scope = rememberCoroutineScope()
         val context = LocalContext.current
         val density = LocalDensity.current
+        val currentZoneId = remember { (application as JournalingPostApplication).container.currentZoneId }
+        val lifecycleOwner = LocalLifecycleOwner.current
+        DisposableEffect(context, lifecycleOwner, currentZoneId) {
+          val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+              if (intent?.action == Intent.ACTION_TIMEZONE_CHANGED) {
+                currentZoneId.value = ZoneId.systemDefault()
+              }
+            }
+          }
+          val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) currentZoneId.value = ZoneId.systemDefault()
+          }
+          ContextCompat.registerReceiver(
+            context,
+            receiver,
+            IntentFilter(Intent.ACTION_TIMEZONE_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+          )
+          // Activityのない間の変更や、background中に遅延したbroadcastも復帰時に反映する。
+          currentZoneId.value = ZoneId.systemDefault()
+          lifecycleOwner.lifecycle.addObserver(observer)
+          onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            context.unregisterReceiver(receiver)
+          }
+        }
         // 下部ナビはScaffoldの外にあるSnackbarHostへpaddingを渡せないため、実測した高さ(システムの
         // navigation bar inset込み)ぶんSnackbarを持ち上げる。Material3のNavigationBar高さ定数は
         // 非公開なので値を複製しない。
@@ -446,14 +483,17 @@ class MainActivity : ComponentActivity() {
                         val historyUiState by historyViewModel.uiState.collectAsStateWithLifecycle()
                         val unavailableReasons by
                           analysisHistoryViewModel.manualAnalysisUnavailableReasons.collectAsStateWithLifecycle()
-                        val selectedDate = (historyUiState as? JournalHistoryUiState.Content)?.selectedDate
+                        val historyContent = historyUiState as? JournalHistoryUiState.Content
+                        val selectedDate = historyContent?.selectedDate
+                        val reasonsForHistory = unavailableReasons
+                          ?.takeIf { it.first == historyContent?.zoneId }?.second
                         val unavailableReason = when {
-                          unavailableReasons == null -> R.string.journal_history_analysis_loading
-                          selectedDate !in requireNotNull(unavailableReasons) ->
-                            R.string.journal_history_analysis_no_entries
-                          else -> requireNotNull(unavailableReasons)[selectedDate]
+                          reasonsForHistory == null -> R.string.journal_history_analysis_loading
+                          selectedDate !in reasonsForHistory -> R.string.journal_history_analysis_no_entries
+                          else -> reasonsForHistory[selectedDate]
                         }
                         val latestResult = (analysisHistoryUiState as? AnalysisHistoryUiState.Content)
+                          ?.takeIf { it.zoneId == historyContent?.zoneId }
                           ?.latestResultsByDay?.get(selectedDate)
                         JournalHistoryScreen(
                           uiState = historyUiState,
@@ -467,7 +507,9 @@ class MainActivity : ComponentActivity() {
                           onSelectDate = historyViewModel::selectDate,
                           manualAnalysisUnavailableReason = unavailableReason,
                           latestAnalysisResultId = latestResult?.id,
-                          onAnalyze = analysisHistoryViewModel::analyze,
+                          onAnalyze = { day ->
+                            historyContent?.let { analysisHistoryViewModel.analyze(day, it.zoneId) }
+                          },
                           onViewAnalysisResult = {
                             selectedAnalysisResultId = it
                             subscreenDestination = SubscreenDestination.ANALYSIS_RESULT_DETAIL
@@ -493,7 +535,7 @@ class MainActivity : ComponentActivity() {
                           canRunAnalysis = canRunAnalysis,
                           isRunning = isAnalysisRunning,
                           selectableDays = selectableDays,
-                          onAnalyze = analysisHistoryViewModel::analyze,
+                          onAnalyze = { analysisHistoryViewModel.analyze(it) },
                           onDelete = analysisHistoryViewModel::deleteResult,
                           onResultClick = {
                             selectedAnalysisResultId = it.id

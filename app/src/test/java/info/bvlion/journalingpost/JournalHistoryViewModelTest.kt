@@ -21,6 +21,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -322,7 +323,7 @@ class JournalHistoryViewModelTest {
     val reader = FakeJournalEntryReader()
     // UTCでは8/26 23:30だが、+09:00では8/27 08:30になり、日付境界を跨ぐ。
     now = Instant.parse("2026-08-26T23:30:00Z")
-    val viewModel = createViewModel(reader, zoneId = ZoneOffset.ofHours(9))
+    val viewModel = createViewModel(reader, zoneId = MutableStateFlow(ZoneOffset.ofHours(9)))
     val collectJob = launchCollection(viewModel)
 
     reader.emit(listOf(entry(id = 1, at = "2026-08-26T23:00:00Z", note = "late")))
@@ -332,6 +333,31 @@ class JournalHistoryViewModelTest {
     assertEquals(LocalDate.of(2026, 8, 27), content.selectedDate)
     assertEquals(listOf("late"), content.selectedItems.map { it.note })
     collectJob.cancel()
+  }
+
+  @Test
+  fun `記録更新がなくてもタイムゾーン変更で今日と表示可能範囲を再計算する`() = runTest(testDispatcher) {
+    now = Instant.parse("2026-08-30T20:00:00Z")
+    val zone = MutableStateFlow<ZoneId>(ZoneOffset.UTC)
+    val reader = FakeJournalEntryReader()
+    val viewModel = createViewModel(reader, zoneId = zone)
+    collectorScope.launch { viewModel.uiState.collect {} }
+    reader.emit(emptyList())
+    testDispatcher.scheduler.runCurrent()
+    assertEquals(LocalDate.of(2026, 8, 30), viewModel.content().today)
+
+    zone.value = ZoneId.of("Asia/Tokyo")
+    testDispatcher.scheduler.runCurrent()
+    assertEquals(zone.value, viewModel.content().zoneId)
+    assertEquals(LocalDate.of(2026, 8, 31), viewModel.content().today)
+    assertEquals(viewModel.content().today, viewModel.content().earliestDate)
+    assertEquals(viewModel.content().today, viewModel.content().selectedDate)
+
+    zone.value = ZoneOffset.UTC
+    testDispatcher.scheduler.runCurrent()
+    assertEquals(LocalDate.of(2026, 8, 30), viewModel.content().today)
+    assertEquals(viewModel.content().today, viewModel.content().earliestDate)
+    assertEquals(viewModel.content().today, viewModel.content().selectedDate)
   }
 
   @Test
@@ -526,7 +552,7 @@ class JournalHistoryViewModelTest {
     analysisResultReader: AnalysisResultReader = FakeAnalysisResultReader(emptyList()),
     analysisExecutionRepository: AnalysisExecutionRepository = FakeAnalysisExecutionRepository(),
     deleter: JournalEntryDeleter = FakeJournalEntryDeleter(),
-    zoneId: ZoneId = ZoneOffset.UTC,
+    zoneId: StateFlow<ZoneId> = MutableStateFlow(ZoneOffset.UTC),
   ) = JournalHistoryViewModel(reader, analysisResultReader, analysisExecutionRepository, deleter, zoneId) { now }
 
   private fun JournalHistoryViewModel.content() = uiState.value as JournalHistoryUiState.Content

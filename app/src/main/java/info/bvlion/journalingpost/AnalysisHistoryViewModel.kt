@@ -44,22 +44,18 @@ class AnalysisHistoryViewModel(
   private val analysisResultDeleter: AnalysisResultDeleter,
   private val analysisExecutionRepository: AnalysisExecutionRepository,
   private val hostedCredentialsRepository: HostedCredentialsRepository,
-  // 端末timezoneは解析開始・一覧生成のたびに解決する。ViewModel生成時に固定すると、移動などで
-  // timezoneが変わったあと選択日の境界が古いオフセットで計算されてしまうため。
-  private val currentZoneId: () -> ZoneId = { ZoneId.systemDefault() },
-  private val currentDate: () -> LocalDate = { LocalDate.now(currentZoneId()) },
+  private val currentZoneId: StateFlow<ZoneId> = MutableStateFlow(ZoneId.systemDefault()),
+  private val currentDate: (ZoneId) -> LocalDate = LocalDate::now,
 ) : ViewModel() {
   private val periodAnalysisRunner = PeriodAnalysisRunner(
     periodAnalyzer,
     analysisResultWriter,
     analysisExecutionRepository,
   )
-  val uiState: StateFlow<AnalysisHistoryUiState> = reader.observeAll()
-    .map { results ->
-      val items = results.toAnalysisHistoryItems(currentZoneId())
-      if (items.isEmpty()) AnalysisHistoryUiState.Empty else AnalysisHistoryUiState.Content(items)
-    }
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AnalysisHistoryUiState.Loading)
+  val uiState: StateFlow<AnalysisHistoryUiState> = combine(reader.observeAll(), currentZoneId) { results, zoneId ->
+    val items = results.toAnalysisHistoryItems(zoneId)
+    if (items.isEmpty()) AnalysisHistoryUiState.Empty else AnalysisHistoryUiState.Content(items, zoneId)
+  }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AnalysisHistoryUiState.Loading)
 
   val canRunAnalysis: StateFlow<Boolean> = analysisIntegrationRepository.analysisIntegration
     .map { it == AnalysisIntegration.CUSTOM_WEBHOOK || it == AnalysisIntegration.HOSTED }
@@ -74,13 +70,13 @@ class AnalysisHistoryViewModel(
     analysisIntegrationRepository.analysisIntegration,
     journalEntryReader.observeAll(),
     analysisExecutionRepository.state,
-  ) { integration, entries, executionState ->
-    val zoneId = currentZoneId()
+    currentZoneId,
+  ) { integration, entries, executionState, zoneId ->
     manualAnalysisSelectableDays(
       integration = integration,
       recordedDays = entries.mapTo(mutableSetOf()) { it.timestamp.atZone(zoneId).toLocalDate() },
       analyzedDays = executionState.hostedSuccessfulDays,
-      today = currentDate(),
+      today = currentDate(zoneId),
     )
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
@@ -90,22 +86,22 @@ class AnalysisHistoryViewModel(
 
   private val runningAnalysisDay = MutableStateFlow<LocalDate?>(null)
 
-  // 記録のない日はMapに含めない。初回読み込み中はnullとして、未確認の条件で実行を許可しない。
-  val manualAnalysisUnavailableReasons: StateFlow<Map<LocalDate, Int?>?> = combine(
+  // 判定に使ったtimezoneも保持し、履歴の更新と揃うまでは実行を許可しない。記録のない日はMapに含めない。
+  val manualAnalysisUnavailableReasons: StateFlow<Pair<ZoneId, Map<LocalDate, Int?>>?> = combine(
     analysisIntegrationRepository.analysisIntegration,
     journalEntryReader.observeAll(),
     analysisExecutionRepository.state,
     runningAnalysisDay,
-  ) { integration, entries, executionState, runningDay ->
-    val zoneId = currentZoneId()
+    currentZoneId,
+  ) { integration, entries, executionState, runningDay, zoneId ->
     val recordedDays = entries.mapTo(mutableSetOf()) { it.timestamp.atZone(zoneId).toLocalDate() }
     val selectableDays = manualAnalysisSelectableDays(
       integration = integration,
       recordedDays = recordedDays,
       analyzedDays = executionState.hostedSuccessfulDays,
-      today = currentDate(),
+      today = currentDate(zoneId),
     )
-    recordedDays.associateWith { day ->
+    zoneId to recordedDays.associateWith { day ->
       when {
         integration == AnalysisIntegration.NONE -> R.string.analysis_failure_integration_unavailable
         integration == AnalysisIntegration.HOSTED && day in executionState.hostedSuccessfulDays ->
@@ -154,15 +150,15 @@ class AnalysisHistoryViewModel(
   }
 
   /**
-   * [day]を、解析開始時点の現在の端末timezoneでの1日として `[00:00, 翌日00:00)` のInstant区間へ
+   * [day]を、表示に使った[zoneId]での1日として `[00:00, 翌日00:00)` のInstant区間へ
    * 変換して解析する。対象期間のJournalEntryが0件なら[PeriodAnalysisOutcome.Failure.NO_ENTRIES]として
    * 扱い、HTTP requestは送らない。実行中の再呼び出しは無視する。失敗してもJournalEntryは変更しない。
    */
-  fun analyze(day: LocalDate) {
-    if (_isAnalysisRunning.value) return
+  fun analyze(day: LocalDate, zoneId: ZoneId = currentZoneId.value) {
+    // 更新前の履歴からの操作は送信せず、共有timezoneで再描画された履歴から実行する。
+    if (_isAnalysisRunning.value || zoneId != currentZoneId.value) return
     _isAnalysisRunning.value = true
     runningAnalysisDay.value = day
-    val zoneId = currentZoneId()
     val periodStart = day.atStartOfDay(zoneId).toInstant()
     val periodEnd = day.plusDays(1).atStartOfDay(zoneId).toInstant()
     viewModelScope.launch {

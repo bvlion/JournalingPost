@@ -1,6 +1,7 @@
 package info.bvlion.journalingpost.journal.history
 
 import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * 初回のデータ受信前(Loading)と、受信済み(Content)を区別する。区別しないと、既存の履歴がある場合でも
@@ -21,6 +22,7 @@ sealed interface JournalHistoryUiState {
     val today: LocalDate,
     val earliestDate: LocalDate,
     val itemsByDate: Map<LocalDate, List<JournalHistoryItem>>,
+    val zoneId: ZoneId = ZoneId.systemDefault(),
   ) : JournalHistoryUiState {
     /** 未来日は表示しないため、「今日を表示中か」と「翌日へ進めないか」は同じ条件になる。 */
     val isToday: Boolean get() = selectedDate == today

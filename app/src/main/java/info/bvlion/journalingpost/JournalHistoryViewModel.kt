@@ -31,7 +31,7 @@ class JournalHistoryViewModel(
   analysisResultReader: AnalysisResultReader,
   analysisExecutionRepository: AnalysisExecutionRepository,
   private val deleter: JournalEntryDeleter,
-  private val zoneId: ZoneId = ZoneId.systemDefault(),
+  private val currentZoneId: StateFlow<ZoneId> = MutableStateFlow(ZoneId.systemDefault()),
   private val now: () -> Instant = Instant::now,
 ) : ViewModel() {
   // 表示中の日付はViewModelが保持するため、他タブへ移動して戻っても選択日は変わらない。
@@ -45,30 +45,32 @@ class JournalHistoryViewModel(
   /**
    * 日別表示のためにDAOへ日付条件を足さず、既存の全件Flowをグループ化した結果を日付で引けるようにする。
    * 過去方向の下限([earliestDate])は記録が無い日を除いた実データの最古日で決まるため、記録の増減の
-   * たびに[syncRangeToGroups]で追従させる。
+   * たびと端末timezone変更時に[syncRangeToGroups]で追従させる。
    */
   val uiState: StateFlow<JournalHistoryUiState> = combine(
     combine(
       reader.observeAll(),
       analysisResultReader.observeAll(),
       analysisExecutionRepository.state,
-    ) { entries, analysisResults, executionState ->
+      currentZoneId,
+    ) { entries, analysisResults, executionState, zoneId ->
       val existingResultIds = analysisResults.mapTo(mutableSetOf()) { it.id }
       val usedEntryIds = executionState.entryIdsByResultId
         .filterKeys { it in existingResultIds }
         .values
         .flatten()
         .toSet()
-      entries.toHistoryGroups(zoneId, usedEntryIds)
-    }.onEach(::syncRangeToGroups),
+      zoneId to entries.toHistoryGroups(zoneId, usedEntryIds)
+    }.onEach { (zoneId, groups) -> syncRangeToGroups(groups, zoneId) },
     selectedDate,
-  ) { groups, selected ->
+  ) { (zoneId, groups), selected ->
     JournalHistoryUiState.Content(
       selectedDate = selected,
       // アプリを開いたまま日付が変わることがあるため、「今日」は保持せず算出のたびに求める。
-      today = today(),
+      today = today(zoneId),
       earliestDate = earliestDate,
       itemsByDate = groups.associate { it.date to it.items },
+      zoneId = zoneId,
     )
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), JournalHistoryUiState.Loading)
 
@@ -113,14 +115,14 @@ class JournalHistoryViewModel(
 
   /**
    * 最古の記録日を含む日が削除されると下限は今日側へ動き、記録が0件になれば今日だけが下限になる。
-   * JournalRecorderは常に記録時点のInstant.now()で保存するため、下限がこれより過去へ動くことはない。
+   * 端末timezoneが変わった場合も、再分類した記録から下限を決め直す。
    * 表示中の日が新しい下限より前になっていれば、ここで範囲内へ戻す。
    */
-  private fun syncRangeToGroups(groups: List<JournalHistoryGroup>) {
-    val today = today()
+  private fun syncRangeToGroups(groups: List<JournalHistoryGroup>, zoneId: ZoneId) {
+    val today = today(zoneId)
     earliestDate = groups.minOfOrNull { it.date } ?: today
     selectedDate.update { coerceToHistoryRange(it, earliestDate, today) }
   }
 
-  private fun today(): LocalDate = now().atZone(zoneId).toLocalDate()
+  private fun today(zoneId: ZoneId = currentZoneId.value): LocalDate = now().atZone(zoneId).toLocalDate()
 }

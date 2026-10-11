@@ -13,9 +13,11 @@ import info.bvlion.journalingpost.analysis.PeriodAnalyzer
 import info.bvlion.journalingpost.hosted.HostedCredentialsRepository
 import info.bvlion.journalingpost.hosted.sha256Hex
 import info.bvlion.journalingpost.journal.JournalEntry
+import info.bvlion.journalingpost.journal.JournalEntryDeleter
 import info.bvlion.journalingpost.journal.JournalEntryReader
 import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.PeriodJournalEntryReader
+import info.bvlion.journalingpost.journal.history.JournalHistoryUiState
 import info.bvlion.journalingpost.settings.AnalysisIntegration
 import info.bvlion.journalingpost.settings.AnalysisIntegrationRepository
 import java.io.IOException
@@ -32,6 +34,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -190,7 +193,7 @@ class AnalysisHistoryViewModelTest {
         reader = reader,
         integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.CUSTOM_WEBHOOK),
         journalEntryReader = journalEntryReader,
-        currentZoneId = { ZoneId.of("Asia/Tokyo") },
+        currentZoneId = MutableStateFlow(ZoneId.of("Asia/Tokyo")),
       )
       val collectJob = CoroutineScope(testDispatcher).launch { viewModel.selectableDays.collect {} }
 
@@ -237,7 +240,7 @@ class AnalysisHistoryViewModelTest {
       executionRepository = FakeAnalysisExecutionRepository(
         AnalysisExecutionState(hostedSuccessfulDays = setOf(LocalDate.of(2026, 8, 28))),
       ),
-      currentZoneId = { ZoneOffset.UTC },
+      currentZoneId = MutableStateFlow(ZoneOffset.UTC),
       currentDate = { LocalDate.of(2026, 8, 30) },
     )
     val collectJob = CoroutineScope(testDispatcher).launch { viewModel.selectableDays.collect {} }
@@ -309,10 +312,10 @@ class AnalysisHistoryViewModelTest {
     collectorScope.launch { viewModel.manualAnalysisUnavailableReasons.collect {} }
     testDispatcher.scheduler.runCurrent()
 
-    assertEquals(null, viewModel.manualAnalysisUnavailableReasons.value)
+    assertEquals(null, viewModel.manualAnalysisUnavailableReasons.value?.second)
     entries.emit(emptyList())
     testDispatcher.scheduler.runCurrent()
-    assertEquals(emptyMap<LocalDate, Int?>(), viewModel.manualAnalysisUnavailableReasons.value)
+    assertEquals(emptyMap<LocalDate, Int?>(), viewModel.manualAnalysisUnavailableReasons.value?.second)
   }
 
   @Test
@@ -331,7 +334,7 @@ class AnalysisHistoryViewModelTest {
     collectorScope.launch { viewModel.manualAnalysisUnavailableReasons.collect {} }
     testDispatcher.scheduler.runCurrent()
 
-    val reasons = requireNotNull(viewModel.manualAnalysisUnavailableReasons.value)
+    val reasons = requireNotNull(viewModel.manualAnalysisUnavailableReasons.value?.second)
     assertEquals(R.string.journal_history_analysis_outside_period, reasons[LocalDate.of(2026, 8, 23)])
     assertEquals(null, reasons.getValue(LocalDate.of(2026, 8, 24)))
     assertEquals(R.string.journal_history_analysis_already_completed, reasons[LocalDate.of(2026, 8, 28)])
@@ -352,7 +355,7 @@ class AnalysisHistoryViewModelTest {
         executionRepository = FakeAnalysisExecutionRepository(
           AnalysisExecutionState(hostedSuccessfulDays = setOf(LocalDate.of(2026, 8, 31))),
         ),
-        currentZoneId = { ZoneId.of("Asia/Tokyo") },
+        currentZoneId = MutableStateFlow(ZoneId.of("Asia/Tokyo")),
         currentDate = { LocalDate.of(2026, 8, 31) },
       )
       collectorScope.launch { viewModel.manualAnalysisUnavailableReasons.collect {} }
@@ -360,7 +363,7 @@ class AnalysisHistoryViewModelTest {
 
       assertEquals(
         mapOf(LocalDate.of(2026, 8, 31) to null, LocalDate.of(2026, 8, 2) to null),
-        viewModel.manualAnalysisUnavailableReasons.value,
+        viewModel.manualAnalysisUnavailableReasons.value?.second,
       )
       integrationRepository.set(AnalysisIntegration.NONE)
       testDispatcher.scheduler.runCurrent()
@@ -369,7 +372,7 @@ class AnalysisHistoryViewModelTest {
           LocalDate.of(2026, 8, 31) to R.string.analysis_failure_integration_unavailable,
           LocalDate.of(2026, 8, 2) to R.string.analysis_failure_integration_unavailable,
         ),
-        viewModel.manualAnalysisUnavailableReasons.value,
+        viewModel.manualAnalysisUnavailableReasons.value?.second,
       )
     }
 
@@ -394,7 +397,7 @@ class AnalysisHistoryViewModelTest {
     viewModel.analyze(LocalDate.of(2026, 8, 29))
     testDispatcher.scheduler.runCurrent()
 
-    val reasons = requireNotNull(viewModel.manualAnalysisUnavailableReasons.value)
+    val reasons = requireNotNull(viewModel.manualAnalysisUnavailableReasons.value?.second)
     assertEquals(R.string.journal_history_analysis_running_day, reasons[LocalDate.of(2026, 8, 29)])
     assertEquals(R.string.journal_history_analysis_running_other_day, reasons[LocalDate.of(2026, 8, 27)])
     assertEquals(R.string.journal_history_analysis_already_completed, reasons[LocalDate.of(2026, 8, 28)])
@@ -408,16 +411,16 @@ class AnalysisHistoryViewModelTest {
     assertFalse(viewModel.isAnalysisRunning.value)
     assertEquals(
       R.string.journal_history_analysis_already_completed,
-      requireNotNull(viewModel.manualAnalysisUnavailableReasons.value)[LocalDate.of(2026, 8, 29)],
+      requireNotNull(viewModel.manualAnalysisUnavailableReasons.value?.second)[LocalDate.of(2026, 8, 29)],
     )
-    assertEquals(null, requireNotNull(viewModel.manualAnalysisUnavailableReasons.value).getValue(LocalDate.of(2026, 8, 27)))
+    assertEquals(null, requireNotNull(viewModel.manualAnalysisUnavailableReasons.value?.second).getValue(LocalDate.of(2026, 8, 27)))
   }
 
   @Test
   fun `analyzeは選択日を端末timezoneの半開区間へ変換してentryを取得しanalyzerへ渡す`() = runTest(testDispatcher) {
     val analyzer = FakePeriodAnalyzer { success() }
     val reader = FakePeriodJournalEntryReader(listOf(entry("2026-08-30T05:00:00Z")))
-    val viewModel = createViewModel(analyzer = analyzer, entryReader = reader, currentZoneId = { ZoneOffset.UTC })
+    val viewModel = createViewModel(analyzer = analyzer, entryReader = reader, currentZoneId = MutableStateFlow(ZoneOffset.UTC))
 
     viewModel.analyze(LocalDate.of(2026, 8, 30))
     testDispatcher.scheduler.advanceUntilIdle()
@@ -478,11 +481,11 @@ class AnalysisHistoryViewModelTest {
   @Test
   fun `analyzeは解析開始時点の現在timezoneで期間境界を計算する`() = runTest(testDispatcher) {
     val analyzer = FakePeriodAnalyzer { success() }
-    var zone: ZoneId = ZoneOffset.UTC
-    val viewModel = createViewModel(analyzer = analyzer, currentZoneId = { zone })
+    val zone = MutableStateFlow<ZoneId>(ZoneOffset.UTC)
+    val viewModel = createViewModel(analyzer = analyzer, currentZoneId = zone)
 
     // ViewModel生成後にtimezoneが変わる状況(移動など)を再現する。
-    zone = ZoneId.of("Asia/Tokyo")
+    zone.value = ZoneId.of("Asia/Tokyo")
     viewModel.analyze(LocalDate.of(2026, 8, 30))
     testDispatcher.scheduler.advanceUntilIdle()
 
@@ -491,10 +494,143 @@ class AnalysisHistoryViewModelTest {
   }
 
   @Test
+  fun `通常のタイムゾーン変更と記録追加後も履歴の日付とHosted解析可否と送信記録が一致する`() =
+    runTest(testDispatcher) {
+      val zone = MutableStateFlow<ZoneId>(ZoneOffset.UTC)
+      val now = Instant.parse("2026-08-30T20:00:00Z")
+      val entries = MutableStateFlow(
+        listOf(
+          entry("2026-08-28T16:00:00Z", id = 1),
+          entry("2026-08-29T10:00:00Z", id = 2),
+          entry("2026-08-29T16:00:00Z", id = 3),
+          entry("2026-08-30T10:00:00Z", id = 4),
+        ),
+      )
+      val journalReader = JournalEntryReader { entries }
+      val resultReader = FakeAnalysisResultReader().apply { emit(emptyList()) }
+      val executionRepository = FakeAnalysisExecutionRepository()
+      val analyzer = FakePeriodAnalyzer { success(integration = AnalysisIntegration.HOSTED) }
+      val history = JournalHistoryViewModel(
+        reader = journalReader,
+        analysisResultReader = resultReader,
+        analysisExecutionRepository = executionRepository,
+        deleter = JournalEntryDeleter {},
+        currentZoneId = zone,
+        now = { now },
+      )
+      val analysis = createViewModel(
+        reader = resultReader,
+        journalEntryReader = journalReader,
+        integrationRepository = FakeAnalysisIntegrationRepository(AnalysisIntegration.HOSTED),
+        entryReader = PeriodJournalEntryReader { start, end ->
+          entries.value.filter { it.timestamp >= start && it.timestamp < end }
+        },
+        analyzer = analyzer,
+        executionRepository = executionRepository,
+        currentZoneId = zone,
+        currentDate = { now.atZone(it).toLocalDate() },
+      )
+      collectorScope.launch { history.uiState.collect {} }
+      collectorScope.launch { analysis.manualAnalysisUnavailableReasons.collect {} }
+      collectorScope.launch { analysis.selectableDays.collect {} }
+      testDispatcher.scheduler.runCurrent()
+      history.selectDate(LocalDate.of(2026, 8, 29))
+      testDispatcher.scheduler.runCurrent()
+      val originalContent = history.uiState.value as JournalHistoryUiState.Content
+      assertEquals(setOf(2L, 3L), originalContent.itemsOn(originalContent.selectedDate).map { it.id }.toSet())
+      assertEquals(
+        R.string.journal_history_analysis_outside_period,
+        requireNotNull(analysis.manualAnalysisUnavailableReasons.value).second[LocalDate.of(2026, 8, 30)],
+      )
+
+      zone.value = ZoneId.of("Asia/Tokyo")
+      testDispatcher.scheduler.runCurrent()
+      val changedContent = history.uiState.value as JournalHistoryUiState.Content
+      assertEquals(LocalDate.of(2026, 8, 31), changedContent.today)
+      assertEquals(LocalDate.of(2026, 8, 29), changedContent.earliestDate)
+      assertEquals(setOf(1L, 2L), changedContent.itemsOn(changedContent.selectedDate).map { it.id }.toSet())
+      assertEquals(changedContent.zoneId, requireNotNull(analysis.manualAnalysisUnavailableReasons.value).first)
+      assertEquals(setOf(LocalDate.of(2026, 8, 29), LocalDate.of(2026, 8, 30)), analysis.selectableDays.value)
+
+      entries.value += entry("2026-08-30T18:00:00Z", id = 5)
+      history.selectDate(LocalDate.of(2026, 8, 30))
+      testDispatcher.scheduler.runCurrent()
+      val displayedContent = history.uiState.value as JournalHistoryUiState.Content
+      val displayedIds = displayedContent.itemsOn(displayedContent.selectedDate).map { it.id }.toSet()
+      assertEquals(setOf(3L, 4L), displayedIds)
+      assertEquals(null, requireNotNull(analysis.manualAnalysisUnavailableReasons.value).second.getValue(displayedContent.selectedDate))
+      analysis.analyze(displayedContent.selectedDate, displayedContent.zoneId)
+      testDispatcher.scheduler.runCurrent()
+
+      assertEquals(displayedIds, requireNotNull(analyzer.lastEntries).map { it.id }.toSet())
+      assertEquals(Instant.parse("2026-08-29T15:00:00Z"), analyzer.lastPeriodStart)
+      assertEquals(Instant.parse("2026-08-30T15:00:00Z"), analyzer.lastPeriodEnd)
+      assertEquals(setOf(displayedContent.selectedDate), executionRepository.state.value.hostedSuccessfulDays)
+      assertEquals(
+        R.string.journal_history_analysis_already_completed,
+        requireNotNull(analysis.manualAnalysisUnavailableReasons.value).second[displayedContent.selectedDate],
+      )
+      assertEquals(displayedContent.selectedDate, (history.uiState.value as JournalHistoryUiState.Content).selectedDate)
+
+      zone.value = ZoneOffset.UTC
+      testDispatcher.scheduler.runCurrent()
+      assertEquals(
+        R.string.journal_history_analysis_already_completed,
+        requireNotNull(analysis.manualAnalysisUnavailableReasons.value).second[displayedContent.selectedDate],
+      )
+      assertFalse(displayedContent.selectedDate in analysis.selectableDays.value)
+    }
+
+  @Test
+  fun `タイムゾーン変更だけで保存済み結果の日付と最新結果の対応も更新される`() = runTest(testDispatcher) {
+    val zone = MutableStateFlow<ZoneId>(ZoneOffset.UTC)
+    val reader = FakeAnalysisResultReader().apply {
+      emit(listOf(result(7, "2026-08-31T02:00:00Z", "結果").copy(periodStart = Instant.parse("2026-08-29T16:00:00Z"))))
+    }
+    val viewModel = createViewModel(reader = reader, currentZoneId = zone)
+    collectorScope.launch { viewModel.uiState.collect {} }
+    testDispatcher.scheduler.runCurrent()
+    assertEquals(7L, (viewModel.uiState.value as AnalysisHistoryUiState.Content).latestResultsByDay[LocalDate.of(2026, 8, 29)]?.id)
+
+    zone.value = ZoneId.of("Asia/Tokyo")
+    testDispatcher.scheduler.runCurrent()
+    val content = viewModel.uiState.value as AnalysisHistoryUiState.Content
+    assertEquals(zone.value, content.zoneId)
+    assertEquals(null, content.latestResultsByDay[LocalDate.of(2026, 8, 29)])
+    assertEquals(7L, content.latestResultsByDay[LocalDate.of(2026, 8, 30)]?.id)
+  }
+
+  @Test
+  fun `更新前の履歴タイムゾーンでの解析は送信せず開始後のタイムゾーン変更は送信期間を変更しない`() = runTest(testDispatcher) {
+    val zone = MutableStateFlow<ZoneId>(ZoneOffset.UTC)
+    val pendingEntries = CompletableDeferred<List<JournalEntry>>()
+    val entryReader = PeriodJournalEntryReader { _, _ -> pendingEntries.await() }
+    val analyzer = FakePeriodAnalyzer { success() }
+    val viewModel = createViewModel(currentZoneId = zone, entryReader = entryReader, analyzer = analyzer)
+    zone.value = ZoneId.of("Asia/Tokyo")
+
+    viewModel.analyze(LocalDate.of(2026, 8, 30), ZoneOffset.UTC)
+    testDispatcher.scheduler.runCurrent()
+    assertEquals(0, analyzer.callCount)
+    assertFalse(viewModel.isAnalysisRunning.value)
+
+    viewModel.analyze(LocalDate.of(2026, 8, 30), zone.value)
+    testDispatcher.scheduler.runCurrent()
+    assertTrue(viewModel.isAnalysisRunning.value)
+    zone.value = ZoneOffset.UTC
+    pendingEntries.complete(listOf(entry("2026-08-30T05:00:00Z")))
+    testDispatcher.scheduler.runCurrent()
+    assertEquals(1, analyzer.callCount)
+    assertEquals(Instant.parse("2026-08-29T15:00:00Z"), analyzer.lastPeriodStart)
+    assertEquals(Instant.parse("2026-08-30T15:00:00Z"), analyzer.lastPeriodEnd)
+    assertFalse(viewModel.isAnalysisRunning.value)
+  }
+
+  @Test
   fun `analyze成功時はresponseのperiod・analyzedAt・textでAnalysisResultを保存する`() = runTest(testDispatcher) {
     val analyzer = FakePeriodAnalyzer { success("今日は穏やかでした") }
     val writer = FakeAnalysisResultWriter()
-    val viewModel = createViewModel(analyzer = analyzer, writer = writer, currentZoneId = { ZoneOffset.UTC })
+    val viewModel = createViewModel(analyzer = analyzer, writer = writer, currentZoneId = MutableStateFlow(ZoneOffset.UTC))
     val results = collectRunResults(viewModel)
 
     viewModel.analyze(LocalDate.of(2026, 8, 30))
@@ -517,7 +653,7 @@ class AnalysisHistoryViewModelTest {
           listOf(entry("2026-08-30T00:01:00Z", id = 11), entry("2026-08-30T12:00:00Z", id = 12)),
         ),
         executionRepository = executionRepository,
-        currentZoneId = { ZoneOffset.UTC },
+        currentZoneId = MutableStateFlow(ZoneOffset.UTC),
       )
 
       viewModel.analyze(LocalDate.of(2026, 8, 30))
@@ -617,7 +753,7 @@ class AnalysisHistoryViewModelTest {
   @Test
   fun `保存成功後にanalyzerへ端末保存の確定を対象期間つきで通知する`() = runTest(testDispatcher) {
     val analyzer = FakePersistenceAwarePeriodAnalyzer { success() }
-    val viewModel = createViewModel(analyzer = analyzer, currentZoneId = { ZoneOffset.UTC })
+    val viewModel = createViewModel(analyzer = analyzer, currentZoneId = MutableStateFlow(ZoneOffset.UTC))
     val results = collectRunResults(viewModel)
 
     viewModel.analyze(LocalDate.of(2026, 8, 30))
@@ -727,8 +863,8 @@ class AnalysisHistoryViewModelTest {
       override suspend fun store(apiKey: String) = Unit
       override suspend fun clear() = Unit
     },
-    currentZoneId: () -> ZoneId = { ZoneOffset.UTC },
-    currentDate: () -> LocalDate = { LocalDate.of(2026, 9, 1) },
+    currentZoneId: StateFlow<ZoneId> = MutableStateFlow(ZoneOffset.UTC),
+    currentDate: (ZoneId) -> LocalDate = { LocalDate.of(2026, 9, 1) },
   ) = AnalysisHistoryViewModel(
     reader = reader,
     analysisIntegrationRepository = integrationRepository,

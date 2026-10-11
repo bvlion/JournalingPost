@@ -72,6 +72,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
 
@@ -87,6 +88,8 @@ import kotlinx.coroutines.tasks.await
  */
 internal class AppContainer(context: Context) {
   private val context = context.applicationContext
+
+  val currentZoneId = MutableStateFlow(ZoneId.systemDefault())
 
   private val database: JournalDatabase by lazy { JournalDatabase.create(this.context) }
 
