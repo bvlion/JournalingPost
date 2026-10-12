@@ -6,6 +6,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import info.bvlion.journalingpost.AnalysisHistoryViewModel
+import info.bvlion.journalingpost.AnalysisObservationViewModel
 import info.bvlion.journalingpost.AutoAnalysisSettingsViewModel
 import info.bvlion.journalingpost.JournalHistoryViewModel
 import info.bvlion.journalingpost.JournalingPostApplication
@@ -54,6 +55,9 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
       deleter = container.journalEntryDeleter,
       currentZoneId = container.currentZoneId,
     )
+  }
+  initializer {
+    AnalysisObservationViewModel()
   }
   initializer {
     AnalysisHistoryViewModel(

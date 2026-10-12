@@ -1,5 +1,9 @@
 package info.bvlion.journalingpost
 
+import androidx.lifecycle.ViewModelLazy
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import info.bvlion.journalingpost.analysis.AnalysisExecutionRepository
 import info.bvlion.journalingpost.analysis.AnalysisExecutionState
 import info.bvlion.journalingpost.analysis.AnalysisHistoryUiState
@@ -43,6 +47,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -846,6 +851,144 @@ class AnalysisHistoryViewModelTest {
       listOf(AnalysisRunResult.Failed(PeriodAnalysisOutcome.Failure.NETWORK, LocalDate.of(2026, 8, 30))),
       afterRestart,
     )
+  }
+
+  @Test
+  fun `記録と設定だけを利用する起動では解析用Factoryを呼び出さない`() = runTest(testDispatcher) {
+    var initializationCount = 0
+    val store = ViewModelStore()
+    val factory = viewModelFactory {
+      initializer { AnalysisObservationViewModel() }
+      initializer {
+        initializationCount++
+        createViewModel()
+      }
+    }
+    val observation = ViewModelLazy(AnalysisObservationViewModel::class, { store }, { factory })
+    val analysis = ViewModelLazy(AnalysisHistoryViewModel::class, { store }, { factory })
+
+    for (destination in listOf(MainDestination.RECORD, MainDestination.SETTINGS)) {
+      if (observation.value.shouldObserveAnalysis || destination.shouldObserveAnalysis) {
+        analysis.value
+        observation.value.shouldObserveAnalysis = true
+      }
+    }
+
+    assertFalse(analysis.isInitialized())
+    assertEquals(0, initializationCount)
+    assertFalse(observation.value.shouldObserveAnalysis)
+    store.clear()
+  }
+
+  @Test
+  fun `両入口で開始した解析の成功と失敗は記録タブへ移動した後も購読できる`() = runTest(testDispatcher) {
+    for ((initialDestination, outcome) in listOf(
+      MainDestination.JOURNAL_HISTORY to success(),
+      MainDestination.ANALYSIS_HISTORY to PeriodAnalysisOutcome.Failure.NETWORK,
+    )) {
+      var initializationCount = 0
+      val pendingEntries = CompletableDeferred<List<JournalEntry>>()
+      val store = ViewModelStore()
+      val factory = viewModelFactory {
+        initializer { AnalysisObservationViewModel() }
+        initializer {
+          initializationCount++
+          createViewModel(
+            entryReader = PeriodJournalEntryReader { _, _ -> pendingEntries.await() },
+            analyzer = FakePeriodAnalyzer { outcome },
+          )
+        }
+      }
+      val observation = ViewModelLazy(AnalysisObservationViewModel::class, { store }, { factory })
+      val analysis = ViewModelLazy(AnalysisHistoryViewModel::class, { store }, { factory })
+      assertTrue(initialDestination.shouldObserveAnalysis)
+      if (initialDestination.shouldObserveAnalysis) {
+        analysis.value
+        observation.value.shouldObserveAnalysis = true
+      }
+      analysis.value.analyze(LocalDate.of(2026, 8, 30))
+      testDispatcher.scheduler.runCurrent()
+
+      val results = mutableListOf<AnalysisRunResult>()
+      val destination = MainDestination.RECORD
+      assertTrue(observation.value.shouldObserveAnalysis || destination.shouldObserveAnalysis)
+      val collectJob = collectorScope.launch { analysis.value.runResults.collect { results += it } }
+      pendingEntries.complete(listOf(entry("2026-08-30T05:00:00Z")))
+      testDispatcher.scheduler.runCurrent()
+
+      assertEquals(1, initializationCount)
+      val expected = if (outcome is PeriodAnalysisOutcome.Success) {
+        AnalysisRunResult.Succeeded(1L)
+      } else {
+        AnalysisRunResult.Failed(PeriodAnalysisOutcome.Failure.NETWORK, LocalDate.of(2026, 8, 30))
+      }
+      assertEquals(listOf(expected), results)
+      collectJob.cancel()
+      store.clear()
+    }
+  }
+
+  @Test
+  fun `記録タブでActivityを再生成しても解析購読の開始状態と実行結果を引き継ぐ`() = runTest(testDispatcher) {
+    var initializationCount = 0
+    val pendingEntries = CompletableDeferred<List<JournalEntry>>()
+    val store = ViewModelStore()
+    val factory = viewModelFactory {
+      initializer { AnalysisObservationViewModel() }
+      initializer {
+        initializationCount++
+        createViewModel(entryReader = PeriodJournalEntryReader { _, _ -> pendingEntries.await() })
+      }
+    }
+    val observation = ViewModelLazy(AnalysisObservationViewModel::class, { store }, { factory })
+    val analysis = ViewModelLazy(AnalysisHistoryViewModel::class, { store }, { factory })
+    observation.value.shouldObserveAnalysis = true
+    val runningAnalysis = analysis.value
+    runningAnalysis.analyze(LocalDate.of(2026, 8, 30))
+    testDispatcher.scheduler.runCurrent()
+
+    val recreatedObservation = ViewModelLazy(AnalysisObservationViewModel::class, { store }, { factory })
+    val recreatedAnalysis = ViewModelLazy(AnalysisHistoryViewModel::class, { store }, { factory })
+    assertFalse(recreatedAnalysis.isInitialized())
+    assertTrue(recreatedObservation.value.shouldObserveAnalysis || MainDestination.RECORD.shouldObserveAnalysis)
+    assertSame(runningAnalysis, recreatedAnalysis.value)
+    val results = collectRunResults(recreatedAnalysis.value)
+    pendingEntries.complete(listOf(entry("2026-08-30T05:00:00Z")))
+    testDispatcher.scheduler.runCurrent()
+
+    assertEquals(1, initializationCount)
+    assertEquals(listOf(AnalysisRunResult.Succeeded(1L)), results)
+    store.clear()
+  }
+
+  @Test
+  fun `プロセス再生成後の記録タブでは以前の購読開始状態で解析を初期化しない`() = runTest(testDispatcher) {
+    var initializationCount = 0
+    val previousStore = ViewModelStore()
+    val factory = viewModelFactory {
+      initializer { AnalysisObservationViewModel() }
+      initializer {
+        initializationCount++
+        createViewModel()
+      }
+    }
+    val previousObservation = ViewModelLazy(AnalysisObservationViewModel::class, { previousStore }, { factory })
+    val previousAnalysis = ViewModelLazy(AnalysisHistoryViewModel::class, { previousStore }, { factory })
+    previousObservation.value.shouldObserveAnalysis = true
+    previousAnalysis.value
+    previousStore.clear()
+
+    val recreatedStore = ViewModelStore()
+    val observation = ViewModelLazy(AnalysisObservationViewModel::class, { recreatedStore }, { factory })
+    val analysis = ViewModelLazy(AnalysisHistoryViewModel::class, { recreatedStore }, { factory })
+    if (observation.value.shouldObserveAnalysis || MainDestination.RECORD.shouldObserveAnalysis) {
+      analysis.value
+    }
+
+    assertFalse(observation.value.shouldObserveAnalysis)
+    assertFalse(analysis.isInitialized())
+    assertEquals(1, initializationCount)
+    recreatedStore.clear()
   }
 
   private fun createViewModel(

@@ -42,6 +42,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -100,6 +101,7 @@ class MainActivity : ComponentActivity() {
   private val journalRecordViewModel: JournalRecordViewModel by viewModels { appViewModelFactory }
   private val historyViewModel: JournalHistoryViewModel by viewModels { appViewModelFactory }
   private val analysisHistoryViewModel: AnalysisHistoryViewModel by viewModels { appViewModelFactory }
+  private val analysisObservationViewModel: AnalysisObservationViewModel by viewModels { appViewModelFactory }
   private val settingsViewModel: SettingsViewModel by viewModels { appViewModelFactory }
   private val autoAnalysisSettingsViewModel: AutoAnalysisSettingsViewModel by viewModels { appViewModelFactory }
   private val moodViewModel: MoodViewModel by viewModels { appViewModelFactory }
@@ -201,41 +203,51 @@ class MainActivity : ComponentActivity() {
           }
         }
 
-        val analysisHistoryUiState by analysisHistoryViewModel.uiState.collectAsStateWithLifecycle()
-        val resources = LocalResources.current
-        val completedMessage = stringResource(R.string.analysis_completed)
-        val contactActionLabel = stringResource(R.string.analysis_failure_contact_action)
-        // 解析の入口や現在のタブに依存せず通知し、完了を理由に画面や閲覧位置を変更しない。
-        EventEffect(analysisHistoryViewModel.runResults) { result ->
-          when (result) {
-            is AnalysisRunResult.Succeeded -> showMessage(completedMessage)
-            is AnalysisRunResult.Failed -> {
-              val message = resources.failureMessage(result)
-              if (result.failure == PeriodAnalysisOutcome.Failure.RATE_LIMITED && result.supportId != null) {
-                scope.launch {
-                  snackbarHostState.currentSnackbarData?.dismiss()
-                  if (
-                    snackbarHostState.showSnackbar(
-                      message = message,
-                      actionLabel = contactActionLabel,
-                      withDismissAction = true,
-                      duration = SnackbarDuration.Indefinite,
-                    ) == SnackbarResult.ActionPerformed
-                  ) {
-                    openFeedbackForm(context, result.supportId, result.day)
+        val shouldObserveAnalysis = analysisObservationViewModel.shouldObserveAnalysis ||
+          destination.shouldObserveAnalysis || subscreenDestination == SubscreenDestination.ANALYSIS_RESULT_DETAIL
+        val analysisHistoryUiState = if (shouldObserveAnalysis) {
+          SideEffect { analysisObservationViewModel.shouldObserveAnalysis = true }
+          val state by analysisHistoryViewModel.uiState.collectAsStateWithLifecycle()
+          state
+        } else {
+          AnalysisHistoryUiState.Loading
+        }
+        if (shouldObserveAnalysis) {
+          val resources = LocalResources.current
+          val completedMessage = stringResource(R.string.analysis_completed)
+          val contactActionLabel = stringResource(R.string.analysis_failure_contact_action)
+          // 解析の入口や現在のタブに依存せず通知し、完了を理由に画面や閲覧位置を変更しない。
+          EventEffect(analysisHistoryViewModel.runResults) { result ->
+            when (result) {
+              is AnalysisRunResult.Succeeded -> showMessage(completedMessage)
+              is AnalysisRunResult.Failed -> {
+                val message = resources.failureMessage(result)
+                if (result.failure == PeriodAnalysisOutcome.Failure.RATE_LIMITED && result.supportId != null) {
+                  scope.launch {
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                    if (
+                      snackbarHostState.showSnackbar(
+                        message = message,
+                        actionLabel = contactActionLabel,
+                        withDismissAction = true,
+                        duration = SnackbarDuration.Indefinite,
+                      ) == SnackbarResult.ActionPerformed
+                    ) {
+                      openFeedbackForm(context, result.supportId, result.day)
+                    }
                   }
+                } else {
+                  showMessage(message)
                 }
-              } else {
-                showMessage(message)
               }
             }
           }
-        }
 
-        val analysisDeleteSucceededMessage = stringResource(R.string.analysis_delete_succeeded)
-        val analysisDeleteFailedMessage = stringResource(R.string.analysis_delete_failed)
-        EventEffect(analysisHistoryViewModel.deleteSuccesses) { showMessage(analysisDeleteSucceededMessage) }
-        EventEffect(analysisHistoryViewModel.deleteFailures) { showMessage(analysisDeleteFailedMessage) }
+          val analysisDeleteSucceededMessage = stringResource(R.string.analysis_delete_succeeded)
+          val analysisDeleteFailedMessage = stringResource(R.string.analysis_delete_failed)
+          EventEffect(analysisHistoryViewModel.deleteSuccesses) { showMessage(analysisDeleteSucceededMessage) }
+          EventEffect(analysisHistoryViewModel.deleteFailures) { showMessage(analysisDeleteFailedMessage) }
+        }
 
         // 記録処理中〜完了直後はダイアログの操作もタブ切り替えも受け付けない。JournalRecordViewModelは
         // INITへ戻さないため、SUCCESSもlock対象に含める。
@@ -718,12 +730,13 @@ private enum class SubscreenDestination {
   MOOD_SETTINGS,
 }
 
-private enum class MainDestination(
+internal enum class MainDestination(
   @param:StringRes val labelRes: Int,
   val icon: Int,
+  val shouldObserveAnalysis: Boolean = false,
 ) {
   RECORD(R.string.tab_record, R.drawable.ic_nav_record),
-  JOURNAL_HISTORY(R.string.tab_journal_history, R.drawable.ic_nav_journal_history),
-  ANALYSIS_HISTORY(R.string.tab_analysis_history, R.drawable.ic_nav_analysis_history),
+  JOURNAL_HISTORY(R.string.tab_journal_history, R.drawable.ic_nav_journal_history, shouldObserveAnalysis = true),
+  ANALYSIS_HISTORY(R.string.tab_analysis_history, R.drawable.ic_nav_analysis_history, shouldObserveAnalysis = true),
   SETTINGS(R.string.tab_settings, R.drawable.ic_nav_settings),
 }
