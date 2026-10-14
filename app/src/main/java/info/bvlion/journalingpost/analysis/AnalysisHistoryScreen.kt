@@ -1,6 +1,5 @@
 package info.bvlion.journalingpost.analysis
 
-import android.content.res.Resources
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,7 +38,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import info.bvlion.journalingpost.AnalysisRunResult
 import info.bvlion.journalingpost.R
 import info.bvlion.journalingpost.ui.HistoryEmptyMessage
 import info.bvlion.journalingpost.ui.ScreenTopAppBar
@@ -54,8 +52,6 @@ import java.util.Locale
 
 // 期間は時間帯まで指定され得るため(#40)、日付だけでなく時刻も表示する。
 private val analysisDateTimeFormatter = DateTimeFormatter.ofPattern("yyyy/M/d HH:mm", Locale.JAPAN)
-
-private val analysisDayFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日", Locale.JAPAN)
 
 /**
  * 解析履歴の遷移先。#37で保存したAnalysisResultを新しい順の一覧で表示する。
@@ -281,26 +277,6 @@ private fun AnalysisTrigger(
       DatePicker(state = datePickerState)
     }
   }
-}
-
-/** 対象日をSnackbar側で持ち直さず、失敗結果に含まれる日をそのまま文言へ入れる。 */
-internal fun Resources.failureMessage(failed: AnalysisRunResult.Failed): String = when (failed.failure) {
-  PeriodAnalysisOutcome.Failure.WEBHOOK_UNAVAILABLE -> getString(R.string.analysis_failure_webhook_unavailable)
-  PeriodAnalysisOutcome.Failure.INTEGRATION_UNAVAILABLE ->
-    getString(R.string.analysis_failure_integration_unavailable)
-
-  PeriodAnalysisOutcome.Failure.NO_ENTRIES ->
-    getString(R.string.analysis_failure_no_entries, failed.day.format(analysisDayFormatter))
-
-  PeriodAnalysisOutcome.Failure.LOCAL_READ -> getString(R.string.analysis_failure_local_read)
-  PeriodAnalysisOutcome.Failure.NETWORK -> getString(R.string.analysis_failure_network)
-  PeriodAnalysisOutcome.Failure.SERVER_ERROR -> getString(R.string.analysis_failure_server_error)
-  PeriodAnalysisOutcome.Failure.RATE_LIMITED -> getString(R.string.analysis_failure_rate_limited)
-  PeriodAnalysisOutcome.Failure.TEMPORARILY_UNAVAILABLE ->
-    getString(R.string.analysis_failure_temporarily_unavailable)
-
-  PeriodAnalysisOutcome.Failure.INVALID_RESPONSE -> getString(R.string.analysis_failure_invalid_response)
-  null -> getString(R.string.analysis_failure_save)
 }
 
 @Composable

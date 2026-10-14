@@ -2,31 +2,9 @@ package info.bvlion.journalingpost.analysis
 
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SelectableDates
-import info.bvlion.journalingpost.settings.AnalysisIntegration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
-
-/**
- * 手動解析で選べる日を決める。判定はこの1か所へ閉じ、UI側へ日付計算を持ち出さない。
- *
- * Custom Webhookは記録が1件以上ある日すべて(Issue #38で確定した扱いを維持する)。
- * Hostedは当日を対象にせず、昨日から6日前までの未解析の記録日だけにする(Issue #86)。
- * 自動解析・手動解析を問わずHostedで成功済みの対象日も除外する。
- */
-internal fun manualAnalysisSelectableDays(
-  integration: AnalysisIntegration,
-  recordedDays: Set<LocalDate>,
-  analyzedDays: Set<LocalDate>,
-  today: LocalDate,
-): Set<LocalDate> = when (integration) {
-  AnalysisIntegration.HOSTED ->
-    recordedDays.filterTo(mutableSetOf()) {
-      !it.isBefore(today.minusDays(6)) && it.isBefore(today) && it !in analyzedDays
-    }
-
-  AnalysisIntegration.CUSTOM_WEBHOOK, AnalysisIntegration.NONE -> recordedDays
-}
 
 /**
  * 手動解析の日付選択で、[selectableDays]に含まれる日だけを選べるようにする。

@@ -1,6 +1,5 @@
 package info.bvlion.journalingpost.analysis
 
-import java.time.LocalDate
 import java.time.ZoneId
 
 /**
@@ -13,9 +12,5 @@ sealed interface AnalysisHistoryUiState {
   data class Content(
     val items: List<AnalysisHistoryItem>,
     val zoneId: ZoneId = ZoneId.systemDefault(),
-  ) : AnalysisHistoryUiState {
-    // 一覧は解析日時とIDの降順。保存済みの対象期間の開始日ごとに最新の結果を引く。
-    val latestResultsByDay: Map<LocalDate, AnalysisHistoryItem>
-      get() = items.asReversed().associateBy { it.periodStart.toLocalDate() }
-  }
+  ) : AnalysisHistoryUiState
 }

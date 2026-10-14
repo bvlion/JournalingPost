@@ -1,10 +1,5 @@
 package info.bvlion.journalingpost
 
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -33,16 +28,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -60,16 +52,18 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import info.bvlion.journalingpost.analysis.AnalysisHistoryScreen
 import info.bvlion.journalingpost.analysis.AnalysisHistoryUiState
+import info.bvlion.journalingpost.analysis.ManualAnalysisAvailability
+import info.bvlion.journalingpost.analysis.ManualAnalysisEligibility
 import info.bvlion.journalingpost.analysis.PeriodAnalysisOutcome
 import info.bvlion.journalingpost.analysis.failureMessage
+import info.bvlion.journalingpost.analysis.unavailableReasonResource
 import info.bvlion.journalingpost.di.appViewModelFactory
 import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.history.JournalHistoryScreen
@@ -90,10 +84,10 @@ import info.bvlion.journalingpost.settings.openStoreListingForReview
 import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
-import java.time.LocalDate
-import java.time.ZoneId
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
@@ -101,7 +95,8 @@ class MainActivity : ComponentActivity() {
   private val journalRecordViewModel: JournalRecordViewModel by viewModels { appViewModelFactory }
   private val historyViewModel: JournalHistoryViewModel by viewModels { appViewModelFactory }
   private val analysisHistoryViewModel: AnalysisHistoryViewModel by viewModels { appViewModelFactory }
-  private val analysisObservationViewModel: AnalysisObservationViewModel by viewModels { appViewModelFactory }
+  private val manualAnalysisViewModel: ManualAnalysisViewModel by viewModels { appViewModelFactory }
+  private var calendarObservation: AutoCloseable? = null
   private val settingsViewModel: SettingsViewModel by viewModels { appViewModelFactory }
   private val autoAnalysisSettingsViewModel: AutoAnalysisSettingsViewModel by viewModels { appViewModelFactory }
   private val moodViewModel: MoodViewModel by viewModels { appViewModelFactory }
@@ -110,6 +105,18 @@ class MainActivity : ComponentActivity() {
   private val moodSettingsViewModel: MoodSettingsViewModel by viewModels { appViewModelFactory }
   private val webhookSettingsViewModel: WebhookSettingsViewModel by viewModels { appViewModelFactory }
   private val onboardingViewModel: OnboardingViewModel by viewModels { appViewModelFactory }
+
+  override fun onStart() {
+    super.onStart()
+    calendarObservation = (application as JournalingPostApplication).container.currentDateProvider
+      .observeChanges(applicationContext)
+  }
+
+  override fun onStop() {
+    calendarObservation?.close()
+    calendarObservation = null
+    super.onStop()
+  }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -164,33 +171,7 @@ class MainActivity : ComponentActivity() {
         val scope = rememberCoroutineScope()
         val context = LocalContext.current
         val density = LocalDensity.current
-        val currentZoneId = remember { (application as JournalingPostApplication).container.currentZoneId }
         val lifecycleOwner = LocalLifecycleOwner.current
-        DisposableEffect(context, lifecycleOwner, currentZoneId) {
-          val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-              if (intent?.action == Intent.ACTION_TIMEZONE_CHANGED) {
-                currentZoneId.value = ZoneId.systemDefault()
-              }
-            }
-          }
-          val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_START) currentZoneId.value = ZoneId.systemDefault()
-          }
-          ContextCompat.registerReceiver(
-            context,
-            receiver,
-            IntentFilter(Intent.ACTION_TIMEZONE_CHANGED),
-            ContextCompat.RECEIVER_NOT_EXPORTED,
-          )
-          // Activityのない間の変更や、background中に遅延したbroadcastも復帰時に反映する。
-          currentZoneId.value = ZoneId.systemDefault()
-          lifecycleOwner.lifecycle.addObserver(observer)
-          onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            context.unregisterReceiver(receiver)
-          }
-        }
         // 下部ナビはScaffoldの外にあるSnackbarHostへpaddingを渡せないため、実測した高さ(システムの
         // navigation bar inset込み)ぶんSnackbarを持ち上げる。Material3のNavigationBar高さ定数は
         // 非公開なので値を複製しない。
@@ -203,51 +184,43 @@ class MainActivity : ComponentActivity() {
           }
         }
 
-        val shouldObserveAnalysis = analysisObservationViewModel.shouldObserveAnalysis ||
-          destination.shouldObserveAnalysis || subscreenDestination == SubscreenDestination.ANALYSIS_RESULT_DETAIL
-        val analysisHistoryUiState = if (shouldObserveAnalysis) {
-          SideEffect { analysisObservationViewModel.shouldObserveAnalysis = true }
-          val state by analysisHistoryViewModel.uiState.collectAsStateWithLifecycle()
-          state
-        } else {
-          AnalysisHistoryUiState.Loading
-        }
-        if (shouldObserveAnalysis) {
-          val resources = LocalResources.current
-          val completedMessage = stringResource(R.string.analysis_completed)
-          val contactActionLabel = stringResource(R.string.analysis_failure_contact_action)
-          // 解析の入口や現在のタブに依存せず通知し、完了を理由に画面や閲覧位置を変更しない。
-          EventEffect(analysisHistoryViewModel.runResults) { result ->
-            when (result) {
-              is AnalysisRunResult.Succeeded -> showMessage(completedMessage)
-              is AnalysisRunResult.Failed -> {
-                val message = resources.failureMessage(result)
-                if (result.failure == PeriodAnalysisOutcome.Failure.RATE_LIMITED && result.supportId != null) {
-                  scope.launch {
-                    snackbarHostState.currentSnackbarData?.dismiss()
-                    if (
-                      snackbarHostState.showSnackbar(
-                        message = message,
-                        actionLabel = contactActionLabel,
-                        withDismissAction = true,
-                        duration = SnackbarDuration.Indefinite,
-                      ) == SnackbarResult.ActionPerformed
-                    ) {
-                      openFeedbackForm(context, result.supportId, result.day)
-                    }
-                  }
-                } else {
-                  showMessage(message)
+        val resources = LocalResources.current
+        val completedMessage = stringResource(R.string.analysis_completed)
+        val contactActionLabel = stringResource(R.string.analysis_failure_contact_action)
+        // 表示完了前にActivityが停止・再生成された場合は、未通知結果をViewModelへ残す。
+        LaunchedEffect(manualAnalysisViewModel, lifecycleOwner, snackbarHostState, resources) {
+          lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            manualAnalysisViewModel.state.map { it.notifications.firstOrNull() }
+              .distinctUntilChanged().filterNotNull().collect { notification ->
+                snackbarHostState.currentSnackbarData?.dismiss()
+                val result = notification.result
+                val hasContactAction = result is AnalysisRunResult.Failed &&
+                  result.failure == PeriodAnalysisOutcome.Failure.RATE_LIMITED && result.supportId != null
+                val message = when (result) {
+                  is AnalysisRunResult.Succeeded -> completedMessage
+                  is AnalysisRunResult.Failed -> resources.failureMessage(result)
+                  is AnalysisRunResult.Rejected -> resources.getString(
+                    requireNotNull(result.availability.unavailableReasonResource()),
+                  )
+                }
+                val snackbarResult = snackbarHostState.showSnackbar(
+                  message = message,
+                  actionLabel = contactActionLabel.takeIf { hasContactAction },
+                  withDismissAction = hasContactAction,
+                  duration = if (hasContactAction) SnackbarDuration.Indefinite else SnackbarDuration.Short,
+                )
+                manualAnalysisViewModel.notificationShown(notification.id)
+                if (snackbarResult == SnackbarResult.ActionPerformed && result is AnalysisRunResult.Failed) {
+                  result.supportId?.let { openFeedbackForm(context, it, result.day) }
                 }
               }
-            }
           }
-
-          val analysisDeleteSucceededMessage = stringResource(R.string.analysis_delete_succeeded)
-          val analysisDeleteFailedMessage = stringResource(R.string.analysis_delete_failed)
-          EventEffect(analysisHistoryViewModel.deleteSuccesses) { showMessage(analysisDeleteSucceededMessage) }
-          EventEffect(analysisHistoryViewModel.deleteFailures) { showMessage(analysisDeleteFailedMessage) }
         }
+
+        val analysisDeleteSucceededMessage = stringResource(R.string.analysis_delete_succeeded)
+        val analysisDeleteFailedMessage = stringResource(R.string.analysis_delete_failed)
+        EventEffect(analysisHistoryViewModel.deleteSuccesses) { showMessage(analysisDeleteSucceededMessage) }
+        EventEffect(analysisHistoryViewModel.deleteFailures) { showMessage(analysisDeleteFailedMessage) }
 
         // 記録処理中〜完了直後はダイアログの操作もタブ切り替えも受け付けない。JournalRecordViewModelは
         // INITへ戻さないため、SUCCESSもlock対象に含める。
@@ -493,20 +466,12 @@ class MainActivity : ComponentActivity() {
                         currentSubscreenDestination != SubscreenDestination.ANALYSIS_RESULT_DETAIL
                       ) {
                         val historyUiState by historyViewModel.uiState.collectAsStateWithLifecycle()
-                        val unavailableReasons by
-                          analysisHistoryViewModel.manualAnalysisUnavailableReasons.collectAsStateWithLifecycle()
+                        val eligibility by manualAnalysisViewModel.eligibility.collectAsStateWithLifecycle()
                         val historyContent = historyUiState as? JournalHistoryUiState.Content
-                        val selectedDate = historyContent?.selectedDate
-                        val reasonsForHistory = unavailableReasons
-                          ?.takeIf { it.first == historyContent?.zoneId }?.second
-                        val unavailableReason = when {
-                          reasonsForHistory == null -> R.string.journal_history_analysis_loading
-                          selectedDate !in reasonsForHistory -> R.string.journal_history_analysis_no_entries
-                          else -> reasonsForHistory[selectedDate]
-                        }
-                        val latestResult = (analysisHistoryUiState as? AnalysisHistoryUiState.Content)
-                          ?.takeIf { it.zoneId == historyContent?.zoneId }
-                          ?.latestResultsByDay?.get(selectedDate)
+                        val ready = (eligibility as? ManualAnalysisEligibility.Ready)
+                          ?.takeIf { it.calendarDate == historyContent?.calendarDate }
+                        val availability = historyContent?.let { ready?.availabilityFor(it.selectedDate) }
+                          ?: ManualAnalysisAvailability.CHECKING
                         JournalHistoryScreen(
                           uiState = historyUiState,
                           deleteSuccesses = historyViewModel.deleteSuccesses,
@@ -517,10 +482,10 @@ class MainActivity : ComponentActivity() {
                           onNextDay = historyViewModel::showNextDay,
                           onToday = historyViewModel::showToday,
                           onSelectDate = historyViewModel::selectDate,
-                          manualAnalysisUnavailableReason = unavailableReason,
-                          latestAnalysisResultId = latestResult?.id,
+                          manualAnalysisAvailability = availability,
+                          latestAnalysisResultId = historyContent?.let { it.latestAnalysisResultIdsByDay[it.selectedDate] },
                           onAnalyze = { day ->
-                            historyContent?.let { analysisHistoryViewModel.analyze(day, it.zoneId) }
+                            historyContent?.let { manualAnalysisViewModel.analyze(day, it.calendarDate) }
                           },
                           onViewAnalysisResult = {
                             selectedAnalysisResultId = it
@@ -528,9 +493,15 @@ class MainActivity : ComponentActivity() {
                           },
                         )
                       } else {
-                        val canRunAnalysis by analysisHistoryViewModel.canRunAnalysis.collectAsStateWithLifecycle()
-                        val isAnalysisRunning by analysisHistoryViewModel.isAnalysisRunning.collectAsStateWithLifecycle()
-                        val selectableDays by analysisHistoryViewModel.selectableDays.collectAsStateWithLifecycle()
+                        val analysisHistoryUiState by analysisHistoryViewModel.uiState.collectAsStateWithLifecycle()
+                        val eligibility = if (currentSubscreenDestination == SubscreenDestination.ANALYSIS_RESULT_DETAIL) {
+                          ManualAnalysisEligibility.Checking
+                        } else {
+                          val state by manualAnalysisViewModel.eligibility.collectAsStateWithLifecycle()
+                          state
+                        }
+                        val executionState by manualAnalysisViewModel.state.collectAsStateWithLifecycle()
+                        val ready = eligibility as? ManualAnalysisEligibility.Ready
                         val selectedAnalysisItem = if (
                           currentSubscreenDestination == SubscreenDestination.ANALYSIS_RESULT_DETAIL
                         ) {
@@ -544,10 +515,10 @@ class MainActivity : ComponentActivity() {
                           uiState = analysisHistoryUiState,
                           selectedItem = selectedAnalysisItem,
                           listState = analysisHistoryListState,
-                          canRunAnalysis = canRunAnalysis,
-                          isRunning = isAnalysisRunning,
-                          selectableDays = selectableDays,
-                          onAnalyze = { analysisHistoryViewModel.analyze(it) },
+                          canRunAnalysis = ready?.hasAvailableIntegration == true,
+                          isRunning = executionState.isRunning,
+                          selectableDays = ready?.selectableDays.orEmpty(),
+                          onAnalyze = { day -> ready?.let { manualAnalysisViewModel.analyze(day, it.calendarDate) } },
                           onDelete = analysisHistoryViewModel::deleteResult,
                           onResultClick = {
                             selectedAnalysisResultId = it.id
@@ -733,10 +704,9 @@ private enum class SubscreenDestination {
 internal enum class MainDestination(
   @param:StringRes val labelRes: Int,
   val icon: Int,
-  val shouldObserveAnalysis: Boolean = false,
 ) {
   RECORD(R.string.tab_record, R.drawable.ic_nav_record),
-  JOURNAL_HISTORY(R.string.tab_journal_history, R.drawable.ic_nav_journal_history, shouldObserveAnalysis = true),
-  ANALYSIS_HISTORY(R.string.tab_analysis_history, R.drawable.ic_nav_analysis_history, shouldObserveAnalysis = true),
+  JOURNAL_HISTORY(R.string.tab_journal_history, R.drawable.ic_nav_journal_history),
+  ANALYSIS_HISTORY(R.string.tab_analysis_history, R.drawable.ic_nav_analysis_history),
   SETTINGS(R.string.tab_settings, R.drawable.ic_nav_settings),
 }

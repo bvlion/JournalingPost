@@ -54,6 +54,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.R
+import info.bvlion.journalingpost.analysis.ManualAnalysisAvailability
+import info.bvlion.journalingpost.analysis.unavailableReasonResource
 import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.HistoryEmptyMessage
 import info.bvlion.journalingpost.ui.fixedTopRegionBackgroundColor
@@ -90,7 +92,7 @@ fun JournalHistoryScreen(
   onNextDay: () -> Unit,
   onToday: () -> Unit,
   onSelectDate: (LocalDate) -> Unit,
-  manualAnalysisUnavailableReason: Int? = R.string.journal_history_analysis_loading,
+  manualAnalysisAvailability: ManualAnalysisAvailability = ManualAnalysisAvailability.CHECKING,
   latestAnalysisResultId: Long? = null,
   onAnalyze: (LocalDate) -> Unit = {},
   onViewAnalysisResult: (Long) -> Unit = {},
@@ -134,7 +136,7 @@ fun JournalHistoryScreen(
             onNextDay = onNextDay,
             onToday = onToday,
             onDateJumpRequest = { showDateJump = true },
-            manualAnalysisUnavailableReason = manualAnalysisUnavailableReason,
+            manualAnalysisAvailability = manualAnalysisAvailability,
             latestAnalysisResultId = latestAnalysisResultId,
             onAnalyze = onAnalyze,
             onViewAnalysisResult = onViewAnalysisResult,
@@ -182,16 +184,14 @@ private fun JournalHistoryDateNavigation(
   onNextDay: () -> Unit,
   onToday: () -> Unit,
   onDateJumpRequest: () -> Unit,
-  manualAnalysisUnavailableReason: Int?,
+  manualAnalysisAvailability: ManualAnalysisAvailability,
   latestAnalysisResultId: Long?,
   onAnalyze: (LocalDate) -> Unit,
   onViewAnalysisResult: (Long) -> Unit,
   modifier: Modifier = Modifier,
 ) {
   val selectedDateText = uiState.selectedDate.format(historyDateFormatter)
-  val dateJumpDescription = stringResource(R.string.journal_history_date_jump_description, selectedDateText)
   val todayText = stringResource(R.string.journal_history_today)
-  var isAnalysisMenuExpanded by remember(uiState.selectedDate) { mutableStateOf(false) }
   val textMeasurer = rememberTextMeasurer()
   val density = LocalDensity.current
   val dateTextWidth = with(density) {
@@ -200,8 +200,17 @@ private fun JournalHistoryDateNavigation(
   val todayTextWidth = with(density) {
     textMeasurer.measure(todayText, MaterialTheme.typography.labelLarge).size.width.toDp()
   }
+  val dateControls: @Composable (Modifier) -> Unit = { controlsModifier ->
+    JournalHistoryDateControls(uiState, selectedDateText, onPreviousDay, onNextDay, onDateJumpRequest, controlsModifier)
+  }
+  val analysisActions: @Composable () -> Unit = {
+    JournalHistoryAnalysisActions(
+      uiState.selectedDate, uiState.isToday, todayText, manualAnalysisAvailability,
+      latestAnalysisResultId, onToday, onAnalyze, onViewAnalysisResult,
+    )
+  }
 
-  // 文字拡大を含む実際の文字幅で判断し、日付が収まらないときだけ日付操作を2段目へ置く。
+  // FlowRowの単純な折り返しでは右側操作が下段へ移るため、文字拡大も含めて操作群の行を選ぶ。
   BoxWithConstraints(
     modifier = modifier
       .fillMaxWidth()
@@ -211,83 +220,101 @@ private fun JournalHistoryDateNavigation(
   ) {
     val isCompact = maxWidth < dateTextWidth + 24.dp + 96.dp +
       maxOf(ButtonDefaults.MinWidth, todayTextWidth + 24.dp) + 48.dp
-    Column {
-      repeat(if (isCompact) 2 else 1) { rowIndex ->
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.End,
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          if (!isCompact || rowIndex == 1) {
-            IconButton(onClick = onPreviousDay, enabled = !uiState.isEarliestDate) {
-              Icon(
-                painter = painterResource(R.drawable.ic_chevron_left),
-                contentDescription = stringResource(R.string.journal_history_previous_day),
-              )
-            }
-            TextButton(
-              onClick = onDateJumpRequest,
-              contentPadding = PaddingValues(horizontal = 12.dp),
-              modifier = Modifier.weight(1f).semantics { contentDescription = dateJumpDescription },
-            ) {
-              Text(text = selectedDateText, style = MaterialTheme.typography.titleMedium, softWrap = false)
-            }
-            IconButton(onClick = onNextDay, enabled = !uiState.isToday) {
-              Icon(
-                painter = painterResource(R.drawable.ic_chevron_right),
-                contentDescription = stringResource(R.string.journal_history_next_day),
-              )
-            }
-          }
-          if (!isCompact || rowIndex == 0) {
-            TextButton(
-              onClick = onToday,
-              enabled = !uiState.isToday,
-              contentPadding = PaddingValues(horizontal = 12.dp),
-            ) {
-              Text(todayText)
-            }
-            Box {
-              IconButton(onClick = { isAnalysisMenuExpanded = true }) {
-                Icon(
-                  painter = painterResource(R.drawable.ic_more_vert),
-                  contentDescription = stringResource(R.string.journal_history_analysis_menu),
-                )
+    if (isCompact) {
+      Column {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { analysisActions() }
+        dateControls(Modifier.fillMaxWidth())
+      }
+    } else {
+      Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        dateControls(Modifier.weight(1f))
+        analysisActions()
+      }
+    }
+  }
+}
+
+@Composable
+private fun JournalHistoryDateControls(
+  uiState: JournalHistoryUiState.Content,
+  selectedDateText: String,
+  onPreviousDay: () -> Unit,
+  onNextDay: () -> Unit,
+  onDateJumpRequest: () -> Unit,
+  modifier: Modifier,
+) {
+  val dateJumpDescription = stringResource(R.string.journal_history_date_jump_description, selectedDateText)
+  Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+    IconButton(onClick = onPreviousDay, enabled = !uiState.isEarliestDate) {
+      Icon(
+        painter = painterResource(R.drawable.ic_chevron_left),
+        contentDescription = stringResource(R.string.journal_history_previous_day),
+      )
+    }
+    TextButton(
+      onClick = onDateJumpRequest,
+      contentPadding = PaddingValues(horizontal = 12.dp),
+      modifier = Modifier.weight(1f).semantics { contentDescription = dateJumpDescription },
+    ) {
+      Text(text = selectedDateText, style = MaterialTheme.typography.titleMedium, softWrap = false)
+    }
+    IconButton(onClick = onNextDay, enabled = !uiState.isToday) {
+      Icon(
+        painter = painterResource(R.drawable.ic_chevron_right),
+        contentDescription = stringResource(R.string.journal_history_next_day),
+      )
+    }
+  }
+}
+
+@Composable
+private fun JournalHistoryAnalysisActions(
+  selectedDate: LocalDate,
+  isToday: Boolean,
+  todayText: String,
+  availability: ManualAnalysisAvailability,
+  latestResultId: Long?,
+  onToday: () -> Unit,
+  onAnalyze: (LocalDate) -> Unit,
+  onViewAnalysisResult: (Long) -> Unit,
+) {
+  var isMenuExpanded by remember(selectedDate) { mutableStateOf(false) }
+  val unavailableReason = availability.unavailableReasonResource()
+  Row(verticalAlignment = Alignment.CenterVertically) {
+    TextButton(onClick = onToday, enabled = !isToday, contentPadding = PaddingValues(horizontal = 12.dp)) {
+      Text(todayText)
+    }
+    Box {
+      IconButton(onClick = { isMenuExpanded = true }) {
+        Icon(
+          painter = painterResource(R.drawable.ic_more_vert),
+          contentDescription = stringResource(R.string.journal_history_analysis_menu),
+        )
+      }
+      DropdownMenu(expanded = isMenuExpanded, onDismissRequest = { isMenuExpanded = false }) {
+        DropdownMenuItem(
+          enabled = availability.isAvailable,
+          text = {
+            Column {
+              Text(stringResource(R.string.journal_history_analysis_run))
+              if (unavailableReason != null) {
+                Text(stringResource(unavailableReason), style = MaterialTheme.typography.bodySmall)
               }
-              DropdownMenu(
-                expanded = isAnalysisMenuExpanded,
-                onDismissRequest = { isAnalysisMenuExpanded = false },
-              ) {
-                DropdownMenuItem(
-                  enabled = manualAnalysisUnavailableReason == null,
-                  text = {
-                    Column {
-                      Text(stringResource(R.string.journal_history_analysis_run))
-                      if (manualAnalysisUnavailableReason != null) {
-                        Text(
-                          text = stringResource(manualAnalysisUnavailableReason),
-                          style = MaterialTheme.typography.bodySmall,
-                        )
-                      }
-                    }
-                  },
-                  onClick = {
-                    isAnalysisMenuExpanded = false
-                    onAnalyze(uiState.selectedDate)
-                  },
-                )
-                DropdownMenuItem(
-                  enabled = latestAnalysisResultId != null,
-                  text = { Text(stringResource(R.string.journal_history_analysis_view_result)) },
-                  onClick = {
-                    isAnalysisMenuExpanded = false
-                    latestAnalysisResultId?.let(onViewAnalysisResult)
-                  },
-                )
-              }
             }
-          }
-        }
+          },
+          onClick = {
+            isMenuExpanded = false
+            onAnalyze(selectedDate)
+          },
+        )
+        DropdownMenuItem(
+          enabled = latestResultId != null,
+          text = { Text(stringResource(R.string.journal_history_analysis_view_result)) },
+          onClick = {
+            isMenuExpanded = false
+            latestResultId?.let(onViewAnalysisResult)
+          },
+        )
       }
     }
   }

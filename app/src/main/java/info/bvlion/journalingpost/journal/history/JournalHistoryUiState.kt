@@ -1,5 +1,6 @@
 package info.bvlion.journalingpost.journal.history
 
+import info.bvlion.journalingpost.time.CalendarDate
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -15,7 +16,7 @@ sealed interface JournalHistoryUiState {
    * 表示日以外の記録もその場で引ける必要がある。
    *
    * [earliestDate]は移動できる過去方向の下限で、現在存在するJournalEntryのうち最古の日。
-   * 記録が1件も無い場合は[today]と同じ値になる(その場合、移動できる日は今日だけ)。
+   * 記録が無い場合や時刻設定で全記録が未来になった場合は[today]と同じ値になる。
    */
   data class Content(
     val selectedDate: LocalDate,
@@ -23,7 +24,10 @@ sealed interface JournalHistoryUiState {
     val earliestDate: LocalDate,
     val itemsByDate: Map<LocalDate, List<JournalHistoryItem>>,
     val zoneId: ZoneId = ZoneId.systemDefault(),
+    val latestAnalysisResultIdsByDay: Map<LocalDate, Long> = emptyMap(),
   ) : JournalHistoryUiState {
+    val calendarDate: CalendarDate get() = CalendarDate(today, zoneId)
+
     /** 未来日は表示しないため、「今日を表示中か」と「翌日へ進めないか」は同じ条件になる。 */
     val isToday: Boolean get() = selectedDate == today
 
