@@ -345,7 +345,7 @@ class ManualAnalysisViewModelTest {
   }
 
   @Test
-  fun `対象期間にentryが無ければ送信せずNO_ENTRIESのFailedになる`() = runTest(testDispatcher) {
+  fun `対象期間に記録がなければ送信せず開始条件を満たさない結果になる`() = runTest(testDispatcher) {
     val analyzer = FakePeriodAnalyzer { success() }
     val viewModel = createViewModel(analyzer = analyzer, entryReader = FakePeriodJournalEntryReader(emptyList()))
     val results = collectRunResults(viewModel)
@@ -355,20 +355,20 @@ class ManualAnalysisViewModelTest {
 
     assertEquals(0, analyzer.callCount)
     assertEquals(
-      listOf(AnalysisRunResult.Failed(PeriodAnalysisOutcome.Failure.NO_ENTRIES, LocalDate.of(2026, 8, 30))),
+      listOf(AnalysisRunResult.Rejected(ManualAnalysisAvailability.NO_ENTRIES, LocalDate.of(2026, 8, 30))),
       results,
     )
   }
 
   @Test
-  fun `NO_ENTRIESのFailedは解析対象に選んだ日を保持する`() = runTest(testDispatcher) {
+  fun `記録なしの開始不可結果は従来の通知に使う対象日を保持する`() = runTest(testDispatcher) {
     val viewModel = createViewModel(entryReader = FakePeriodJournalEntryReader(emptyList()))
     val results = collectRunResults(viewModel)
 
     viewModel.analyze(LocalDate.of(2026, 8, 30))
     testDispatcher.scheduler.advanceUntilIdle()
 
-    assertEquals(LocalDate.of(2026, 8, 30), (results.single() as AnalysisRunResult.Failed).day)
+    assertEquals(LocalDate.of(2026, 8, 30), (results.single() as AnalysisRunResult.Rejected).day)
   }
 
   @Test
@@ -781,13 +781,22 @@ class ManualAnalysisViewModelTest {
     assertEquals(ManualAnalysisEligibility.Checking, viewModel.eligibility.value)
     viewModel.analyze(LocalDate.of(2026, 8, 30))
     testDispatcher.scheduler.runCurrent()
-    assertEquals(AnalysisRunResult.Rejected(ManualAnalysisAvailability.ALREADY_COMPLETED), viewModel.state.value.notifications.single().result)
+    assertEquals(
+      AnalysisRunResult.Rejected(ManualAnalysisAvailability.ALREADY_COMPLETED, LocalDate.of(2026, 8, 30)),
+      viewModel.state.value.notifications.single().result,
+    )
     viewModel.analyze(LocalDate.of(2026, 8, 31))
     testDispatcher.scheduler.runCurrent()
-    assertEquals(AnalysisRunResult.Rejected(ManualAnalysisAvailability.OUTSIDE_PERIOD), viewModel.state.value.notifications.last().result)
+    assertEquals(
+      AnalysisRunResult.Rejected(ManualAnalysisAvailability.OUTSIDE_PERIOD, LocalDate.of(2026, 8, 31)),
+      viewModel.state.value.notifications.last().result,
+    )
     viewModel.analyze(LocalDate.of(2026, 8, 24))
     testDispatcher.scheduler.runCurrent()
-    assertEquals(AnalysisRunResult.Rejected(ManualAnalysisAvailability.OUTSIDE_PERIOD), viewModel.state.value.notifications.last().result)
+    assertEquals(
+      AnalysisRunResult.Rejected(ManualAnalysisAvailability.OUTSIDE_PERIOD, LocalDate.of(2026, 8, 24)),
+      viewModel.state.value.notifications.last().result,
+    )
     assertEquals(0, analyzer.callCount)
   }
 
@@ -809,7 +818,10 @@ class ManualAnalysisViewModelTest {
     assertTrue(viewModel.state.value.notifications.isEmpty())
     viewModel.analyze(LocalDate.of(2026, 8, 24), dates.state.value)
     testDispatcher.scheduler.runCurrent()
-    assertEquals(AnalysisRunResult.Rejected(ManualAnalysisAvailability.OUTSIDE_PERIOD), viewModel.state.value.notifications.single().result)
+    assertEquals(
+      AnalysisRunResult.Rejected(ManualAnalysisAvailability.OUTSIDE_PERIOD, LocalDate.of(2026, 8, 24)),
+      viewModel.state.value.notifications.single().result,
+    )
     assertEquals(0, analyzer.callCount)
   }
 

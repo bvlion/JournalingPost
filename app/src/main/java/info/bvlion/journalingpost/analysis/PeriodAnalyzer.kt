@@ -47,7 +47,7 @@ sealed interface PeriodAnalysisOutcome {
     /** 対象期間にJournalEntryが1件も無い。HTTP requestは送らない。 */
     NO_ENTRIES,
 
-    /** 端末内のJournalEntry取得に失敗した。 */
+    /** 記録・解析設定・成功済み状態など、実行に必要な端末内の情報を読み取れなかった。 */
     LOCAL_READ,
 
     /** 送信・受信でネットワークエラーが発生した。 */

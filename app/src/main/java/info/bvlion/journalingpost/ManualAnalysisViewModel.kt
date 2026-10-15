@@ -63,16 +63,19 @@ internal class ManualAnalysisViewModel(
     })
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ManualAnalysisEligibility.Checking)
 
-  fun analyze(day: LocalDate, displayedDate: CalendarDate) {
-    if (state.value.isRunning || displayedDate != currentDateProvider.refresh()) return
+  /** 共有の解析中・更新前の表示からの要求は受け付けず、通知も追加しない。 */
+  fun analyze(day: LocalDate, displayedCalendarDate: CalendarDate) {
+    if (state.value.isRunning) return
+    if (displayedCalendarDate != currentDateProvider.refresh()) return
     // 開始後は日時の更新があっても対象期間を変更しない。
-    val periodStart = day.atStartOfDay(displayedDate.zoneId).toInstant()
-    val periodEnd = day.plusDays(1).atStartOfDay(displayedDate.zoneId).toInstant()
+    val periodStart = day.atStartOfDay(displayedCalendarDate.zoneId).toInstant()
+    val periodEnd = day.plusDays(1).atStartOfDay(displayedCalendarDate.zoneId).toInstant()
     _state.update { it.copy(runningDay = day) }
     viewModelScope.launch {
       try {
-        val result = runAnalysis(day, periodStart, periodEnd, displayedDate)
+        val result = checkAndRunAnalysis(day, periodStart, periodEnd, displayedCalendarDate)
         val notification = ManualAnalysisNotification(++nextNotificationId, result)
+        // 開始可否の確認で終了した要求も、失敗した要求も、表示側が消費するまでは結果を残す。
         _state.update { it.copy(runningDay = null, notifications = it.notifications + notification) }
       } finally {
         _state.update { it.copy(runningDay = null) }
@@ -84,7 +87,7 @@ internal class ManualAnalysisViewModel(
     _state.update { it.copy(notifications = it.notifications.filterNot { notification -> notification.id == id }) }
   }
 
-  private suspend fun runAnalysis(
+  private suspend fun checkAndRunAnalysis(
     day: LocalDate,
     periodStart: Instant,
     periodEnd: Instant,
@@ -97,14 +100,17 @@ internal class ManualAnalysisViewModel(
     } catch (e: Exception) {
       return AnalysisRunResult.Failed(PeriodAnalysisOutcome.Failure.LOCAL_READ, day)
     }
-    if (entries.isEmpty()) return AnalysisRunResult.Failed(PeriodAnalysisOutcome.Failure.NO_ENTRIES, day)
+    // 正常に読み取って0件だった場合は開始条件を満たさないだけで、読み取りや解析の失敗ではない。
+    if (entries.isEmpty()) return AnalysisRunResult.Rejected(ManualAnalysisAvailability.NO_ENTRIES, day)
 
+    // 全件購読による表示用判定に依存せず、固定した期間の実データと最新設定で開始条件を確認する。
     val availability = try {
       ManualAnalysisEligibility.Ready(
         calendarDate = calendarDate,
         integration = analysisIntegrationRepository.analysisIntegration.first(),
         recordedDays = setOf(day),
         hostedSuccessfulDays = analysisExecutionRepository().state.first().hostedSuccessfulDays,
+        // 同時実行は受付で抑止済み。受付済みの要求自身を「同日を解析中」として拒否しない。
         runningDay = null,
       ).availabilityFor(day)
     } catch (e: CancellationException) {
@@ -112,7 +118,7 @@ internal class ManualAnalysisViewModel(
     } catch (e: Exception) {
       return AnalysisRunResult.Failed(PeriodAnalysisOutcome.Failure.LOCAL_READ, day)
     }
-    if (!availability.isAvailable) return AnalysisRunResult.Rejected(availability)
+    if (!availability.isAvailable) return AnalysisRunResult.Rejected(availability, day)
 
     // 対象期間・解析日時・本文はいずれも解析先responseの値を保存元にする。保存と、
     // 端末保存確定のretry stateを持つanalyzerへの通知は[PeriodAnalysisRunner]へ閉じている。
@@ -132,7 +138,7 @@ internal class ManualAnalysisViewModel(
         }
         AnalysisRunResult.Failed(outcome.failure, day, supportId)
       }
-      PeriodAnalysisRunner.Outcome.SaveFailed -> AnalysisRunResult.Failed(null, day)
+      PeriodAnalysisRunner.Outcome.SaveFailed -> AnalysisRunResult.Failed(failure = null, day = day)
     }
   }
 }
@@ -146,8 +152,13 @@ internal data class ManualAnalysisState(
 
 internal data class ManualAnalysisNotification(val id: Long, val result: AnalysisRunResult)
 
+/** 受け付けた手動解析要求の結果。送信しなかった要求も含め、Activityの通知が完了するまで保持する。 */
 sealed interface AnalysisRunResult {
-  data class Rejected(val availability: ManualAnalysisAvailability) : AnalysisRunResult
+  /**
+   * 入力の読み取りは成功したが、記録なし・解析先なし・Hostedの制限により解析開始前に終了した。
+   * [day]は記録なしの通知にも対象日を含めるために保持する。解析先への送信・結果保存は行っていない。
+   */
+  data class Rejected(val availability: ManualAnalysisAvailability, val day: LocalDate) : AnalysisRunResult
 
   /**
    * 解析が成功しAnalysisResultを保存した。[savedResultId]は保存した行のid。
@@ -155,9 +166,10 @@ sealed interface AnalysisRunResult {
   data class Succeeded(val savedResultId: Long) : AnalysisRunResult
 
   /**
-   * 失敗した解析実行。[day]は実行対象に選んだ日で、対象日を含むメッセージ(NO_ENTRIES等)を
-   * 失敗理由と同じ結果から組み立てられるように持つ。[failure]がnullなのは、解析自体は成功したが
-   * AnalysisResultの端末保存に失敗した場合。
+   * 読み取りに失敗して開始条件を確認できなかったか、共有の解析処理が失敗を返した場合。
+   * HTTP送信済みを意味しない。[PeriodAnalysisOutcome.Failure]は手動・自動で共有する解析側の契約で、
+   * 送信前の拒否理由も含むため、その結果はここへ引き継ぐ。
+   * [failure]がnullの場合だけは、解析後の端末保存に失敗しており、保存失敗の通知に使う。
    */
   data class Failed(
     val failure: PeriodAnalysisOutcome.Failure?,

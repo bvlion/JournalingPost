@@ -80,6 +80,7 @@ private val historyTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.J
  * 下部NavigationBarが現在地(記録履歴)を示すため画面名の固定タイトルは持たない。ただし日付
  * ナビゲーションは画面タイトルではなく操作UIなので、status bar直下へ固定して常に見えるようにし、
  * 履歴コンテンツはその背後を通過してスクロールする。
+ * [latestAnalysisResultId]は結果がない日にはnullを渡し、手動解析の可否とは独立に結果閲覧を無効にする。
  */
 @Composable
 fun JournalHistoryScreen(
@@ -92,10 +93,10 @@ fun JournalHistoryScreen(
   onNextDay: () -> Unit,
   onToday: () -> Unit,
   onSelectDate: (LocalDate) -> Unit,
-  manualAnalysisAvailability: ManualAnalysisAvailability = ManualAnalysisAvailability.CHECKING,
-  latestAnalysisResultId: Long? = null,
-  onAnalyze: (LocalDate) -> Unit = {},
-  onViewAnalysisResult: (Long) -> Unit = {},
+  manualAnalysisAvailability: ManualAnalysisAvailability,
+  latestAnalysisResultId: Long?,
+  onAnalyze: (LocalDate) -> Unit,
+  onViewAnalysisResult: (Long) -> Unit,
 ) {
   // 削除確認中のentryは、回転しても対象を見失わないようidだけを保持する。
   var pendingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -576,6 +577,10 @@ fun JournalHistoryScreenPreview() {
       onNextDay = {},
       onToday = {},
       onSelectDate = {},
+      manualAnalysisAvailability = ManualAnalysisAvailability.AVAILABLE,
+      latestAnalysisResultId = null,
+      onAnalyze = {},
+      onViewAnalysisResult = {},
     )
   }
 }

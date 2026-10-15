@@ -62,8 +62,7 @@ import info.bvlion.journalingpost.analysis.AnalysisHistoryUiState
 import info.bvlion.journalingpost.analysis.ManualAnalysisAvailability
 import info.bvlion.journalingpost.analysis.ManualAnalysisEligibility
 import info.bvlion.journalingpost.analysis.PeriodAnalysisOutcome
-import info.bvlion.journalingpost.analysis.failureMessage
-import info.bvlion.journalingpost.analysis.unavailableReasonResource
+import info.bvlion.journalingpost.analysis.analysisRunMessage
 import info.bvlion.journalingpost.di.appViewModelFactory
 import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.history.JournalHistoryScreen
@@ -185,7 +184,6 @@ class MainActivity : ComponentActivity() {
         }
 
         val resources = LocalResources.current
-        val completedMessage = stringResource(R.string.analysis_completed)
         val contactActionLabel = stringResource(R.string.analysis_failure_contact_action)
         // 表示完了前にActivityが停止・再生成された場合は、未通知結果をViewModelへ残す。
         LaunchedEffect(manualAnalysisViewModel, lifecycleOwner, snackbarHostState, resources) {
@@ -196,15 +194,8 @@ class MainActivity : ComponentActivity() {
                 val result = notification.result
                 val hasContactAction = result is AnalysisRunResult.Failed &&
                   result.failure == PeriodAnalysisOutcome.Failure.RATE_LIMITED && result.supportId != null
-                val message = when (result) {
-                  is AnalysisRunResult.Succeeded -> completedMessage
-                  is AnalysisRunResult.Failed -> resources.failureMessage(result)
-                  is AnalysisRunResult.Rejected -> resources.getString(
-                    requireNotNull(result.availability.unavailableReasonResource()),
-                  )
-                }
                 val snackbarResult = snackbarHostState.showSnackbar(
-                  message = message,
+                  message = resources.analysisRunMessage(result),
                   actionLabel = contactActionLabel.takeIf { hasContactAction },
                   withDismissAction = hasContactAction,
                   duration = if (hasContactAction) SnackbarDuration.Indefinite else SnackbarDuration.Short,
