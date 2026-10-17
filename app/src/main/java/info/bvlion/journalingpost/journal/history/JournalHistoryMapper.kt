@@ -30,5 +30,6 @@ private fun JournalEntry.toHistoryItem(
     moodLabel = moodLabel,
     note = note,
     isUsedInAnalysis = id in usedEntryIds,
+    supplement = supplement,
   )
 }

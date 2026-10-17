@@ -68,6 +68,7 @@ class DataStoreAutoAnalysisAttemptStoreTest {
           moodLabel = "穏やか",
           note = "記録",
           source = JournalSource.WIDGET,
+          supplement = "後から思い出した背景",
         ),
       ),
     )

@@ -80,6 +80,7 @@ internal class DataStoreAutoAnalysisAttemptStore(
             moodLabel = entry.moodLabel,
             note = entry.note,
             source = JournalSource.valueOf(entry.source),
+            supplement = entry.supplement,
           )
         },
       )
@@ -104,6 +105,7 @@ internal class DataStoreAutoAnalysisAttemptStore(
           moodLabel = entry.moodLabel,
           note = entry.note,
           source = entry.source.name,
+          supplement = entry.supplement,
         )
       },
     )
@@ -131,6 +133,7 @@ internal class DataStoreAutoAnalysisAttemptStore(
     val moodLabel: String?,
     val note: String?,
     val source: String,
+    val supplement: String? = null,
   )
 
   private companion object {

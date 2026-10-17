@@ -123,7 +123,7 @@ class JournalHistoryMapperTest {
         moodEmoji = "🥲",
         moodLabel = "廃止済みMoodの表示名",
         note = "本文",
-      ),
+      ).copy(supplement = "後日の補足"),
     )
 
     val item = entries.toHistoryGroups(utc).single().items.single()
@@ -131,6 +131,9 @@ class JournalHistoryMapperTest {
     assertEquals("🥲", item.moodEmoji)
     assertEquals("廃止済みMoodの表示名", item.moodLabel)
     assertEquals("本文", item.note)
+    assertEquals(LocalDate.of(2026, 8, 26), item.date)
+    assertEquals(LocalTime.of(10, 0), item.time)
+    assertEquals("後日の補足", item.supplement)
   }
 
   @Test

@@ -15,6 +15,7 @@ data class JournalHistoryItem(
   val moodLabel: String?,
   val note: String?,
   val isUsedInAnalysis: Boolean = false,
+  val supplement: String? = null,
 )
 
 data class JournalHistoryGroup(
