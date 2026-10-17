@@ -1,7 +1,9 @@
 package info.bvlion.journalingpost.journal.history
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -14,9 +16,12 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -43,11 +48,14 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import info.bvlion.journalingpost.R
+import info.bvlion.journalingpost.analysis.ManualAnalysisAvailability
+import info.bvlion.journalingpost.analysis.unavailableReasonResource
 import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.HistoryEmptyMessage
 import info.bvlion.journalingpost.ui.fixedTopRegionBackgroundColor
@@ -72,6 +80,7 @@ private val historyTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.J
  * 下部NavigationBarが現在地(記録履歴)を示すため画面名の固定タイトルは持たない。ただし日付
  * ナビゲーションは画面タイトルではなく操作UIなので、status bar直下へ固定して常に見えるようにし、
  * 履歴コンテンツはその背後を通過してスクロールする。
+ * [latestAnalysisResultId]は結果がない日にはnullを渡し、手動解析の可否とは独立に結果閲覧を無効にする。
  */
 @Composable
 fun JournalHistoryScreen(
@@ -84,6 +93,10 @@ fun JournalHistoryScreen(
   onNextDay: () -> Unit,
   onToday: () -> Unit,
   onSelectDate: (LocalDate) -> Unit,
+  manualAnalysisAvailability: ManualAnalysisAvailability,
+  latestAnalysisResultId: Long?,
+  onAnalyze: (LocalDate) -> Unit,
+  onViewAnalysisResult: (Long) -> Unit,
 ) {
   // 削除確認中のentryは、回転しても対象を見失わないようidだけを保持する。
   var pendingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -124,6 +137,10 @@ fun JournalHistoryScreen(
             onNextDay = onNextDay,
             onToday = onToday,
             onDateJumpRequest = { showDateJump = true },
+            manualAnalysisAvailability = manualAnalysisAvailability,
+            latestAnalysisResultId = latestAnalysisResultId,
+            onAnalyze = onAnalyze,
+            onViewAnalysisResult = onViewAnalysisResult,
             modifier = Modifier
               .align(Alignment.TopCenter)
               .onGloballyPositioned { dateNavigationHeight = with(density) { it.size.height.toDp() } },
@@ -168,32 +185,79 @@ private fun JournalHistoryDateNavigation(
   onNextDay: () -> Unit,
   onToday: () -> Unit,
   onDateJumpRequest: () -> Unit,
+  manualAnalysisAvailability: ManualAnalysisAvailability,
+  latestAnalysisResultId: Long?,
+  onAnalyze: (LocalDate) -> Unit,
+  onViewAnalysisResult: (Long) -> Unit,
   modifier: Modifier = Modifier,
 ) {
   val selectedDateText = uiState.selectedDate.format(historyDateFormatter)
-  val dateJumpDescription = stringResource(R.string.journal_history_date_jump_description, selectedDateText)
+  val todayText = stringResource(R.string.journal_history_today)
+  val textMeasurer = rememberTextMeasurer()
+  val density = LocalDensity.current
+  val dateTextWidth = with(density) {
+    textMeasurer.measure(selectedDateText, MaterialTheme.typography.titleMedium).size.width.toDp()
+  }
+  val todayTextWidth = with(density) {
+    textMeasurer.measure(todayText, MaterialTheme.typography.labelLarge).size.width.toDp()
+  }
+  val dateControls: @Composable (Modifier) -> Unit = { controlsModifier ->
+    JournalHistoryDateControls(uiState, selectedDateText, onPreviousDay, onNextDay, onDateJumpRequest, controlsModifier)
+  }
+  val analysisActions: @Composable () -> Unit = {
+    JournalHistoryAnalysisActions(
+      uiState.selectedDate, uiState.isToday, todayText, manualAnalysisAvailability,
+      latestAnalysisResultId, onToday, onAnalyze, onViewAnalysisResult,
+    )
+  }
 
-  // 背景はstatus bar領域まで広げ、上端保護と地続きに見せる。中身だけをstatus barの下へ寄せる。
-  Row(
+  // FlowRowの単純な折り返しでは右側操作が下段へ移るため、文字拡大も含めて操作群の行を選ぶ。
+  BoxWithConstraints(
     modifier = modifier
       .fillMaxWidth()
       .background(fixedTopRegionBackgroundColor())
       .statusBarsPadding()
       .padding(horizontal = 4.dp),
-    verticalAlignment = Alignment.CenterVertically,
   ) {
+    val isCompact = maxWidth < dateTextWidth + 24.dp + 96.dp +
+      maxOf(ButtonDefaults.MinWidth, todayTextWidth + 24.dp) + 48.dp
+    if (isCompact) {
+      Column {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { analysisActions() }
+        dateControls(Modifier.fillMaxWidth())
+      }
+    } else {
+      Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        dateControls(Modifier.weight(1f))
+        analysisActions()
+      }
+    }
+  }
+}
+
+@Composable
+private fun JournalHistoryDateControls(
+  uiState: JournalHistoryUiState.Content,
+  selectedDateText: String,
+  onPreviousDay: () -> Unit,
+  onNextDay: () -> Unit,
+  onDateJumpRequest: () -> Unit,
+  modifier: Modifier,
+) {
+  val dateJumpDescription = stringResource(R.string.journal_history_date_jump_description, selectedDateText)
+  Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
     IconButton(onClick = onPreviousDay, enabled = !uiState.isEarliestDate) {
       Icon(
         painter = painterResource(R.drawable.ic_chevron_left),
         contentDescription = stringResource(R.string.journal_history_previous_day),
       )
     }
-    // 表示中の日付そのものを日付指定の入口にして、専用のボタンを増やさない。
     TextButton(
       onClick = onDateJumpRequest,
+      contentPadding = PaddingValues(horizontal = 12.dp),
       modifier = Modifier.weight(1f).semantics { contentDescription = dateJumpDescription },
     ) {
-      Text(text = selectedDateText, style = MaterialTheme.typography.titleMedium)
+      Text(text = selectedDateText, style = MaterialTheme.typography.titleMedium, softWrap = false)
     }
     IconButton(onClick = onNextDay, enabled = !uiState.isToday) {
       Icon(
@@ -201,8 +265,58 @@ private fun JournalHistoryDateNavigation(
         contentDescription = stringResource(R.string.journal_history_next_day),
       )
     }
-    TextButton(onClick = onToday, enabled = !uiState.isToday) {
-      Text(stringResource(R.string.journal_history_today))
+  }
+}
+
+@Composable
+private fun JournalHistoryAnalysisActions(
+  selectedDate: LocalDate,
+  isToday: Boolean,
+  todayText: String,
+  availability: ManualAnalysisAvailability,
+  latestResultId: Long?,
+  onToday: () -> Unit,
+  onAnalyze: (LocalDate) -> Unit,
+  onViewAnalysisResult: (Long) -> Unit,
+) {
+  var isMenuExpanded by remember(selectedDate) { mutableStateOf(false) }
+  val unavailableReason = availability.unavailableReasonResource()
+  Row(verticalAlignment = Alignment.CenterVertically) {
+    TextButton(onClick = onToday, enabled = !isToday, contentPadding = PaddingValues(horizontal = 12.dp)) {
+      Text(todayText)
+    }
+    Box {
+      IconButton(onClick = { isMenuExpanded = true }) {
+        Icon(
+          painter = painterResource(R.drawable.ic_more_vert),
+          contentDescription = stringResource(R.string.journal_history_analysis_menu),
+        )
+      }
+      DropdownMenu(expanded = isMenuExpanded, onDismissRequest = { isMenuExpanded = false }) {
+        DropdownMenuItem(
+          enabled = availability.isAvailable,
+          text = {
+            Column {
+              Text(stringResource(R.string.journal_history_analysis_run))
+              if (unavailableReason != null) {
+                Text(stringResource(unavailableReason), style = MaterialTheme.typography.bodySmall)
+              }
+            }
+          },
+          onClick = {
+            isMenuExpanded = false
+            onAnalyze(selectedDate)
+          },
+        )
+        DropdownMenuItem(
+          enabled = latestResultId != null,
+          text = { Text(stringResource(R.string.journal_history_analysis_view_result)) },
+          onClick = {
+            isMenuExpanded = false
+            latestResultId?.let(onViewAnalysisResult)
+          },
+        )
+      }
     }
   }
 }
@@ -463,6 +577,10 @@ fun JournalHistoryScreenPreview() {
       onNextDay = {},
       onToday = {},
       onSelectDate = {},
+      manualAnalysisAvailability = ManualAnalysisAvailability.AVAILABLE,
+      latestAnalysisResultId = null,
+      onAnalyze = {},
+      onViewAnalysisResult = {},
     )
   }
 }

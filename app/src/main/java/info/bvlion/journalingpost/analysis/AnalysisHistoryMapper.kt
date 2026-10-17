@@ -1,5 +1,6 @@
 package info.bvlion.journalingpost.analysis
 
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 
@@ -18,3 +19,7 @@ private fun AnalysisResult.toAnalysisHistoryItem(zoneId: ZoneId) = AnalysisHisto
   analyzedAt = LocalDateTime.ofInstant(analyzedAt, zoneId),
   body = body,
 )
+
+// 保存済み期間の開始日を対象日とする。要求日への置き換えは行わない。
+internal fun List<AnalysisResult>.latestAnalysisResultIdsByDay(zoneId: ZoneId): Map<LocalDate, Long> =
+  toAnalysisHistoryItems(zoneId).asReversed().associate { it.periodStart.toLocalDate() to it.id }

@@ -10,7 +10,7 @@ import kotlinx.coroutines.CancellationException
  * 対象期間のJournalEntryを解析先へ送り、成功時のみresponseの値で[AnalysisResult]を保存する。
  * 同時に、実際に送信したJournalEntryのIDとHostedで成功した対象日を[AnalysisExecutionRepository]へ保存し、
  * 端末保存の確定をretry stateを持つanalyzer(現状Hosted)へ[AnalysisResultPersistenceListener]で
- * 通知するまでの共通処理。手動解析([info.bvlion.journalingpost.AnalysisHistoryViewModel])と
+ * 通知するまでの共通処理。手動解析([info.bvlion.journalingpost.ManualAnalysisViewModel])と
  * 自動解析([AutoAnalyzer])で同じ保存・通知経路を共有し、Idempotency-Keyの解放漏れを防ぐ。
  *
  * 対象期間のJournalEntry取得と、対象期間が空だった場合の扱いは呼び出し側の責務とする。

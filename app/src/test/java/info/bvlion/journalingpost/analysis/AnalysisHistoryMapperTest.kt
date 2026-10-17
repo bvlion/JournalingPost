@@ -1,6 +1,7 @@
 package info.bvlion.journalingpost.analysis
 
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
@@ -91,6 +92,24 @@ class AnalysisHistoryMapperTest {
     assertEquals(LocalDateTime.of(2026, 8, 26, 0, 0), item.periodStart)
     assertEquals(LocalDateTime.of(2026, 8, 27, 0, 0), item.periodEnd)
     assertEquals(LocalDateTime.of(2026, 8, 27, 7, 30), item.analyzedAt)
+  }
+
+  @Test
+  fun `日別の直接閲覧は端末日付ごとに最新の結果を選び同じ解析日時ならID降順で決まる`() {
+    val tied = Instant.parse("2026-08-28T07:00:00Z")
+    val results = listOf(
+      result(id = 1, analyzedAt = tied, periodStart = Instant.parse("2026-08-25T15:00:00Z")),
+      result(id = 2, analyzedAt = tied, periodStart = Instant.parse("2026-08-25T15:00:00Z")),
+      result(id = 3, analyzedAt = tied.minusSeconds(60), periodStart = Instant.parse("2026-08-26T15:00:00Z")),
+      result(id = 4, analyzedAt = tied.minusSeconds(60), periodStart = Instant.parse("2026-08-25T15:00:00Z")),
+    )
+    val items = results.toAnalysisHistoryItems(ZoneOffset.ofHours(9))
+    val latestResults = results.latestAnalysisResultIdsByDay(ZoneOffset.ofHours(9))
+
+    assertEquals(2L, latestResults.getValue(LocalDate.of(2026, 8, 26)))
+    assertEquals(3L, latestResults.getValue(LocalDate.of(2026, 8, 27)))
+    assertEquals(null, latestResults[LocalDate.of(2026, 8, 28)])
+    assertEquals(4, items.size)
   }
 
   @Test

@@ -1,6 +1,5 @@
 package info.bvlion.journalingpost
 
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -29,13 +28,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -50,16 +48,25 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import info.bvlion.journalingpost.analysis.AnalysisHistoryScreen
 import info.bvlion.journalingpost.analysis.AnalysisHistoryUiState
+import info.bvlion.journalingpost.analysis.ManualAnalysisAvailability
+import info.bvlion.journalingpost.analysis.ManualAnalysisEligibility
+import info.bvlion.journalingpost.analysis.PeriodAnalysisOutcome
+import info.bvlion.journalingpost.analysis.analysisRunMessage
 import info.bvlion.journalingpost.di.appViewModelFactory
 import info.bvlion.journalingpost.journal.JournalSource
 import info.bvlion.journalingpost.journal.history.JournalHistoryScreen
+import info.bvlion.journalingpost.journal.history.JournalHistoryUiState
 import info.bvlion.journalingpost.mood.MoodRecordOverlay
 import info.bvlion.journalingpost.mood.MoodRecordScreen
 import info.bvlion.journalingpost.mood.MoodSettingsScreen
@@ -76,9 +83,10 @@ import info.bvlion.journalingpost.settings.openStoreListingForReview
 import info.bvlion.journalingpost.ui.EventEffect
 import info.bvlion.journalingpost.ui.theme.JournalingPostTheme
 import info.bvlion.journalingpost.widget.registerMoodWidgetPreviewOnce
-import java.time.LocalDate
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
@@ -86,6 +94,8 @@ class MainActivity : ComponentActivity() {
   private val journalRecordViewModel: JournalRecordViewModel by viewModels { appViewModelFactory }
   private val historyViewModel: JournalHistoryViewModel by viewModels { appViewModelFactory }
   private val analysisHistoryViewModel: AnalysisHistoryViewModel by viewModels { appViewModelFactory }
+  private val manualAnalysisViewModel: ManualAnalysisViewModel by viewModels { appViewModelFactory }
+  private var calendarObservation: AutoCloseable? = null
   private val settingsViewModel: SettingsViewModel by viewModels { appViewModelFactory }
   private val autoAnalysisSettingsViewModel: AutoAnalysisSettingsViewModel by viewModels { appViewModelFactory }
   private val moodViewModel: MoodViewModel by viewModels { appViewModelFactory }
@@ -94,6 +104,18 @@ class MainActivity : ComponentActivity() {
   private val moodSettingsViewModel: MoodSettingsViewModel by viewModels { appViewModelFactory }
   private val webhookSettingsViewModel: WebhookSettingsViewModel by viewModels { appViewModelFactory }
   private val onboardingViewModel: OnboardingViewModel by viewModels { appViewModelFactory }
+
+  override fun onStart() {
+    super.onStart()
+    calendarObservation = (application as JournalingPostApplication).container.currentDateProvider
+      .observeChanges(applicationContext)
+  }
+
+  override fun onStop() {
+    calendarObservation?.close()
+    calendarObservation = null
+    super.onStop()
+  }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -148,6 +170,7 @@ class MainActivity : ComponentActivity() {
         val scope = rememberCoroutineScope()
         val context = LocalContext.current
         val density = LocalDensity.current
+        val lifecycleOwner = LocalLifecycleOwner.current
         // 下部ナビはScaffoldの外にあるSnackbarHostへpaddingを渡せないため、実測した高さ(システムの
         // navigation bar inset込み)ぶんSnackbarを持ち上げる。Material3のNavigationBar高さ定数は
         // 非公開なので値を複製しない。
@@ -159,6 +182,36 @@ class MainActivity : ComponentActivity() {
             snackbarHostState.showSnackbar(message)
           }
         }
+
+        val resources = LocalResources.current
+        val contactActionLabel = stringResource(R.string.analysis_failure_contact_action)
+        // 表示完了前にActivityが停止・再生成された場合は、未通知結果をViewModelへ残す。
+        LaunchedEffect(manualAnalysisViewModel, lifecycleOwner, snackbarHostState, resources) {
+          lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            manualAnalysisViewModel.state.map { it.notifications.firstOrNull() }
+              .distinctUntilChanged().filterNotNull().collect { notification ->
+                snackbarHostState.currentSnackbarData?.dismiss()
+                val result = notification.result
+                val hasContactAction = result is AnalysisRunResult.Failed &&
+                  result.failure == PeriodAnalysisOutcome.Failure.RATE_LIMITED && result.supportId != null
+                val snackbarResult = snackbarHostState.showSnackbar(
+                  message = resources.analysisRunMessage(result),
+                  actionLabel = contactActionLabel.takeIf { hasContactAction },
+                  withDismissAction = hasContactAction,
+                  duration = if (hasContactAction) SnackbarDuration.Indefinite else SnackbarDuration.Short,
+                )
+                manualAnalysisViewModel.notificationShown(notification.id)
+                if (snackbarResult == SnackbarResult.ActionPerformed && result is AnalysisRunResult.Failed) {
+                  result.supportId?.let { openFeedbackForm(context, it, result.day) }
+                }
+              }
+          }
+        }
+
+        val analysisDeleteSucceededMessage = stringResource(R.string.analysis_delete_succeeded)
+        val analysisDeleteFailedMessage = stringResource(R.string.analysis_delete_failed)
+        EventEffect(analysisHistoryViewModel.deleteSuccesses) { showMessage(analysisDeleteSucceededMessage) }
+        EventEffect(analysisHistoryViewModel.deleteFailures) { showMessage(analysisDeleteFailedMessage) }
 
         // 記録処理中〜完了直後はダイアログの操作もタブ切り替えも受け付けない。JournalRecordViewModelは
         // INITへ戻さないため、SUCCESSもlock対象に含める。
@@ -398,69 +451,73 @@ class MainActivity : ComponentActivity() {
                       )
                     }
 
-                    MainDestination.JOURNAL_HISTORY -> {
-                      val historyUiState by historyViewModel.uiState.collectAsStateWithLifecycle()
-                      JournalHistoryScreen(
-                        uiState = historyUiState,
-                        deleteSuccesses = historyViewModel.deleteSuccesses,
-                        deleteFailures = historyViewModel.deleteFailures,
-                        onShowMessage = showMessage,
-                        onDelete = historyViewModel::deleteEntry,
-                        onPreviousDay = historyViewModel::showPreviousDay,
-                        onNextDay = historyViewModel::showNextDay,
-                        onToday = historyViewModel::showToday,
-                        onSelectDate = historyViewModel::selectDate,
-                      )
-                    }
-
-                    MainDestination.ANALYSIS_HISTORY -> {
-                      val analysisHistoryUiState by analysisHistoryViewModel.uiState.collectAsStateWithLifecycle()
-                      val canRunAnalysis by analysisHistoryViewModel.canRunAnalysis.collectAsStateWithLifecycle()
-                      val isAnalysisRunning by analysisHistoryViewModel.isAnalysisRunning.collectAsStateWithLifecycle()
-                      val selectableDays by analysisHistoryViewModel.selectableDays.collectAsStateWithLifecycle()
-                      val contactActionLabel = stringResource(R.string.analysis_failure_contact_action)
-                      val selectedAnalysisItem = if (
-                        currentSubscreenDestination == SubscreenDestination.ANALYSIS_RESULT_DETAIL
+                    MainDestination.JOURNAL_HISTORY, MainDestination.ANALYSIS_HISTORY -> {
+                      if (
+                        destination == MainDestination.JOURNAL_HISTORY &&
+                        currentSubscreenDestination != SubscreenDestination.ANALYSIS_RESULT_DETAIL
                       ) {
-                        (analysisHistoryUiState as? AnalysisHistoryUiState.Content)
-                          ?.items
-                          ?.firstOrNull { it.id == selectedAnalysisResultId }
+                        val historyUiState by historyViewModel.uiState.collectAsStateWithLifecycle()
+                        val eligibility by manualAnalysisViewModel.eligibility.collectAsStateWithLifecycle()
+                        val historyContent = historyUiState as? JournalHistoryUiState.Content
+                        val ready = (eligibility as? ManualAnalysisEligibility.Ready)
+                          ?.takeIf { it.calendarDate == historyContent?.calendarDate }
+                        val availability = historyContent?.let { ready?.availabilityFor(it.selectedDate) }
+                          ?: ManualAnalysisAvailability.CHECKING
+                        JournalHistoryScreen(
+                          uiState = historyUiState,
+                          deleteSuccesses = historyViewModel.deleteSuccesses,
+                          deleteFailures = historyViewModel.deleteFailures,
+                          onShowMessage = showMessage,
+                          onDelete = historyViewModel::deleteEntry,
+                          onPreviousDay = historyViewModel::showPreviousDay,
+                          onNextDay = historyViewModel::showNextDay,
+                          onToday = historyViewModel::showToday,
+                          onSelectDate = historyViewModel::selectDate,
+                          manualAnalysisAvailability = availability,
+                          latestAnalysisResultId = historyContent?.let { it.latestAnalysisResultIdsByDay[it.selectedDate] },
+                          onAnalyze = { day ->
+                            historyContent?.let { manualAnalysisViewModel.analyze(day, it.calendarDate) }
+                          },
+                          onViewAnalysisResult = {
+                            selectedAnalysisResultId = it
+                            subscreenDestination = SubscreenDestination.ANALYSIS_RESULT_DETAIL
+                          },
+                        )
                       } else {
-                        null
+                        val analysisHistoryUiState by analysisHistoryViewModel.uiState.collectAsStateWithLifecycle()
+                        val eligibility = if (currentSubscreenDestination == SubscreenDestination.ANALYSIS_RESULT_DETAIL) {
+                          ManualAnalysisEligibility.Checking
+                        } else {
+                          val state by manualAnalysisViewModel.eligibility.collectAsStateWithLifecycle()
+                          state
+                        }
+                        val executionState by manualAnalysisViewModel.state.collectAsStateWithLifecycle()
+                        val ready = eligibility as? ManualAnalysisEligibility.Ready
+                        val selectedAnalysisItem = if (
+                          currentSubscreenDestination == SubscreenDestination.ANALYSIS_RESULT_DETAIL
+                        ) {
+                          (analysisHistoryUiState as? AnalysisHistoryUiState.Content)
+                            ?.items
+                            ?.firstOrNull { it.id == selectedAnalysisResultId }
+                        } else {
+                          null
+                        }
+                        AnalysisHistoryScreen(
+                          uiState = analysisHistoryUiState,
+                          selectedItem = selectedAnalysisItem,
+                          listState = analysisHistoryListState,
+                          canRunAnalysis = ready?.hasAvailableIntegration == true,
+                          isRunning = executionState.isRunning,
+                          selectableDays = ready?.selectableDays.orEmpty(),
+                          onAnalyze = { day -> ready?.let { manualAnalysisViewModel.analyze(day, it.calendarDate) } },
+                          onDelete = analysisHistoryViewModel::deleteResult,
+                          onResultClick = {
+                            selectedAnalysisResultId = it.id
+                            subscreenDestination = SubscreenDestination.ANALYSIS_RESULT_DETAIL
+                          },
+                          onBack = { subscreenDestination = null },
+                        )
                       }
-                      AnalysisHistoryScreen(
-                        uiState = analysisHistoryUiState,
-                        selectedItem = selectedAnalysisItem,
-                        listState = analysisHistoryListState,
-                        canRunAnalysis = canRunAnalysis,
-                        isRunning = isAnalysisRunning,
-                        selectableDays = selectableDays,
-                        runResults = analysisHistoryViewModel.runResults,
-                        deleteSuccesses = analysisHistoryViewModel.deleteSuccesses,
-                        deleteFailures = analysisHistoryViewModel.deleteFailures,
-                        onShowMessage = showMessage,
-                        onShowContactMessage = { message, supportId, analysisDate ->
-                          scope.launch {
-                            snackbarHostState.currentSnackbarData?.dismiss()
-                            if (snackbarHostState.showSnackbar(
-                                message = message,
-                                actionLabel = contactActionLabel,
-                                withDismissAction = true,
-                                duration = SnackbarDuration.Indefinite,
-                              ) == SnackbarResult.ActionPerformed
-                            ) {
-                              openFeedbackForm(context, supportId, analysisDate)
-                            }
-                          }
-                        },
-                        onAnalyze = analysisHistoryViewModel::analyze,
-                        onDelete = analysisHistoryViewModel::deleteResult,
-                        onResultClick = {
-                          selectedAnalysisResultId = it.id
-                          subscreenDestination = SubscreenDestination.ANALYSIS_RESULT_DETAIL
-                        },
-                        onBack = { subscreenDestination = null },
-                      )
                     }
 
                     MainDestination.SETTINGS -> {
@@ -635,7 +692,7 @@ private enum class SubscreenDestination {
   MOOD_SETTINGS,
 }
 
-private enum class MainDestination(
+internal enum class MainDestination(
   @param:StringRes val labelRes: Int,
   val icon: Int,
 ) {

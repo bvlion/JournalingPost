@@ -2,6 +2,7 @@ package info.bvlion.journalingpost.analysis
 
 import androidx.compose.material3.ExperimentalMaterial3Api
 import info.bvlion.journalingpost.settings.AnalysisIntegration
+import info.bvlion.journalingpost.time.CalendarDate
 import java.time.LocalDate
 import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
@@ -58,12 +59,13 @@ class ManualAnalysisDateSelectionTest {
   fun `Custom Webhookは記録のある日をすべて選べる`() {
     assertEquals(
       recordedDays,
-      manualAnalysisSelectableDays(
+      ManualAnalysisEligibility.Ready(
         integration = AnalysisIntegration.CUSTOM_WEBHOOK,
         recordedDays = recordedDays,
-        analyzedDays = setOf(LocalDate.of(2026, 2, 10)),
-        today = today,
-      ),
+        hostedSuccessfulDays = setOf(LocalDate.of(2026, 2, 10)),
+        calendarDate = CalendarDate(today, ZoneOffset.UTC),
+        runningDay = null,
+      ).selectableDays,
     )
   }
 
@@ -71,24 +73,26 @@ class ManualAnalysisDateSelectionTest {
   fun `Hostedは昨日から6日前までの未解析の記録日だけ選べる`() {
     assertEquals(
       setOf(LocalDate.of(2026, 2, 6), LocalDate.of(2026, 2, 9), LocalDate.of(2026, 2, 11)),
-      manualAnalysisSelectableDays(
+      ManualAnalysisEligibility.Ready(
         integration = AnalysisIntegration.HOSTED,
         recordedDays = recordedDays,
-        analyzedDays = setOf(LocalDate.of(2026, 2, 10)),
-        today = today,
-      ),
+        hostedSuccessfulDays = setOf(LocalDate.of(2026, 2, 10)),
+        calendarDate = CalendarDate(today, ZoneOffset.UTC),
+        runningDay = null,
+      ).selectableDays,
     )
   }
 
   @Test
   fun `Hostedで前日以前の記録がすべて解析済みなら選べる日は無い`() {
     assertTrue(
-      manualAnalysisSelectableDays(
+      ManualAnalysisEligibility.Ready(
         integration = AnalysisIntegration.HOSTED,
         recordedDays = setOf(LocalDate.of(2026, 2, 11), today),
-        analyzedDays = setOf(LocalDate.of(2026, 2, 11)),
-        today = today,
-      ).isEmpty(),
+        hostedSuccessfulDays = setOf(LocalDate.of(2026, 2, 11)),
+        calendarDate = CalendarDate(today, ZoneOffset.UTC),
+        runningDay = null,
+      ).selectableDays.isEmpty(),
     )
   }
 }

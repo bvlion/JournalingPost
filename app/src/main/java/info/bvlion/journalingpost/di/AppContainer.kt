@@ -24,6 +24,8 @@ import info.bvlion.journalingpost.analysis.PeriodAnalysisRunner
 import info.bvlion.journalingpost.analysis.PeriodAnalyzer
 import info.bvlion.journalingpost.analysis.WebhookPeriodAnalyzer
 import info.bvlion.journalingpost.analysis.db.RoomAnalysisResultRepository
+import info.bvlion.journalingpost.debug.DebugFixtureSeeder
+import info.bvlion.journalingpost.debug.DebugFixtureStateStore
 import info.bvlion.journalingpost.hosted.DataStoreHostedConsentRepository
 import info.bvlion.journalingpost.hosted.DataStoreHostedCredentialsRepository
 import info.bvlion.journalingpost.hosted.DataStoreHostedIdempotencyKeyStore
@@ -37,8 +39,6 @@ import info.bvlion.journalingpost.journal.JournalEntryReader
 import info.bvlion.journalingpost.journal.JournalRecorder
 import info.bvlion.journalingpost.journal.LocalOnlyJournalRecorder
 import info.bvlion.journalingpost.journal.PeriodJournalEntryReader
-import info.bvlion.journalingpost.debug.DebugFixtureSeeder
-import info.bvlion.journalingpost.debug.DebugFixtureStateStore
 import info.bvlion.journalingpost.journal.db.JournalDatabase
 import info.bvlion.journalingpost.journal.db.RoomJournalEntryRepository
 import info.bvlion.journalingpost.mood.DataStoreMoodRepository
@@ -60,6 +60,7 @@ import info.bvlion.journalingpost.settings.DataStoreNoteOnlyEntryRepository
 import info.bvlion.journalingpost.settings.MoodNoteInputRepository
 import info.bvlion.journalingpost.settings.NoteOnlyEntryRepository
 import info.bvlion.journalingpost.settings.WebhookAwareAnalysisIntegrationRepository
+import info.bvlion.journalingpost.time.CurrentDateProvider
 import info.bvlion.journalingpost.webhook.AndroidKeystoreWebhookSettingsCipher
 import info.bvlion.journalingpost.webhook.DataStoreWebhookSettingsRepository
 import info.bvlion.journalingpost.webhook.WebhookSettingsRepository
@@ -87,6 +88,8 @@ import kotlinx.coroutines.tasks.await
  */
 internal class AppContainer(context: Context) {
   private val context = context.applicationContext
+
+  val currentDateProvider by lazy { CurrentDateProvider() }
 
   private val database: JournalDatabase by lazy { JournalDatabase.create(this.context) }
 
@@ -232,7 +235,7 @@ internal class AppContainer(context: Context) {
     )
   }
 
-  private val periodAnalysisRunner: PeriodAnalysisRunner by lazy {
+  val periodAnalysisRunner: PeriodAnalysisRunner by lazy {
     PeriodAnalysisRunner(
       periodAnalyzer = periodAnalyzer,
       analysisResultWriter = analysisResultRepository,

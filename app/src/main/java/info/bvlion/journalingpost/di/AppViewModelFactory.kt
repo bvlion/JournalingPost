@@ -8,8 +8,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import info.bvlion.journalingpost.AnalysisHistoryViewModel
 import info.bvlion.journalingpost.AutoAnalysisSettingsViewModel
 import info.bvlion.journalingpost.JournalHistoryViewModel
-import info.bvlion.journalingpost.JournalingPostApplication
 import info.bvlion.journalingpost.JournalRecordViewModel
+import info.bvlion.journalingpost.JournalingPostApplication
+import info.bvlion.journalingpost.ManualAnalysisViewModel
 import info.bvlion.journalingpost.MoodNoteInputViewModel
 import info.bvlion.journalingpost.MoodSettingsViewModel
 import info.bvlion.journalingpost.MoodViewModel
@@ -52,19 +53,26 @@ val appViewModelFactory: ViewModelProvider.Factory = viewModelFactory {
       analysisResultReader = container.analysisResultReader,
       analysisExecutionRepository = container.analysisExecutionRepository,
       deleter = container.journalEntryDeleter,
+      currentDateProvider = container.currentDateProvider,
     )
   }
   initializer {
     AnalysisHistoryViewModel(
-      reader = container.analysisResultReader,
+      reader = { container.analysisResultReader },
+      analysisResultDeleter = { container.analysisResultDeleter },
+      analysisExecutionRepository = { container.analysisExecutionRepository },
+      currentDateProvider = container.currentDateProvider,
+    )
+  }
+  initializer {
+    ManualAnalysisViewModel(
       analysisIntegrationRepository = container.analysisIntegrationRepository,
-      journalEntryReader = container.journalEntryReader,
-      periodJournalEntryReader = container.periodJournalEntryReader,
-      periodAnalyzer = container.periodAnalyzer,
-      analysisResultWriter = container.analysisResultWriter,
-      analysisResultDeleter = container.analysisResultDeleter,
-      analysisExecutionRepository = container.analysisExecutionRepository,
-      hostedCredentialsRepository = container.hostedCredentialsRepository,
+      journalEntryReader = { container.journalEntryReader },
+      periodJournalEntryReader = { container.periodJournalEntryReader },
+      periodAnalysisRunner = { container.periodAnalysisRunner },
+      analysisExecutionRepository = { container.analysisExecutionRepository },
+      hostedCredentialsRepository = { container.hostedCredentialsRepository },
+      currentDateProvider = container.currentDateProvider,
     )
   }
   initializer {

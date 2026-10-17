@@ -4,15 +4,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import info.bvlion.journalingpost.analysis.AnalysisExecutionRepository
 import info.bvlion.journalingpost.analysis.AnalysisResultReader
+import info.bvlion.journalingpost.analysis.latestAnalysisResultIdsByDay
 import info.bvlion.journalingpost.journal.JournalEntryDeleter
 import info.bvlion.journalingpost.journal.JournalEntryReader
 import info.bvlion.journalingpost.journal.history.JournalHistoryGroup
 import info.bvlion.journalingpost.journal.history.JournalHistoryUiState
 import info.bvlion.journalingpost.journal.history.coerceToHistoryRange
 import info.bvlion.journalingpost.journal.history.toHistoryGroups
-import java.time.Instant
+import info.bvlion.journalingpost.time.CalendarDate
+import info.bvlion.journalingpost.time.CurrentDateProvider
 import java.time.LocalDate
-import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -31,44 +32,48 @@ class JournalHistoryViewModel(
   analysisResultReader: AnalysisResultReader,
   analysisExecutionRepository: AnalysisExecutionRepository,
   private val deleter: JournalEntryDeleter,
-  private val zoneId: ZoneId = ZoneId.systemDefault(),
-  private val now: () -> Instant = Instant::now,
+  private val currentDateProvider: CurrentDateProvider,
 ) : ViewModel() {
   // 表示中の日付はViewModelが保持するため、他タブへ移動して戻っても選択日は変わらない。
   // process再生成でViewModelごと作り直されたときだけ今日へ戻る。
-  private val selectedDate = MutableStateFlow(today())
+  private val selectedDate = MutableStateFlow(currentDateProvider.refresh().today)
 
   // 過去方向の下限は現在の記録から算出するため、showPreviousDay等の同期的な操作からも参照できるよう
   // ここへ保持する。記録が1件も無い間は今日を下限として扱う。
-  private var earliestDate: LocalDate = today()
+  private var earliestDate: LocalDate = currentDateProvider.state.value.today
 
   /**
    * 日別表示のためにDAOへ日付条件を足さず、既存の全件Flowをグループ化した結果を日付で引けるようにする。
    * 過去方向の下限([earliestDate])は記録が無い日を除いた実データの最古日で決まるため、記録の増減の
-   * たびに[syncRangeToGroups]で追従させる。
+   * たびと端末timezone変更時に[syncRangeToGroups]で追従させる。
    */
-  val uiState: StateFlow<JournalHistoryUiState> = combine(
-    combine(
-      reader.observeAll(),
-      analysisResultReader.observeAll(),
-      analysisExecutionRepository.state,
-    ) { entries, analysisResults, executionState ->
-      val existingResultIds = analysisResults.mapTo(mutableSetOf()) { it.id }
-      val usedEntryIds = executionState.entryIdsByResultId
-        .filterKeys { it in existingResultIds }
-        .values
-        .flatten()
-        .toSet()
-      entries.toHistoryGroups(zoneId, usedEntryIds)
-    }.onEach(::syncRangeToGroups),
-    selectedDate,
-  ) { groups, selected ->
+  private val historyData = combine(
+    reader.observeAll(),
+    analysisResultReader.observeAll(),
+    analysisExecutionRepository.state,
+    currentDateProvider.state,
+  ) { entries, analysisResults, executionState, calendarDate ->
+    val existingResultIds = analysisResults.mapTo(mutableSetOf()) { it.id }
+    val usedEntryIds = executionState.entryIdsByResultId
+      .filterKeys { it in existingResultIds }
+      .values
+      .flatten()
+      .toSet()
+    HistoryData(
+      calendarDate = calendarDate,
+      groups = entries.toHistoryGroups(calendarDate.zoneId, usedEntryIds),
+      latestAnalysisResultIdsByDay = analysisResults.latestAnalysisResultIdsByDay(calendarDate.zoneId),
+    )
+  }.onEach { syncRangeToGroups(it.groups, it.calendarDate.today) }
+
+  val uiState: StateFlow<JournalHistoryUiState> = combine(historyData, selectedDate) { data, selected ->
     JournalHistoryUiState.Content(
-      selectedDate = selected,
-      // アプリを開いたまま日付が変わることがあるため、「今日」は保持せず算出のたびに求める。
-      today = today(),
+      selectedDate = coerceToHistoryRange(selected, earliestDate, data.calendarDate.today),
+      today = data.calendarDate.today,
       earliestDate = earliestDate,
-      itemsByDate = groups.associate { it.date to it.items },
+      itemsByDate = data.groups.associate { it.date to it.items },
+      zoneId = data.calendarDate.zoneId,
+      latestAnalysisResultIdsByDay = data.latestAnalysisResultIdsByDay,
     )
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), JournalHistoryUiState.Loading)
 
@@ -81,20 +86,20 @@ class JournalHistoryViewModel(
 
   /** 記録の無い日も飛ばさず、最古の記録日を下限にカレンダー日で1日戻す。 */
   fun showPreviousDay() {
-    selectedDate.update { coerceToHistoryRange(it.minusDays(1), earliestDate, today()) }
+    selectedDate.update { coerceToHistoryRange(it.minusDays(1), earliestDate, currentDateProvider.refresh().today) }
   }
 
   fun showNextDay() {
-    selectedDate.update { coerceToHistoryRange(it.plusDays(1), earliestDate, today()) }
+    selectedDate.update { coerceToHistoryRange(it.plusDays(1), earliestDate, currentDateProvider.refresh().today) }
   }
 
   fun showToday() {
-    selectedDate.value = today()
+    selectedDate.value = currentDateProvider.refresh().today
   }
 
   /** スワイプで確定したページからも呼ばれるため、範囲外の日はここで丸める。 */
   fun selectDate(date: LocalDate) {
-    selectedDate.value = coerceToHistoryRange(date, earliestDate, today())
+    selectedDate.value = coerceToHistoryRange(date, earliestDate, currentDateProvider.refresh().today)
   }
 
   /** 削除後の一覧はRoomのFlowが更新するため、ここでuiStateを直接書き換えない。 */
@@ -113,14 +118,17 @@ class JournalHistoryViewModel(
 
   /**
    * 最古の記録日を含む日が削除されると下限は今日側へ動き、記録が0件になれば今日だけが下限になる。
-   * JournalRecorderは常に記録時点のInstant.now()で保存するため、下限がこれより過去へ動くことはない。
-   * 表示中の日が新しい下限より前になっていれば、ここで範囲内へ戻す。
+   * 端末timezoneが変わった場合も、再分類した記録から下限を決め直す。
+   * 時刻設定で全記録が未来になった場合は今日を下限にし、表示中の日を範囲内へ戻す。
    */
-  private fun syncRangeToGroups(groups: List<JournalHistoryGroup>) {
-    val today = today()
-    earliestDate = groups.minOfOrNull { it.date } ?: today
+  private fun syncRangeToGroups(groups: List<JournalHistoryGroup>, today: LocalDate) {
+    earliestDate = groups.minOfOrNull { it.date }?.coerceAtMost(today) ?: today
     selectedDate.update { coerceToHistoryRange(it, earliestDate, today) }
   }
 
-  private fun today(): LocalDate = now().atZone(zoneId).toLocalDate()
+  private data class HistoryData(
+    val calendarDate: CalendarDate,
+    val groups: List<JournalHistoryGroup>,
+    val latestAnalysisResultIdsByDay: Map<LocalDate, Long>,
+  )
 }
